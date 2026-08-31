@@ -1,70 +1,286 @@
-# Trip Planning Multi-AI-Agent System
+# AI Trip Planner
 
-一个基于多智能体协作的旅行规划系统。用户输入偏好与需求后,由 Coordinator Agent 拆分任务,分发给
-Travel Planner / Destination Guide / Budget & Booking Advisor 三个专项 Agent 协同生成行程,关键决策
-(高风险行程确认、预算超支)由用户在 Human-in-the-loop 节点手动确认。
+> A multi-agent trip planning system — the travel version of the ELEC5620 "One-Person AI Company" theme.
+> GitHub repo: `AI_TRIP_PLANNER` (referred to as **AI Trip Planner** throughout the project).
 
-## 团队分工(5人,一人一模块)
+A user describes a trip in natural language. The **OrchestratorAgent** decomposes the request,
+dispatches tasks to a set of specialist agents, collects their proposals, and detects conflicts
+(budget / time / geography). On conflict it runs up to K=3 targeted revision rounds. Once the plan
+converges it is sent to the user for confirmation (Human-in-the-loop, HITL); if it does not converge
+or hits a red line it is escalated to the Human Founder. The final plan is shown as a
+**mind-map + timeline**.
 
-| 负责人 | 模块 | 对应 Use Case |
+> **Requirements / architecture source of truth** (Stage 1 deliverable — 4+1 viewpoints, feature
+> diagrams, use cases): the Google Doc *ELEC5620 Project1--docs*. This README only covers *how we
+> build together*; it does not repeat the architecture modelling.
+
+---
+
+## 1. Architecture overview
+
+```mermaid
+flowchart TB
+    U[User] <--> UI[Web UI: chat / filters / trip panel]
+    UI <--> ORC[OrchestratorAgent<br/>decompose · dispatch · conflict check · K-round negotiation · HITL / escalation · cost roll-up]
+
+    ORC --> IT[ItineraryPlannerAgent]
+    ORC --> TR[TransportAgent]
+    ORC --> AC[AccommodationAgent]
+    ORC --> DG[DestinationGuideAgent<br/>+ weather / packing sub-function]
+    ORC --> DN[DiningAgent]
+
+    subgraph SVC[Shared services]
+      MEM[PreferenceMemoryService<br/>short / long-term memory]
+      NOT[NotificationService · stub]
+      AUTH[AuthService · stub]
+    end
+
+    subgraph TOOLS[ToolGateway: external tool adapters]
+      MAPS[(Maps / Places API · mock)]
+      BOOK[(Booking / Price API · mock)]
+      LLM[(Claude · AI SDK)]
+    end
+
+    IT --> MEM
+    TR --> MEM
+    AC --> MEM
+    DG --> MEM
+    DN --> MEM
+    IT --> MAPS
+    TR --> MAPS
+    AC --> BOOK
+    ORC --> LLM
+    ORC --> NOT
+```
+
+### Agents
+
+| Layer | Name | Responsibility | Owner |
+|---|---|---|---|
+| Orchestrator | `OrchestratorAgent` | chat intake, requirement decomposition, task dispatch, proposal aggregation, conflict detection, up-to-K=3 revision rounds, **all HITL and escalation**, cost roll-up | A |
+| Specialist | `ItineraryPlannerAgent` | day-by-day plan, J/P pacing, holiday closures, activity ordering | B |
+| Specialist | `TransportAgent` | inter-city + local transport options, timing, price ranges | B |
+| Specialist | `AccommodationAgent` | lodging search and comparison, individual / group room allocation | C |
+| Specialist | `DestinationGuideAgent` | attractions, local customs, safety, visa / vaccine by nationality; **+ weather and packing advice as an LLM sub-function (no weather API)** | D |
+| Specialist | `DiningAgent` | cuisine recommendations, dietary restrictions | D |
+
+### Non-agent modules
+
+| Module | What it does | Owner |
 |---|---|---|
-| A | **Orchestrator / Coordinator Agent** | Set Preferences (Filter)、Submit Requirement (Chat)、Generate Itinerary、Memory Management (short/long term) |
-| B | **Travel Planner Agent** | Arrange Transportation、Arrange Accommodation (Individual/Group) |
-| C | **Destination Guide Agent** | View Weather-based Clothing Recommendation、View Food/Cuisine Recommendation |
-| D | **Budget & Booking Advisor Agent** | Manage Budget、**Confirm Key Itinerary (Human-in-the-loop)** |
-| E | **Frontend / UI + 集成** | View Itinerary Output (Mind-map/List)、Filter UI、Chat UI,负责把各Agent结果整合到界面,兼repo集成 |
+| Cost-aggregation | sums every agent's `estCost` against `budgetTotal`, emits an overrun % that feeds HITL / escalation | C |
+| `PreferenceMemoryService` | short-term memory (in-session requests) / long-term memory (user profile, confirmed preferences); Filter writes long-term, chat-confirmed items promote short → long | E |
+| `ToolGateway` | wraps all external tool calls, `USE_MOCK_TOOLS` switch | A (interface) + adapter owners |
+| Maps adapter | Maps / Places API adapter, mock in dev | B |
+| Booking adapter | Booking / Price API adapter, **mock** — real payment is out of scope | C |
+| `NotificationService`, `AuthService` | minimal stubs | E |
 
-> 每人只在自己负责的模块目录下开发,减少互相修改同一文件导致的冲突。跨模块的输入/输出格式(见下方"接口约定")先对齐好再各自开工。
+### External tools / systems
 
-## 仓库结构
+- **LLM** — Claude, via Vercel AI SDK (`@ai-sdk/anthropic`); API key provided by the course
+- **Maps / Places API** — routes and price info, mockable
+- **Booking / Price API** — lodging / flight pricing, **mock**; real payment is out of scope
+- No weather API — weather advice is an LLM sub-function inside `DestinationGuideAgent`
+
+### Orchestrator negotiation loop
 
 ```
-/agents
-  /orchestrator        ← A
-  /travel_planner       ← B
-  /destination_guide    ← C
-  /budget_advisor       ← D
-/frontend                ← E
-/docs
-  /session-logs          ← 每人每次AI辅助编码后填写的总结(见下方模板)
-.env.example
-docker-compose.yml
-README.md
+1. User chat → OrchestratorAgent parses → TripBrief (written to short-term memory)
+2. User confirms key fields (people / dates / destination / budget) → written to long-term memory   [HITL]
+3. Round 1: dispatch TripBrief to all specialist agents in parallel → collect AgentProposal[]
+4. Orchestrator aggregates, detects conflicts (budget over limit / time overlap / geo infeasible)
+5. Conflict → Round r: send RevisionRequest only to the affected agents → up to K = 3 rounds
+6. Converged → present plan + ask user to confirm key nodes                                         [HITL]
+7. Not converged / red line (over budget > X% or safety) → escalate to Human Founder
+8. Output: mind-map view + timeline view
 ```
 
-## 接口约定(Interface-first)
+---
 
-各 Agent 之间用 JSON 传递数据,字段在开工前由 A(Orchestrator负责人)牵头和大家一起定好,例如:
+## 2. Tech stack
 
-```json
-// Orchestrator -> Travel Planner 请求
-{ "trip_id": "...", "dates": ["2026-10-01", "2026-10-07"], "destination": "...", "group_size": 1 }
+| Area | Choice |
+|---|---|
+| Language | **TypeScript** (`strict: true`) |
+| Runtime | Node.js 22 LTS |
+| Monorepo / package manager | pnpm workspaces + Turborepo |
+| Web framework | Next.js 15 (App Router) — frontend + server-side agent logic in one deployable (Route Handlers / Server Actions) |
+| LLM / agents | Vercel AI SDK (`ai` + `@ai-sdk/anthropic`): tool calling + a hand-rolled orchestrator loop. Alternative: LangGraph.js if a graph-style control flow is needed |
+| Contracts / validation | **Zod** — every inter-agent message and tool input/output |
+| State / memory | SQLite (`better-sqlite3`) or JSON files in dev; add Redis (optional in compose) if cross-request sharing is needed |
+| Testing | Vitest |
+| Lint / format | ESLint + Prettier (or Biome) |
+| CI | GitHub Actions: lint + typecheck + test + build |
 
-// Travel Planner -> Orchestrator 返回
-{ "transportation": [...], "accommodation": {...} }
+---
+
+## 3. Repository structure (planned — only README exists today; target layout below)
+
+```
+ai-trip-planner/
+├── apps/
+│   └── web/                     # Next.js: UI + server-side agent entry            (E)
+├── packages/
+│   ├── shared/                  # types, Zod contracts, constants, error defs       (A)
+│   ├── orchestrator/            # OrchestratorAgent + negotiation loop
+│   │                           #   + conflict detection + HITL + cost roll-up      (A)
+│   ├── agents/
+│   │   ├── itinerary/           #                                                  (B)
+│   │   ├── transport/           #                                                  (B)
+│   │   ├── accommodation/       #                                                  (C)
+│   │   ├── destination-guide/   # incl. weather / packing sub-function             (D)
+│   │   └── dining/              #                                                  (D)
+│   ├── services/
+│   │   ├── memory/              # PreferenceMemoryService                          (E)
+│   │   ├── notification/        # stub                                            (E)
+│   │   └── auth/                # stub                                            (E)
+│   └── tools/                   # ToolGateway + adapters + local mock server
+│       ├── maps/                #                                                  (B)
+│       └── booking/             # mock                                             (C)
+├── docs/
+│   └── session-logs/            # per-session summary after each AI-assisted coding (see §8)
+│       └── TEMPLATE.md
+├── .env.example
+├── .gitattributes               # * text=auto eol=lf
+├── .dockerignore
+├── Dockerfile
+├── docker-compose.yml
+├── turbo.json
+├── pnpm-workspace.yaml
+└── README.md
 ```
 
-**约定好之后,各自可以先 mock 对方的输入输出独立开发,不用等别人写完。**
+> Each person works only inside their own directory to minimise edits to the same file.
+> Cross-module input / output formats are agreed in `packages/shared` before anyone starts coding.
 
-## Git 协作流程
+---
 
-### 分支命名
-`feature/<模块>-<简述>`,例如:
-- `feature/travel-planner-transport-api`
-- `feature/budget-advisor-hitl-check`
+## 4. Interface-first contracts
 
-Commit message 前缀:`feat: ` / `fix: ` / `docs: `
+All agent-to-agent and agent-to-tool messages are defined as **Zod schemas** in
+`packages/shared/src/contracts.ts`. Agreed up front, led by A. **Once agreed, everyone mocks the
+other side's I/O and develops independently — no waiting for others.**
 
-### main 分支保护规则(已在 GitHub Ruleset 配置)
-- 禁止直接 push 到 `main`,必须走 Pull Request
-- PR 至少需要 **1 人 approve** 才能合并
-- 新 commit push 后旧的 approve 自动失效,需要重新审
-- 每个 PR 自动触发 **Copilot code review**
-- 禁止 force push、禁止删除 `main`
+```ts
+// packages/shared/src/contracts.ts
+import { z } from "zod";
 
-### Review 分配(交叉review,环形分摊,别自己审自己)
+export const TripBrief = z.object({
+  tripId: z.string(),
+  destination: z.string(),
+  dates: z.tuple([z.string(), z.string()]),      // [start, end] ISO
+  groupSize: z.number().int().positive(),
+  budgetTotal: z.number().positive(),
+  travelStyle: z.enum(["J", "P"]),
+  nationality: z.string().optional(),
+});
+export type TripBrief = z.infer<typeof TripBrief>;
 
-| PR 提出人 | Reviewer |
+export const AgentProposal = z.object({
+  agent: z.string(),
+  summary: z.string(),
+  items: z.array(z.object({
+    kind: z.string(),                             // "transport" | "hotel" | "activity" ...
+    detail: z.string(),
+    estCost: z.number().nonnegative().optional(), // currency + per-person/total rule frozen by A
+    day: z.number().int().optional(),
+  })),
+  assumptions: z.array(z.string()),
+  conflictsWith: z.array(z.string()).default([]),
+});
+export type AgentProposal = z.infer<typeof AgentProposal>;
+
+export const RevisionRequest = z.object({
+  tripId: z.string(),
+  targetAgent: z.string(),
+  reason: z.string(),                             // "over budget by 18%" ...
+  constraints: z.array(z.string()),
+});
+export type RevisionRequest = z.infer<typeof RevisionRequest>;
+```
+
+Every agent implements:
+
+```ts
+interface Agent {
+  name: string;
+  run(brief: TripBrief, ctx: AgentContext): Promise<AgentProposal>;
+  revise?(brief: TripBrief, ctx: AgentContext, req: RevisionRequest): Promise<AgentProposal>;
+}
+```
+
+---
+
+## 5. Team roles
+
+Split by **module ownership** (each person owns one or two agents plus their tooling), **not** by
+frontend / backend / testing. Rationale, in course terms: each module maps to one area of
+conceptual homogeneity; control stays centralised in the Orchestrator; control is separated from
+function.
+
+| Person | Owns | Depends on | Delivers |
+|---|---|---|---|
+| **A — Orchestrator & integration lead** | `OrchestratorAgent`, negotiation loop, conflict detection, **all HITL & escalation policy**, `packages/shared` contracts, `ToolGateway` interface, CI, weekly integration, `main` merge gate | everyone's proposal schema | working end-to-end flow: chat → full trip plan |
+| **B — Itinerary & transport** | `ItineraryPlannerAgent`, `TransportAgent`, maps adapter (mock), time / geo conflict-check helper | shared contracts, maps data (mock) | day-by-day itinerary with transport |
+| **C — Stay & budget** | `AccommodationAgent`, booking adapter (mock), cost-aggregation module (sum vs budget → overrun %) | shared contracts, booking data (mock), `estCost` from B / D | lodging plan + live "cost vs budget" number |
+| **D — Destination guide & dining** | `DestinationGuideAgent` (attractions, customs, safety, visa / vaccine by nationality, + weather / packing advice as an LLM sub-function), `DiningAgent` | shared contracts | destination guidance + dining recommendations |
+| **E — Frontend & memory** | Web app (chat, filters / preferences, "Your trip" panel), `PreferenceMemoryService` (short / long-term memory), notification & auth stubs | A's orchestrator API | working web UI: chat, live plan, confirm actions |
+
+**Tech lead / reviewer.** A is tech lead and integration owner, with final merge authority on `main`
+(after review) — but **not** the sole reviewer. Use the ring-review table in §6; every PR needs ≥1
+approval. There is no single "master" who writes everything.
+
+Each person writes the Logical + Development view for their slice; A assembles the Process,
+Physical, and Scenario views.
+
+<details>
+<summary>中文版 / Chinese</summary>
+
+按**模块 owner** 分工(每人负责一到两个 agent 加上它的工具),**不按**前端 / 后端 / 测试横切。
+理由(课程术语):每个模块对应一块概念同质的领域;控制集中在 Orchestrator;控制与功能分离。
+
+| 人 | 负责 | 依赖 | 交付 |
+|---|---|---|---|
+| **A —— 编排与集成负责人** | `OrchestratorAgent`、协商循环、冲突检测、**全部 HITL 与升级策略**、`packages/shared` 契约、`ToolGateway` 接口、CI、每周集成、`main` 合并把关 | 大家的提案格式(schema) | 能跑通的主流程:聊天 → 一份完整行程 |
+| **B —— 行程与交通** | `ItineraryPlannerAgent`、`TransportAgent`、地图适配器(mock)、时间 / 地理冲突检查 helper | 共享契约、地图数据(mock) | 带交通的每日行程 |
+| **C —— 住宿与预算** | `AccommodationAgent`、订房适配器(mock)、成本汇总模块(加总 vs 预算 → 超支 %) | 共享契约、订房数据(mock)、B / D 的 `estCost` 字段 | 住宿方案 + 实时"花费 vs 预算"数字 |
+| **D —— 目的地向导与美食** | `DestinationGuideAgent`(景点、当地习俗、安全、按国籍的签证 / 疫苗,+ 天气 / 行李建议作为 LLM 子功能)、`DiningAgent` | 共享契约 | 目的地指南 + 美食推荐 |
+| **E —— 前端与记忆** | Web 应用(聊天、筛选 / 偏好、"你的行程"面板)、`PreferenceMemoryService`(短期 / 长期记忆)、通知与登录 stub | A 的 orchestrator 接口 | 能用的网页:聊天、行程实时更新、确认操作 |
+
+**技术负责人 / reviewer**:A 是技术负责人和集成 owner,拥有 `main` 的最终合并权(必须先过
+review)—— 但**不是唯一 reviewer**。用 §6 的环形 review 表,每个 PR 至少 1 人 approve。没有
+"一个人写全部"的 master。
+
+每人负责写自己那一块的 Logical + Development 视图;A 负责拼 Process、Physical、Scenario 视图。
+
+</details>
+
+---
+
+## 6. Git workflow
+
+### Branch naming
+
+`feature/<module>-<short-desc>`, `<module>` = directory name, e.g.:
+
+- `feature/transport-maps-adapter`
+- `feature/accommodation-cost-rollup`
+- `feature/orchestrator-conflict-detection`
+- `feature/web-itinerary-mindmap`
+
+Commit message prefix: `feat:` / `fix:` / `docs:` / `refactor:` / `test:` / `chore:`
+
+### `main` branch protection (GitHub Ruleset)
+
+- No direct push — Pull Request only
+- PR needs **≥1 approval** to merge
+- New commits dismiss stale approvals
+- CI must pass (lint + typecheck + test + build)
+- No force push, no deleting `main`
+
+### Review assignment (ring — don't review your own)
+
+| PR author | Reviewer |
 |---|---|
 | A | B |
 | B | C |
@@ -72,34 +288,155 @@ Commit message 前缀:`feat: ` / `fix: ` / `docs: `
 | D | E |
 | E | A |
 
-### Issue / 看板
-GitHub Projects 里每个 Use Case 建一个 Issue,指派给对应负责人,状态走 `To Do → In Progress → In Review → Done`。
+### Issues / board
 
-### 集成节奏
-- 前期各自对着接口约定独立开发 + mock 测试
-- 每周固定一次 **集成日**:五个模块真正连起来跑一遍完整流程,越早集成越能提前暴露接口不匹配问题
+GitHub Projects: one Issue per agent / service / use case, assigned to its owner,
+status `To Do → In Progress → In Review → Done`.
 
-## 开发环境
+### Integration cadence
 
-组内 Windows / macOS 混用,统一用 Docker 避免环境不一致:
+- Early on, everyone develops independently against `packages/shared` contracts with mocked I/O
+- One fixed **integration day** each week: wire all modules together and run the full flow end to
+  end — the sooner interface mismatches surface, the better
+
+---
+
+## 7. Development environment
+
+Mixed Windows / macOS in the team, so Docker keeps environments consistent. **Docker is not
+required** — it is only there for parity.
+
+### First-time setup
+
+```bash
+cp .env.example .env.local     # fill in the course-provided ANTHROPIC_API_KEY; leave the rest on mock
+```
+
+### With Docker (recommended)
 
 ```bash
 docker compose up
 ```
 
-`.env.example` 里放假的 API key 格式,真实 key 各自写到本地 `.env`,**不要提交到 git**。
+- `web` — http://localhost:3000, source bind-mounted, hot reload
+- `mock-apis` — http://localhost:4000, canned Maps / Booking responses, **no real key needed to develop**
+- `redis` — commented out by default; enable if cross-request state is needed
 
-## Session Summary(每人每次AI辅助编码收尾必填)
+### Without Docker
 
-写在 `/docs/session-logs/YYYY-MM-DD-姓名.md`,提交对应 PR 时附上:
+```bash
+corepack enable
+pnpm install
+pnpm dev
+```
+
+### Dockerfile (multi-stage, starter — A to refine later)
+
+```dockerfile
+FROM node:22-alpine AS base
+RUN corepack enable
+WORKDIR /app
+
+FROM base AS deps
+COPY pnpm-lock.yaml pnpm-workspace.yaml package.json ./
+COPY apps/ apps/
+COPY packages/ packages/
+RUN pnpm install --frozen-lockfile
+
+FROM base AS dev
+COPY --from=deps /app/node_modules ./node_modules
+COPY . .
+EXPOSE 3000
+CMD ["pnpm", "dev"]
+
+FROM deps AS build
+COPY . .
+RUN pnpm build
+
+FROM base AS runner
+ENV NODE_ENV=production
+COPY --from=build /app ./
+EXPOSE 3000
+CMD ["pnpm", "--filter", "web", "start"]
+```
+
+### docker-compose.yml
+
+```yaml
+services:
+  web:
+    build: { context: ., target: dev }
+    ports: ["3000:3000"]
+    env_file: [.env.local]
+    environment:
+      - WATCHPACK_POLLING=true      # file watching on Windows
+      - CHOKIDAR_USEPOLLING=true
+      - MOCK_API_URL=http://mock-apis:4000
+    volumes:
+      - .:/app
+      - /app/node_modules           # don't let the host node_modules shadow the container's
+    depends_on: [mock-apis]
+
+  mock-apis:
+    build: { context: ., target: dev }
+    command: pnpm --filter @trip/tools mock-server
+    ports: ["4000:4000"]
+    volumes:
+      - .:/app
+      - /app/node_modules
+
+  # enable if cross-request state is needed
+  # redis:
+  #   image: redis:7-alpine
+  #   ports: ["6379:6379"]
+```
+
+### .env.example
 
 ```
-## Session Summary
-- 负责人:
-- 涉及模块:
-- 完成的功能:
-- 修改的文件:
-- 做出的假设(assumptions):
-- 遗留问题:
-- 需要谁review:
+# LLM (key provided by the course; model id per what the course gives you)
+ANTHROPIC_API_KEY=
+AI_MODEL=claude-sonnet-5
+
+# External tools: set true in dev to use local mocks, no real key needed
+USE_MOCK_TOOLS=true
+MAPS_API_KEY=
+
+# Memory store
+DATABASE_URL=file:./dev.db
+# REDIS_URL=redis://redis:6379
+```
+
+Put placeholder formats in `.env.example`; keep real keys in your local `.env.local`, **never
+commit them**.
+
+### Windows / macOS notes
+
+- Repo root `.gitattributes` sets `* text=auto eol=lf` so CRLF doesn't break scripts
+- Docker file watching on Windows needs polling (env vars set in compose)
+- Bind mounts are slower on Windows / macOS than Linux; if it's too slow, run `pnpm dev` only
+  inside the container and keep the IDE on the host
+- Use `pnpm` only — don't mix `npm` / `yarn` (lockfiles will fight)
+
+---
+
+## 8. Session summary (required at the end of every AI-assisted coding session)
+
+Write to `docs/session-logs/YYYY-MM-DD-name.md`, attach it to the matching PR.
+Keep a copy of the template at `docs/session-logs/TEMPLATE.md`:
+
+```markdown
+## Session summary
+
+- Author:
+- Date:
+- Module(s):            # directory name, e.g. agents/transport
+- Goal / requirement source:   # which Google Doc line / which Issue
+- What was done:
+- Files changed:
+- Contract impact:      # did packages/shared change? if so, @ the whole team
+- Assumptions:
+- External tools / mocks used:
+- Open issues / TODO:
+- Reviewer:
 ```
