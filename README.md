@@ -241,11 +241,11 @@ Physical, and Scenario views.
 
 | 人 | 负责 | 依赖 | 交付 |
 |---|---|---|---|
-| **A —— 编排与集成负责人** | `OrchestratorAgent`、协商循环、冲突检测、**全部 HITL 与升级策略**、`packages/shared` 契约、`ToolGateway` 接口、CI、每周集成、`main` 合并把关 | 大家的提案格式(schema) | 能跑通的主流程:聊天 → 一份完整行程 |
-| **B —— 行程与交通** | `ItineraryPlannerAgent`、`TransportAgent`、地图适配器(mock)、时间 / 地理冲突检查 helper | 共享契约、地图数据(mock) | 带交通的每日行程 |
-| **C —— 住宿与预算** | `AccommodationAgent`、订房适配器(mock)、成本汇总模块(加总 vs 预算 → 超支 %) | 共享契约、订房数据(mock)、B / D 的 `estCost` 字段 | 住宿方案 + 实时"花费 vs 预算"数字 |
-| **D —— 目的地向导与美食** | `DestinationGuideAgent`(景点、当地习俗、安全、按国籍的签证 / 疫苗,+ 天气 / 行李建议作为 LLM 子功能)、`DiningAgent` | 共享契约 | 目的地指南 + 美食推荐 |
-| **E —— 前端与记忆** | Web 应用(聊天、筛选 / 偏好、"你的行程"面板)、`PreferenceMemoryService`(短期 / 长期记忆)、通知与登录 stub | A 的 orchestrator 接口 | 能用的网页:聊天、行程实时更新、确认操作 |
+| **A(530527086|Ziqi He) —— 编排与集成负责人** | `OrchestratorAgent`、协商循环、冲突检测、**全部 HITL 与升级策略**、`packages/shared` 契约、`ToolGateway` 接口、CI、每周集成、`main` 合并把关 | 大家的提案格式(schema) | 能跑通的主流程:聊天 → 一份完整行程 |
+| **B(540532755|Tingsong Jin) —— 行程与交通** | `ItineraryPlannerAgent`、`TransportAgent`、地图适配器(mock)、时间 / 地理冲突检查 helper | 共享契约、地图数据(mock) | 带交通的每日行程 |
+| **C(550378747|YI QIAO) —— 住宿与预算** | `AccommodationAgent`、订房适配器(mock)、成本汇总模块(加总 vs 预算 → 超支 %) | 共享契约、订房数据(mock)、B / D 的 `estCost` 字段 | 住宿方案 + 实时"花费 vs 预算"数字 |
+| **D(550066431|Jiahang Bian) —— 目的地向导与美食** | `DestinationGuideAgent`(景点、当地习俗、安全、按国籍的签证 / 疫苗,+ 天气 / 行李建议作为 LLM 子功能)、`DiningAgent` | 共享契约 | 目的地指南 + 美食推荐 |
+| **E (550414791|Weihao Wang)—— 前端与记忆** | Web 应用(聊天、筛选 / 偏好、"你的行程"面板)、`PreferenceMemoryService`(短期 / 长期记忆)、通知与登录 stub | A 的 orchestrator 接口 | 能用的网页:聊天、行程实时更新、确认操作 |
 
 **技术负责人 / reviewer**:A 是技术负责人和集成 owner,拥有 `main` 的最终合并权(必须先过
 review)—— 但**不是唯一 reviewer**。用 §6 的环形 review 表,每个 PR 至少 1 人 approve。没有
