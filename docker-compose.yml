@@ -1,0 +1,35 @@
+services:
+  web:
+    build:
+      context: .
+      target: dev
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env.local
+    environment:
+      - WATCHPACK_POLLING=true
+      - CHOKIDAR_USEPOLLING=true
+      - MOCK_API_URL=http://mock-apis:4000
+    volumes:
+      - .:/app
+      - /app/node_modules
+    depends_on:
+      - mock-apis
+
+  mock-apis:
+    build:
+      context: .
+      target: dev
+    command: pnpm --filter @trip/tools mock-server
+    ports:
+      - "4000:4000"
+    volumes:
+      - .:/app
+      - /app/node_modules
+
+  # Enable if cross-request shared state is needed.
+  # redis:
+  #   image: redis:7-alpine
+  #   ports:
+  #     - "6379:6379"

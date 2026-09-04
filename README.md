@@ -114,44 +114,54 @@ flowchart TB
 
 ---
 
-## 3. Repository structure (planned — only README exists today; target layout below)
+## 3. Repository structure
+
+The scaffold is in place — every module is a stub with a `TODO(owner)` marker.
+See [`docs/scaffold.md`](docs/scaffold.md) for the full "who codes where" map.
 
 ```
 ai-trip-planner/
 ├── apps/
-│   └── web/                     # Next.js: UI + server-side agent entry            (E)
+│   └── web/                          # Next.js: UI + server-side agent entry        (E)
+│       ├── app/                      #   page.tsx, api/chat/route.ts, globals.css
+│       └── components/               #   Header, FiltersPanel, ChatPanel, TripPanel, TripSection
 ├── packages/
-│   ├── shared/                  # types, Zod contracts, constants, error defs       (A)
-│   ├── orchestrator/            # OrchestratorAgent + negotiation loop
-│   │                           #   + conflict detection + HITL + cost roll-up      (A)
-│   ├── agents/
-│   │   ├── itinerary/           #                                                  (B)
-│   │   ├── transport/           #                                                  (B)
-│   │   ├── accommodation/       #                                                  (C)
-│   │   ├── destination-guide/   # incl. weather / packing sub-function             (D)
-│   │   └── dining/              #                                                  (D)
-│   ├── services/
-│   │   ├── memory/              # PreferenceMemoryService                          (E)
-│   │   ├── notification/        # stub                                            (E)
-│   │   └── auth/                # stub                                            (E)
-│   └── tools/                   # ToolGateway + adapters + local mock server
-│       ├── maps/                #                                                  (B)
-│       └── booking/             # mock                                             (C)
+│   ├── shared/src/                   # Zod contracts + Agent / TripPlan types       (A)
+│   ├── orchestrator/src/             # OrchestratorAgent: negotiation loop,
+│   │                                 #   conflict detection, HITL, cost roll-up     (A)
+│   ├── agents/src/
+│   │   ├── itinerary/                #                                              (B)
+│   │   ├── transport/                #                                              (B)
+│   │   ├── accommodation/            #                                              (C)
+│   │   ├── destination-guide/        # incl. weather / packing sub-function         (D)
+│   │   └── dining/                   #                                              (D)
+│   ├── services/src/
+│   │   ├── memory/                   # PreferenceMemoryService (in-memory stub)     (E)
+│   │   ├── notification/             # stub                                         (E)
+│   │   └── auth/                     # stub                                         (E)
+│   └── tools/src/
+│       ├── gateway.ts                # ToolGateway (mock vs real switch)            (A)
+│       ├── maps.ts                   # Maps / Places adapter (mock)                 (B)
+│       ├── booking.ts                # Booking / Price adapter (mock)               (C)
+│       └── mock-server.mjs           # local canned-response API server            (A)
 ├── docs/
-│   └── session-logs/            # per-session summary after each AI-assisted coding (see §8)
-│       └── TEMPLATE.md
-├── .env.example
-├── .gitattributes               # * text=auto eol=lf
-├── .dockerignore
-├── Dockerfile
-├── docker-compose.yml
-├── turbo.json
-├── pnpm-workspace.yaml
+│   ├── scaffold.md                   # who codes where + how to run
+│   └── session-logs/TEMPLATE.md      # per-session summary (see §8)
+├── .env.example  .gitattributes  .dockerignore  .prettierrc.json
+├── Dockerfile  docker-compose.yml
+├── turbo.json  pnpm-workspace.yaml  tsconfig.base.json
 └── README.md
 ```
 
+Run it:
+
+```bash
+corepack enable && pnpm install && pnpm dev      # http://localhost:3000
+pnpm typecheck && pnpm build                     # both pass on a clean checkout
+```
+
 > Each person works only inside their own directory to minimise edits to the same file.
-> Cross-module input / output formats are agreed in `packages/shared` before anyone starts coding.
+> Cross-module input / output formats live in `packages/shared/src/contracts.ts` — agree changes with A first.
 
 ---
 
