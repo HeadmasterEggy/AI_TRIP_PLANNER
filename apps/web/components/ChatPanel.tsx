@@ -1,8 +1,9 @@
 "use client";
 
 // Owner: E (shell) + A (wire to real orchestrator chat parsing).
-// Right now: posts the message to /api/chat and appends the stub reply.
+// Posts a ChatRequest to /api/chat and lifts the returned plan up to Workspace.
 import { useState } from "react";
+import type { ChatResponse, TripPlan } from "@trip/shared";
 
 type Msg = { role: "user" | "agent"; text: string };
 
@@ -17,7 +18,13 @@ const SEED: Msg[] = [
   },
 ];
 
-export function ChatPanel() {
+export function ChatPanel({
+  tripId,
+  onPlan,
+}: {
+  tripId: string;
+  onPlan: (plan: TripPlan) => void;
+}) {
   const [messages, setMessages] = useState<Msg[]>(SEED);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
@@ -33,10 +40,14 @@ export function ChatPanel() {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ message: text }),
+        body: JSON.stringify({ tripId, message: text }),
       });
-      const data = await res.json();
-      setMessages((m) => [...m, { role: "agent", text: data.reply ?? "(no reply)" }]);
+      const data = (await res.json()) as Partial<ChatResponse> & { error?: string };
+      if (data.plan) onPlan(data.plan);
+      setMessages((m) => [
+        ...m,
+        { role: "agent", text: data.reply ?? data.error ?? "(no reply)" },
+      ]);
     } catch {
       setMessages((m) => [...m, { role: "agent", text: "Request failed." }]);
     } finally {

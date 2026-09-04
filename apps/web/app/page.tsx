@@ -1,23 +1,17 @@
-// Owner: E (layout / composition). Server component: fetches the initial plan.
+// Owner: E (layout / composition). Server component: computes the first plan.
 import { runOrchestrator, DEMO_BRIEF } from "@trip/orchestrator";
 import { Header } from "@/components/Header";
-import { FiltersPanel } from "@/components/FiltersPanel";
-import { ChatPanel } from "@/components/ChatPanel";
-import { TripPanel } from "@/components/TripPanel";
+import { Workspace } from "@/components/Workspace";
 
 export default async function Page() {
-  // TODO(A/E): once chat parsing exists, build the brief from the conversation
-  // instead of DEMO_BRIEF, and re-run the orchestrator per message.
+  // TODO(A/E): once chat parsing exists, the first render can stay on DEMO_BRIEF
+  // but every message re-runs the orchestrator via POST /api/chat (ChatResponse).
   const plan = await runOrchestrator(DEMO_BRIEF);
 
   return (
     <>
       <Header />
-      <main className="layout">
-        <FiltersPanel brief={DEMO_BRIEF} />
-        <ChatPanel />
-        <TripPanel plan={plan} />
-      </main>
+      <Workspace initialPlan={plan} />
     </>
   );
 }

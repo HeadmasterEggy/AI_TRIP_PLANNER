@@ -2,5 +2,7 @@
 // Owner: A (frozen early; changes must be announced to the whole team).
 
 export * from "./contracts";
+export * from "./ports";
 export * from "./agent";
 export * from "./plan";
+export * from "./chat";

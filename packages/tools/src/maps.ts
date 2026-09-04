@@ -1,33 +1,14 @@
 // Owner: B — Maps / Places adapter
-// TODO(B): call a real routing / places API. For now returns canned data so
+// TODO(B): call a real routing / places API. Canned data for now so
 //          TransportAgent + ItineraryPlannerAgent can be built independently.
+// The interface lives in @trip/shared (MapsPort); this file implements it.
 
-export interface RouteQuery {
-  from: string;
-  to: string;
-  date?: string;
-}
+import type { RouteQuery, RouteLeg, PlaceQuery, Place } from "@trip/shared";
 
-export interface RouteLeg {
-  mode: "train" | "flight" | "bus" | "walk" | "transit";
-  durationMin: number;
-  priceUsd: number;
-  note?: string;
-}
+export type { RouteQuery, RouteLeg, PlaceQuery, Place } from "@trip/shared";
 
 export async function route(q: RouteQuery): Promise<RouteLeg[]> {
   return [{ mode: "train", durationMin: 140, priceUsd: 90, note: `stub ${q.from} -> ${q.to}` }];
-}
-
-export interface PlaceQuery {
-  near: string;
-  category?: string;
-}
-
-export interface Place {
-  name: string;
-  category: string;
-  rating?: number;
 }
 
 export async function places(q: PlaceQuery): Promise<Place[]> {

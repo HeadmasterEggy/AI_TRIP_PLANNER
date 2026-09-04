@@ -1,24 +1,27 @@
 // Owner: A — the chat entry point.
+// Contract: POST ChatRequest -> ChatResponse (both in @trip/shared).
 // TODO(A):
-//   1. read short-term memory for this trip (@trip/services `memory`)
-//   2. use the OrchestratorAgent + LLM to turn `message` into / update a TripBrief
-//   3. run the negotiation loop, persist, and return { reply, plan }
+//   1. read short-term memory for this trip (ctx.mem)
+//   2. use an LLM to turn `message` into / update a TripBrief
+//   3. run the loop, persist, return the fresh plan
 import { NextResponse } from "next/server";
 import { runOrchestrator, DEMO_BRIEF } from "@trip/orchestrator";
-import { TripBrief } from "@trip/shared";
+import { ChatRequest, type ChatResponse } from "@trip/shared";
 
 export async function POST(req: Request) {
-  const body = await req.json().catch(() => ({}) as Record<string, unknown>);
+  const body = await req.json().catch(() => ({}));
+  const parsed = ChatRequest.safeParse(body);
+  if (!parsed.success) {
+    return NextResponse.json({ error: "invalid ChatRequest" }, { status: 400 });
+  }
 
-  // For now: accept an optional partial brief, otherwise use the demo one.
-  const parsed = TripBrief.partial().safeParse(body.brief ?? {});
-  const brief: TripBrief = { ...DEMO_BRIEF, ...(parsed.success ? parsed.data : {}) };
+  // TODO(A): parse parsed.data.message into a TripBrief via the LLM + short-term
+  // memory. For now every message just re-runs the demo brief.
+  const plan = await runOrchestrator({ ...DEMO_BRIEF, tripId: parsed.data.tripId });
 
-  const plan = await runOrchestrator(brief);
-
-  return NextResponse.json({
-    reply:
-      "Stub orchestrator ran end to end. Wire real chat parsing in apps/web/app/api/chat/route.ts (A).",
+  const res: ChatResponse = {
+    reply: `Ran the orchestrator (${plan.round} round${plan.round > 1 ? "s" : ""}). Wire real chat parsing in apps/web/app/api/chat/route.ts (A).`,
     plan,
-  });
+  };
+  return NextResponse.json(res);
 }

@@ -14,7 +14,8 @@
   "dependencies": {
     "@trip/agents": "workspace:*",
     "@trip/services": "workspace:*",
-    "@trip/shared": "workspace:*"
+    "@trip/shared": "workspace:*",
+    "@trip/tools": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^5.7.2"

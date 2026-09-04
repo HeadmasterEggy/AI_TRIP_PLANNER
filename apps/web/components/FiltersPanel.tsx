@@ -1,6 +1,7 @@
 // Owner: E — left rail. Static for now.
 // TODO(E): make these controlled inputs and persist to PreferenceMemoryService
 //          (long-term memory). See @trip/services `memory.setLongTerm`.
+// Every field here is reference data the agents plan against (via TripBrief).
 import type { TripBrief } from "@trip/shared";
 
 export function FiltersPanel({ brief }: { brief: TripBrief }) {
@@ -20,14 +21,10 @@ export function FiltersPanel({ brief }: { brief: TripBrief }) {
       <h3>Budget (total)</h3>
       <input className="field" defaultValue={`$${brief.budgetTotal}`} />
 
-      <h3>Interests</h3>
-      {["culture", "adventure", "food", "nature", "family", "nightlife"].map((tag) => (
-        <label key={tag} className="check">
-          <input type="checkbox" defaultChecked={brief.interests.includes(tag)} /> {tag}
-        </label>
-      ))}
-
-      <div className="todo">TODO(E): accommodation type, star rating, amenities, “show more”.</div>
+      <div className="todo">
+        TODO(E): trip style (J/P), nationality, accommodation type, star rating,
+        amenities, “show more”. All feed the TripBrief.
+      </div>
     </section>
   );
 }

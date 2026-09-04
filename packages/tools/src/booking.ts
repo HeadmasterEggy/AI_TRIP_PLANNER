@@ -1,20 +1,15 @@
 // Owner: C — Booking / Price adapter (MOCK ONLY — real payment is out of scope)
 // TODO(C): call a real lodging / flight price API. Canned data for now.
+// The interface lives in @trip/shared (BookingPort); this file implements it.
 
-export interface StayQuery {
-  city: string;
-  checkIn: string;
-  checkOut: string;
-  guests: number;
-}
+import type {
+  StayQuery,
+  StayOption,
+  FlightQuery,
+  FlightOption,
+} from "@trip/shared";
 
-export interface StayOption {
-  name: string;
-  area: string;
-  pricePerNightUsd: number;
-  rating: number;
-  freeCancellation: boolean;
-}
+export type { StayQuery, StayOption, FlightQuery, FlightOption } from "@trip/shared";
 
 export async function searchStays(q: StayQuery): Promise<StayOption[]> {
   return [
@@ -26,20 +21,6 @@ export async function searchStays(q: StayQuery): Promise<StayOption[]> {
       freeCancellation: true,
     },
   ];
-}
-
-export interface FlightQuery {
-  from: string;
-  to: string;
-  depart: string;
-  return?: string;
-  passengers: number;
-}
-
-export interface FlightOption {
-  carrier: string;
-  priceUsd: number;
-  note?: string;
 }
 
 export async function searchFlights(q: FlightQuery): Promise<FlightOption[]> {

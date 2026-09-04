@@ -10,6 +10,5 @@ export const DEMO_BRIEF: TripBrief = {
   groupSize: 2,
   budgetTotal: 4000,
   travelStyle: "P",
-  interests: ["culture", "food", "nature"],
   nationality: undefined,
 };

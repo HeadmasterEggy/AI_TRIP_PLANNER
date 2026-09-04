@@ -175,8 +175,14 @@ other side's I/O and develops independently — no waiting for others.**
 // packages/shared/src/contracts.ts
 import { z } from "zod";
 
+export const AGENT_NAMES = [
+  "itinerary", "transport", "accommodation", "destination-guide", "dining",
+] as const;
+export type AgentName = (typeof AGENT_NAMES)[number];
+
 export const TripBrief = z.object({
   tripId: z.string(),
+  userId: z.string().default("demo-user"),
   destination: z.string(),
   dates: z.tuple([z.string(), z.string()]),      // [start, end] ISO
   groupSize: z.number().int().positive(),
@@ -187,12 +193,12 @@ export const TripBrief = z.object({
 export type TripBrief = z.infer<typeof TripBrief>;
 
 export const AgentProposal = z.object({
-  agent: z.string(),
+  agent: z.enum(AGENT_NAMES),
   summary: z.string(),
   items: z.array(z.object({
     kind: z.string(),                             // "transport" | "hotel" | "activity" ...
     detail: z.string(),
-    estCost: z.number().nonnegative().optional(), // currency + per-person/total rule frozen by A
+    estCost: z.number().nonnegative().optional(), // USD, whole trip (not per-person) — frozen by A
     day: z.number().int().optional(),
   })),
   assumptions: z.array(z.string()),
@@ -202,22 +208,46 @@ export type AgentProposal = z.infer<typeof AgentProposal>;
 
 export const RevisionRequest = z.object({
   tripId: z.string(),
-  targetAgent: z.string(),
-  reason: z.string(),                             // "over budget by 18%" ...
+  targetAgent: z.enum(AGENT_NAMES),
+  reason: z.string(),                             // "plan is 18% over budget" ...
   constraints: z.array(z.string()),
 });
 export type RevisionRequest = z.infer<typeof RevisionRequest>;
 ```
 
-Every agent implements:
+Every agent implements this. The Orchestrator builds `tools` + `mem` once per run
+and injects them via `ctx` — agents never import those singletons, so they stay
+unit-testable with fakes. Interfaces (`ToolGateway`, `MemoryStore`) live in
+`packages/shared/src/ports.ts`.
 
 ```ts
+interface AgentContext {
+  tripId: string;
+  round: number;
+  tools: ToolGateway;   // ctx.tools.maps.route(...) / ctx.tools.booking.searchStays(...)
+  mem: MemoryStore;      // ctx.mem.getLongTerm(brief.userId) ...
+  signal?: AbortSignal;
+}
+
 interface Agent {
-  name: string;
+  name: AgentName;
+  label: string;         // section title in the "Your trip" panel
   run(brief: TripBrief, ctx: AgentContext): Promise<AgentProposal>;
   revise?(brief: TripBrief, ctx: AgentContext, req: RevisionRequest): Promise<AgentProposal>;
 }
 ```
+
+The web client talks to the server through one contract
+(`packages/shared/src/chat.ts`):
+
+```ts
+export const ChatRequest  = z.object({ tripId: z.string(), message: z.string().min(1) });
+export const ChatResponse = z.object({ reply: z.string(), plan: TripPlan });
+```
+
+`POST /api/chat` takes a `ChatRequest`, re-runs the orchestrator, returns a
+`ChatResponse`; the client holds `plan` in React state and swaps it on each reply.
+Streaming can be added later without changing this shape.
 
 ---
 

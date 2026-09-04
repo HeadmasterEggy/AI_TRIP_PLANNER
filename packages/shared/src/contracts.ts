@@ -1,7 +1,21 @@
 import { z } from "zod";
 
 // ---------------------------------------------------------------------------
+// The five specialist agents. `name` is the stable id used as the section id
+// in the trip plan; keep this list and @trip/agents `allAgents` in sync.
+// ---------------------------------------------------------------------------
+export const AGENT_NAMES = [
+  "itinerary",
+  "transport",
+  "accommodation",
+  "destination-guide",
+  "dining",
+] as const;
+export type AgentName = (typeof AGENT_NAMES)[number];
+
+// ---------------------------------------------------------------------------
 // TripBrief — the structured request the Orchestrator hands to every agent.
+// Every field here is reference data the agents plan against.
 // ---------------------------------------------------------------------------
 export const TripBrief = z.object({
   tripId: z.string(),
@@ -11,7 +25,6 @@ export const TripBrief = z.object({
   groupSize: z.number().int().positive(),
   budgetTotal: z.number().positive(),
   travelStyle: z.enum(["J", "P"]), // J = tightly planned, P = flexible
-  interests: z.array(z.string()).default([]),
   nationality: z.string().optional(),
 });
 export type TripBrief = z.infer<typeof TripBrief>;
@@ -29,7 +42,7 @@ export const ProposalItem = z.object({
 export type ProposalItem = z.infer<typeof ProposalItem>;
 
 export const AgentProposal = z.object({
-  agent: z.string(),
+  agent: z.enum(AGENT_NAMES),
   summary: z.string(),
   items: z.array(ProposalItem),
   assumptions: z.array(z.string()),
@@ -42,7 +55,7 @@ export type AgentProposal = z.infer<typeof AgentProposal>;
 // ---------------------------------------------------------------------------
 export const RevisionRequest = z.object({
   tripId: z.string(),
-  targetAgent: z.string(),
+  targetAgent: z.enum(AGENT_NAMES),
   reason: z.string(), // "over budget by 18%", "day 2 route infeasible" ...
   constraints: z.array(z.string()),
 });

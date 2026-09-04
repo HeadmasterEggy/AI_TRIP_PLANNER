@@ -1,11 +1,12 @@
 // Owner: D — DiningAgent
 // TODO(D): cuisine recommendations that respect dietary restrictions
-//   (halal / vegetarian / allergies from brief.interests or long-term memory).
+//   (halal / vegetarian / allergies — read from ctx.mem.getLongTerm(brief.userId)).
 
 import type { Agent, AgentProposal, TripBrief, AgentContext } from "@trip/shared";
 
 export const diningAgent: Agent = {
   name: "dining",
+  label: "Things to do",
   async run(brief: TripBrief, _ctx: AgentContext): Promise<AgentProposal> {
     return {
       agent: "dining",
