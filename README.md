@@ -117,7 +117,9 @@ flowchart TB
 ## 3. Repository structure
 
 The scaffold is in place — every module is a stub with a `TODO(owner)` marker.
-See [`docs/scaffold.md`](docs/scaffold.md) for the full "who codes where" map.
+See [`docs/scaffold.md`](docs/scaffold.md) for the full "who codes where" map, and
+[`docs/class-diagram.md`](docs/class-diagram.md) for the design-time UML class model
+(ELEC5620 Lab 4 Part 2).
 
 ```
 ai-trip-planner/
