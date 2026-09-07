@@ -58,7 +58,7 @@ flowchart TB
 | Layer | Name | Responsibility | Owner |
 |---|---|---|---|
 | Orchestrator | `OrchestratorAgent` | chat intake, requirement decomposition, task dispatch, proposal aggregation, conflict detection, up-to-K=3 revision rounds, **all HITL and escalation**, cost roll-up | A |
-| Specialist | `ItineraryPlannerAgent` | day-by-day plan, J/P pacing, holiday closures, activity ordering | B |
+| Specialist | `ItineraryPlannerAgent` | day-by-day plan, pacing from dates/group/prefs, holiday closures, activity ordering | B |
 | Specialist | `TransportAgent` | inter-city + local transport options, timing, price ranges | B |
 | Specialist | `AccommodationAgent` | lodging search and comparison, individual / group room allocation | C |
 | Specialist | `DestinationGuideAgent` | attractions, local customs, safety, visa / vaccine by nationality; **+ weather and packing advice as an LLM sub-function (no weather API)** | D |
@@ -189,7 +189,6 @@ export const TripBrief = z.object({
   dates: z.tuple([z.string(), z.string()]),      // [start, end] ISO
   groupSize: z.number().int().positive(),
   budgetTotal: z.number().positive(),
-  travelStyle: z.enum(["J", "P"]),
   nationality: z.string().optional(),
 });
 export type TripBrief = z.infer<typeof TripBrief>;

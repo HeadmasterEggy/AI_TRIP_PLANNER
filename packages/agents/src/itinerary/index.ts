@@ -1,6 +1,6 @@
 // Owner: B — ItineraryPlannerAgent
 // TODO(B): build a real day-by-day plan.
-//   - J/P pacing (tight vs flexible), opening hours, holiday closures, ordering
+//   - pacing from dates + group size + confirmed prefs, opening hours, holiday closures, ordering
 //   - use `ctx.tools.maps.places(...)` / `ctx.tools.maps.route(...)`
 //   - use `ctx.mem.getLongTerm(brief.userId)` for confirmed preferences
 //   - on conflict, implement `revise()` (see @trip/shared RevisionRequest)

@@ -24,7 +24,6 @@ export const TripBrief = z.object({
   dates: z.tuple([z.string(), z.string()]), // [start, end] ISO date
   groupSize: z.number().int().positive(),
   budgetTotal: z.number().positive(),
-  travelStyle: z.enum(["J", "P"]), // J = tightly planned, P = flexible
   nationality: z.string().optional(),
 });
 export type TripBrief = z.infer<typeof TripBrief>;

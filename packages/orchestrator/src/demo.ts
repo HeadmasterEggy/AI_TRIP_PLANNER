@@ -9,6 +9,5 @@ export const DEMO_BRIEF: TripBrief = {
   dates: ["2026-06-15", "2026-06-22"],
   groupSize: 2,
   budgetTotal: 4000,
-  travelStyle: "P",
   nationality: undefined,
 };

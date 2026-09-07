@@ -112,7 +112,6 @@ classDiagram
     +endDate: Date
     +groupSize: int
     +budgetTotal: Money
-    +travelStyle: TravelStyle
     +nationality: String
     +daySpan() int
   }
@@ -163,11 +162,6 @@ classDiagram
   class ChatResponse {
     +reply: String
   }
-  class TravelStyle {
-    <<enumeration>>
-    J
-    P
-  }
   class AgentName {
     <<enumeration>>
     ITINERARY
@@ -210,8 +204,6 @@ classDiagram
   AgentProposal "1" *-- "1..*" ProposalItem : items
   TripSection "1" o-- "0..1" AgentProposal : detail
   ChatResponse "1" *-- "1" TripPlan : plan
-
-  TripBrief ..> TravelStyle
   AgentProposal ..> AgentName
   RevisionRequest ..> AgentName
   TripSection ..> SectionStatus
