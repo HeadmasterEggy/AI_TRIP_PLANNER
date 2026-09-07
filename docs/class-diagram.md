@@ -458,6 +458,198 @@ classDiagram
 
 ---
 
+## Diagram 5 — use cases traced onto the agent & orchestration model
+
+Diagram 3 with the ten `«use case»` from the use case model folded in: the actor
+`Traveler` is associated with every use case; `«include»` / `«extend»` hold between
+use cases; and a `«trace»` dependency runs from each use case to the class that
+realises it.
+
+```mermaid
+classDiagram
+  direction TB
+
+  class Traveler {
+    <<actor>>
+  }
+  namespace UseCases {
+    class UC1["Set Preferences (Filter)"] {
+      <<use case>>
+    }
+    class UC2["Submit Requirement (Chat)"] {
+      <<use case>>
+    }
+    class UC3["Generate Itinerary"] {
+      <<use case>>
+    }
+    class UC7["Confirm Key Itinerary (HITL)"] {
+      <<use case>>
+    }
+    class UC6["Manage Budget"] {
+      <<use case>>
+    }
+    class UC4["Arrange Transportation"] {
+      <<use case>>
+    }
+    class UC5["Arrange Accommodation (Individual / Group)"] {
+      <<use case>>
+    }
+    class UC8["View Weather-based Clothing Recommendation"] {
+      <<use case>>
+    }
+    class UC9["View Food / Cuisine Recommendation"] {
+      <<use case>>
+    }
+    class UC10["View Itinerary Output"] {
+      <<use case>>
+    }
+  }
+
+  Traveler --> UC1
+  Traveler --> UC2
+  Traveler --> UC3
+  Traveler --> UC7
+  Traveler --> UC6
+  Traveler --> UC4
+  Traveler --> UC5
+  Traveler --> UC8
+  Traveler --> UC9
+  Traveler --> UC10
+
+  UC3 ..> UC1 : «include»
+  UC3 ..> UC2 : «include»
+  UC7 ..> UC3 : «extend»
+  UC7 ..> UC6 : «extend»
+
+  class Agent {
+    <<interface>>
+    +name: AgentName
+    +label: String
+    +run(brief: TripBrief, ctx: AgentContext) AgentProposal
+    +revise(brief: TripBrief, ctx: AgentContext, req: RevisionRequest) AgentProposal
+  }
+  class AbstractSpecialistAgent {
+    <<abstract>>
+    #name: AgentName
+    #label: String
+    +run(brief, ctx) AgentProposal*
+    +revise(brief, ctx, req) AgentProposal
+    #callModel(prompt: String) String
+    #loadPreferences(ctx: AgentContext) UserPreference[]
+  }
+  class ItineraryPlannerAgent {
+    +run(brief, ctx) AgentProposal
+    +revise(brief, ctx, req) AgentProposal
+    -orderActivities(brief: TripBrief) ProposalItem[]
+  }
+  class TransportAgent {
+    +run(brief, ctx) AgentProposal
+    +revise(brief, ctx, req) AgentProposal
+    +checkTimeGeoConflicts(sections: TripSection[]) RevisionRequest[]
+  }
+  class AccommodationAgent {
+    +run(brief, ctx) AgentProposal
+    +revise(brief, ctx, req) AgentProposal
+    -allocateRooms(groupSize: int) RoomPlan
+  }
+  class DestinationGuideAgent {
+    +run(brief, ctx) AgentProposal
+    -weatherAndPacking(destination: String, month: int) ProposalItem[]
+  }
+  class DiningAgent {
+    +run(brief, ctx) AgentProposal
+  }
+  class AgentContext {
+    +tripId: String
+    +round: int
+    +signal: AbortSignal
+  }
+  class AgentRegistry {
+    +all() Agent[]
+    +byName(name: AgentName) Agent
+  }
+  class OrchestratorAgent {
+    -MAX_ROUNDS: int
+    -escalationOverrunPct: float
+    +run(brief: TripBrief) TripPlan
+    +resume(tripId: String, decision: HitlDecision) TripPlan
+    -dispatch(brief, ctx) AgentProposal[]
+    -applyRevisions(brief, ctx, proposals, reqs) AgentProposal[]
+    -aggregate(proposals) TripSection[]
+    -buildHitl(brief, cost, unresolved) HitlCheckpoint[]
+  }
+  class ConflictDetector {
+    -budgetTolerancePct: float
+    +detect(proposals: AgentProposal[], brief: TripBrief) RevisionRequest[]
+    -detectBudget(proposals, brief) RevisionRequest[]
+    -detectTimeGeo(sections) RevisionRequest[]
+  }
+  class CostAggregator {
+    +rollUp(sections: TripSection[], budgetTotal: Money) CostSummary
+  }
+  class CostSummary {
+    +estTotal: Money
+    +overrunPct: float
+  }
+  class TripPlan {
+    +tripId: String
+    +round: int
+    +estTotal: Money
+  }
+
+  Agent <|.. AbstractSpecialistAgent
+  AbstractSpecialistAgent <|-- ItineraryPlannerAgent
+  AbstractSpecialistAgent <|-- TransportAgent
+  AbstractSpecialistAgent <|-- AccommodationAgent
+  AbstractSpecialistAgent <|-- DestinationGuideAgent
+  AbstractSpecialistAgent <|-- DiningAgent
+
+  OrchestratorAgent "1" --> "1" AgentRegistry : agents
+  AgentRegistry "1" o-- "1..*" Agent : registers
+  OrchestratorAgent "1" *-- "1" ConflictDetector : owns
+  OrchestratorAgent "1" *-- "1" CostAggregator : owns
+  OrchestratorAgent ..> AgentContext : creates
+  OrchestratorAgent ..> RevisionRequest
+  OrchestratorAgent ..> TripPlan : produces
+
+  ConflictDetector ..> AgentProposal
+  ConflictDetector ..> RevisionRequest : emits
+  ConflictDetector ..> TransportAgent : geo check
+  CostAggregator ..> TripSection
+  CostAggregator ..> CostSummary : returns
+
+  Agent ..> AgentProposal : returns
+  Agent ..> AgentContext : uses
+  AgentContext "1" --> "1" ToolGateway : tools
+  AgentContext "1" --> "1" MemoryStore : mem
+
+  UC1 ..> MemoryStore : «trace»
+  UC2 ..> OrchestratorAgent : «trace»
+  UC3 ..> OrchestratorAgent : «trace»
+  UC7 ..> OrchestratorAgent : «trace»
+  UC6 ..> CostAggregator : «trace»
+  UC4 ..> TransportAgent : «trace»
+  UC5 ..> AccommodationAgent : «trace»
+  UC8 ..> DestinationGuideAgent : «trace»
+  UC9 ..> DiningAgent : «trace»
+  UC10 ..> TripPlan : «trace»
+```
+
+| Use case | «trace» → class | Owner |
+|---|---|---|
+| Set Preferences (Filter) | `MemoryStore` (writes long-term preferences) | E |
+| Submit Requirement (Chat) | `OrchestratorAgent` (parses into a brief) | E |
+| Generate Itinerary | `OrchestratorAgent.run` | A |
+| Confirm Key Itinerary (HITL) | `OrchestratorAgent.buildHitl` / `resume` | A |
+| Manage Budget | `CostAggregator.rollUp` | C |
+| Arrange Transportation | `TransportAgent` | B |
+| Arrange Accommodation | `AccommodationAgent` | C |
+| View Weather-based Clothing Recommendation | `DestinationGuideAgent` (LLM weather sub-function) | D |
+| View Food / Cuisine Recommendation | `DiningAgent` | D |
+| View Itinerary Output | `TripPlan` (rendered by the web `TripPanel`) | E |
+
+---
+
 ## Key associations & multiplicity
 
 Read *source → target*.
