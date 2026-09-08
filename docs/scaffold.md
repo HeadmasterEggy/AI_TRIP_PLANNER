@@ -10,10 +10,11 @@ The whole pipeline still runs end to end, so you can build your slice against a 
 - **Dependency injection**: agents receive `ctx.tools` (`ToolGateway`) and `ctx.mem`
   (`MemoryStore`) via `AgentContext`. Don't `import` the singletons — take them from
   `ctx` so your unit tests can pass fakes. Interfaces live in `packages/shared/src/ports.ts`.
-- **The K-round negotiation loop actually fires.** With `DEMO_BRIEF` the round-1
-  estimate is ~17% over budget, so `detectConflicts` asks the two priciest agents
-  (transport, accommodation) to cut; both have an example `revise()`; round 2
-  converges. `plan.round` shows how many rounds ran.
+- **The LangGraph K-round negotiation loop actually fires.** The compiled graph in
+  `packages/orchestrator/src/workflow.ts` makes dispatch, conflict detection, targeted revision and
+  aggregation observable nodes. With `DEMO_BRIEF` the round-1 estimate is ~17% over budget, so
+  `detectConflicts` asks the two priciest agents (transport, accommodation) to cut; their revisions
+  run in parallel; round 2 converges. `plan.round` shows how many rounds ran.
 - **`AgentName`** is a union of the 5 ids; `Agent` now has a `label` (the panel
   section title) so `SECTION_LABELS` is gone from the orchestrator.
 - **Chat contract**: `POST /api/chat` takes `ChatRequest` and returns `ChatResponse`
@@ -48,7 +49,7 @@ pnpm build
 | Path | Owner | Fill in |
 |---|---|---|
 | `packages/shared/src/**` | A | contracts — freeze early, announce changes |
-| `packages/orchestrator/src/index.ts` | A | real time/geo conflicts (budget already done), status promotion, richer HITL |
+| `packages/orchestrator/src/workflow.ts` | A | LangGraph workflow; add real time/geo conflicts, status promotion, richer HITL |
 | `apps/web/app/api/chat/route.ts` | A | chat → TripBrief (LLM), persist short-term memory (contract + loop wiring done) |
 | `packages/tools/src/gateway.ts` + `mock-server.mjs` | A | real-vs-mock routing |
 | `packages/agents/src/itinerary/**` | B | day-by-day plan |

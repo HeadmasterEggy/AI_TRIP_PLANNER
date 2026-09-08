@@ -21,7 +21,7 @@ or hits a red line it is escalated to the Human Founder. The final plan is shown
 ```mermaid
 flowchart TB
     U[User] <--> UI[Web UI: chat / filters / trip panel]
-    UI <--> ORC[OrchestratorAgent<br/>decompose · dispatch · conflict check · K-round negotiation · HITL / escalation · cost roll-up]
+    UI <--> ORC[LangGraph OrchestratorAgent<br/>typed state · parallel dispatch · conditional K-round negotiation · HITL / escalation · cost roll-up]
 
     ORC --> IT[ItineraryPlannerAgent]
     ORC --> TR[TransportAgent]
@@ -105,7 +105,8 @@ flowchart TB
 | Runtime | Node.js 22 LTS |
 | Monorepo / package manager | pnpm workspaces + Turborepo |
 | Web framework | Next.js 15 (App Router) — frontend + server-side agent logic in one deployable (Route Handlers / Server Actions) |
-| LLM / agents | Vercel AI SDK (`ai` + `@ai-sdk/anthropic`): tool calling + a hand-rolled orchestrator loop. Alternative: LangGraph.js if a graph-style control flow is needed |
+| Agent orchestration | **LangGraph.js** (`@langchain/langgraph`): typed graph state, parallel specialist dispatch, conditional conflict/revision loop |
+| LLM calls | Provider model adapters can be added inside graph nodes or specialist agents; the current deterministic mock flow requires no API key |
 | Contracts / validation | **Zod** — every inter-agent message and tool input/output |
 | State / memory | SQLite (`better-sqlite3`) or JSON files in dev; add Redis (optional in compose) if cross-request sharing is needed |
 | Testing | Vitest |
@@ -129,8 +130,8 @@ ai-trip-planner/
 │       └── components/               #   Header, FiltersPanel, ChatPanel, TripPanel, TripSection
 ├── packages/
 │   ├── shared/src/                   # Zod contracts + Agent / TripPlan types       (A)
-│   ├── orchestrator/src/             # OrchestratorAgent: negotiation loop,
-│   │                                 #   conflict detection, HITL, cost roll-up     (A)
+│   ├── orchestrator/src/             # LangGraph workflow: parallel dispatch,
+│   │                                 #   conflict loop, HITL, cost roll-up           (A)
 │   ├── agents/src/
 │   │   ├── itinerary/                #                                              (B)
 │   │   ├── transport/                #                                              (B)
@@ -253,6 +254,10 @@ Streaming can be added later without changing this shape.
 ---
 
 ## 5. Team roles
+
+> The five rows below are a coursework ownership and review plan, not a technical requirement.
+> The application runs as one deployable and can be developed by one person; in that case the same
+> interfaces still provide useful boundaries, but work is delivered vertically one feature at a time.
 
 Split by **module ownership** (each person owns one or two agents plus their tooling), **not** by
 frontend / backend / testing. Rationale, in course terms: each module maps to one area of
