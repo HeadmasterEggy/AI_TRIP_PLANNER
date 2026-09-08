@@ -53,6 +53,18 @@ flowchart TB
     ORC --> NOT
 ```
 
+### UML
+
+**UML (spine)** — the agent &amp; orchestration class model
+([`docs/diagrams/class-3-agents.svg`](docs/diagrams/class-3-agents.svg)):
+
+<img src="docs/diagrams/class-3-agents.svg" alt="UML class diagram — agents and orchestration" width="900">
+
+**UML (with all use cases)** — the same model with the ten use cases traced in via `«trace»`
+([`docs/diagrams/class-5-with-use-cases.svg`](docs/diagrams/class-5-with-use-cases.svg)):
+
+<img src="docs/diagrams/class-5-with-use-cases.svg" alt="UML class diagram with all ten use cases traced onto the agent and orchestration model" width="900">
+
 ### Agents
 
 | Layer | Name | Responsibility | Owner |
