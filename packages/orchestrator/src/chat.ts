@@ -41,6 +41,18 @@ const ModelPatchSchema = z.object({
   nationality: z.string().trim().min(1).nullable(),
 });
 
+// OpenAI strict JSON Schema does not accept a tuple whose array items are
+// primitive values. Keep the public TripBrief contract unchanged and use two
+// scalar date fields only for the GPT wire format.
+const OpenAIModelPatchSchema = z.object({
+  destination: z.string().trim().min(1).nullable(),
+  startDate: z.string().regex(ISO_DATE).nullable(),
+  endDate: z.string().regex(ISO_DATE).nullable(),
+  groupSize: z.number().int().positive().nullable(),
+  budgetTotal: z.number().positive().nullable(),
+  nationality: z.string().trim().min(1).nullable(),
+});
+
 function validDate(value: string): boolean {
   const time = Date.parse(`${value}T00:00:00.000Z`);
   return (
@@ -160,17 +172,21 @@ function createOpenAIExtractor(): BriefExtractor | undefined {
       baseURL: process.env.GPT_BASE_URL || "https://api.openai.com/v1",
     },
   });
-  const structured = model.withStructuredOutput(ModelPatchSchema, {
+  const structured = model.withStructuredOutput(OpenAIModelPatchSchema, {
     name: "TripBriefPatch",
-    method: "functionCalling",
+    method: "jsonSchema",
     strict: true,
   });
   return {
     async extract(message, current) {
       const result = await structured.invoke(extractionPrompt(message, current));
-      return BriefPatchSchema.parse(
-        Object.fromEntries(Object.entries(result).filter(([, value]) => value !== null)),
-      );
+      const { startDate, endDate, ...fields } = result;
+      const patch: BriefPatch = {};
+      for (const [key, value] of Object.entries(fields)) {
+        if (value !== null) patch[key as keyof BriefPatch] = value as never;
+      }
+      if (startDate !== null && endDate !== null) patch.dates = [startDate, endDate];
+      return BriefPatchSchema.parse(patch);
     },
   };
 }
