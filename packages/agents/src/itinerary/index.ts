@@ -1,4 +1,3 @@
-import { ChatOpenAI } from "@langchain/openai";
 import {
   TripBrief as TripBriefSchema,
   type Agent,
@@ -10,6 +9,7 @@ import {
   type UserPreference,
 } from "@trip/shared";
 import { z } from "zod/v4";
+import { createRoutedChatModel } from "../models";
 
 const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
 const MODEL_ACTIVITY_BUDGET_SHARE = 0.4;
@@ -124,20 +124,8 @@ function fallbackDraft(brief: TripBrief, days: number, places: Place[]): Itinera
 }
 
 function createDeepSeekGenerator(): ItineraryGenerator | undefined {
-  const apiKey = process.env.DEEPSEEK_API_KEY;
-  if (!apiKey) return undefined;
-  const model = new ChatOpenAI({
-    apiKey,
-    model: process.env.DEEPSEEK_MODEL || "deepseek-v4-flash",
-    temperature: 0,
-    streamUsage: false,
-    // DeepSeek V4 enables thinking by default, but its thinking mode rejects
-    // the tool_choice used by LangChain structured output.
-    modelKwargs: { thinking: { type: "disabled" } },
-    configuration: {
-      baseURL: process.env.DEEPSEEK_BASE_URL || "https://api.deepseek.com",
-    },
-  });
+  const model = createRoutedChatModel("itinerary");
+  if (!model) return undefined;
   const structured = model.withStructuredOutput(ItineraryDraft, {
     name: "TripItineraryDraft",
     method: "functionCalling",
