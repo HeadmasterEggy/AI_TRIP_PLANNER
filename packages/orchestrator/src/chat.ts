@@ -160,8 +160,10 @@ function createOpenAIExtractor(): BriefExtractor | undefined {
 
   // GPT is used for short, high-precision intent extraction. `max` is accepted
   // as a product-level setting and mapped to the API's highest supported effort.
-  const configuredEffort = process.env.GPT_REASONING_EFFORT || "high";
-  const reasoningEffort = configuredEffort === "max" ? "high" : configuredEffort;
+  const configuredEffort = (process.env.GPT_REASONING_EFFORT || "high").toLowerCase();
+  const allowed = new Set(["low", "medium", "high", "max"]);
+  const safeEffort = allowed.has(configuredEffort) ? configuredEffort : "high";
+  const reasoningEffort = safeEffort === "max" ? "high" : safeEffort;
   const model = new ChatOpenAI({
     apiKey,
     model: process.env.GPT_MODEL || "gpt-5.6-luna",
