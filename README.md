@@ -21,7 +21,7 @@ or hits a red line it is escalated to the Human Founder. The final plan is shown
 ```mermaid
 flowchart TB
     U[User] <--> UI[Web UI: chat / filters / trip panel]
-    UI <--> ORC[OrchestratorAgent<br/>decompose · dispatch · conflict check · K-round negotiation · HITL / escalation · cost roll-up]
+    UI <--> ORC[LangGraph OrchestratorAgent<br/>typed state · parallel dispatch · conditional K-round negotiation · HITL / escalation · cost roll-up]
 
     ORC --> IT[ItineraryPlannerAgent]
     ORC --> TR[TransportAgent]
@@ -38,7 +38,7 @@ flowchart TB
     subgraph TOOLS[ToolGateway: external tool adapters]
       MAPS[(Maps / Places API · mock)]
       BOOK[(Booking / Price API · mock)]
-      LLM[(Claude · AI SDK)]
+      LLM[(Claude / DeepSeek · LangChain)]
     end
 
     IT --> MEM
@@ -70,8 +70,8 @@ flowchart TB
 | Layer | Name | Responsibility | Owner |
 |---|---|---|---|
 | Orchestrator | `OrchestratorAgent` | chat intake, requirement decomposition, task dispatch, proposal aggregation, conflict detection, up-to-K=3 revision rounds, **all HITL and escalation**, cost roll-up | A |
-| Specialist | `ItineraryPlannerAgent` | day-by-day plan, pacing from dates/group/prefs, holiday closures, activity ordering | B |
-| Specialist | `TransportAgent` | inter-city + local transport options, timing, price ranges | B |
+| Specialist | `ItineraryPlannerAgent` | structured day-by-day schedule, pacing from dates/group/prefs, model-backed drafting with deterministic fallback, route-feasibility checks | B |
+| Specialist | `TransportAgent` | group flight pricing, inter-city/local routes, explicit timing, budget and schedule revisions | B |
 | Specialist | `AccommodationAgent` | lodging search and comparison, individual / group room allocation | C |
 | Specialist | `DestinationGuideAgent` | attractions, local customs, safety, visa / vaccine by nationality; **+ weather and packing advice as an LLM sub-function (no weather API)** | D |
 | Specialist | `DiningAgent` | cuisine recommendations, dietary restrictions | D |
@@ -89,7 +89,7 @@ flowchart TB
 
 ### External tools / systems
 
-- **LLM** — Claude, via Vercel AI SDK (`@ai-sdk/anthropic`); API key provided by the course
+- **LLM** — GPT (preferred) or Claude for chat extraction via LangChain structured output; DeepSeek V4 Flash for itinerary drafting; deterministic fallbacks keep the flow usable without API keys
 - **Maps / Places API** — routes and price info, mockable
 - **Booking / Price API** — lodging / flight pricing, **mock**; real payment is out of scope
 - No weather API — weather advice is an LLM sub-function inside `DestinationGuideAgent`
@@ -117,7 +117,8 @@ flowchart TB
 | Runtime | Node.js 22 LTS |
 | Monorepo / package manager | pnpm workspaces + Turborepo |
 | Web framework | Next.js 15 (App Router) — frontend + server-side agent logic in one deployable (Route Handlers / Server Actions) |
-| LLM / agents | Vercel AI SDK (`ai` + `@ai-sdk/anthropic`): tool calling + a hand-rolled orchestrator loop. Alternative: LangGraph.js if a graph-style control flow is needed |
+| Agent orchestration | **LangGraph.js** (`@langchain/langgraph`): typed graph state, parallel specialist dispatch, conditional conflict/revision loop |
+| LLM calls | LangChain `ChatAnthropic.withStructuredOutput()` extracts chat updates; `ChatOpenAI` targets DeepSeek's OpenAI-compatible endpoint for itinerary drafts; both have validated deterministic fallbacks |
 | Contracts / validation | **Zod** — every inter-agent message and tool input/output |
 | State / memory | SQLite (`better-sqlite3`) or JSON files in dev; add Redis (optional in compose) if cross-request sharing is needed |
 | Testing | Vitest |
@@ -128,7 +129,9 @@ flowchart TB
 
 ## 3. Repository structure
 
-The scaffold is in place — every module is a stub with a `TODO(owner)` marker.
+The end-to-end scaffold now includes LangGraph orchestration, incremental chat intake,
+and working itinerary, transport, and accommodation agents. Destination-guide, dining,
+and the external tool adapters remain explicit `TODO(owner)` mocks.
 See [`docs/scaffold.md`](docs/scaffold.md) for the full "who codes where" map, and
 [`docs/class-diagram.md`](docs/class-diagram.md) for the design-time UML class model
 (ELEC5620 Lab 4 Part 2).
@@ -141,11 +144,11 @@ ai-trip-planner/
 │       └── components/               #   Header, FiltersPanel, ChatPanel, TripPanel, TripSection
 ├── packages/
 │   ├── shared/src/                   # Zod contracts + Agent / TripPlan types       (A)
-│   ├── orchestrator/src/             # OrchestratorAgent: negotiation loop,
-│   │                                 #   conflict detection, HITL, cost roll-up     (A)
+│   ├── orchestrator/src/             # LangGraph workflow: parallel dispatch,
+│   │                                 #   conflict loop, HITL, cost roll-up           (A)
 │   ├── agents/src/
-│   │   ├── itinerary/                #                                              (B)
-│   │   ├── transport/                #                                              (B)
+│   │   ├── itinerary/                # model/fallback daily schedule + route checks (B)
+│   │   ├── transport/                # flight/route estimates + timed legs           (B)
 │   │   ├── accommodation/            #                                              (C)
 │   │   ├── destination-guide/        # incl. weather / packing sub-function         (D)
 │   │   └── dining/                   #                                              (D)
@@ -213,6 +216,9 @@ export const AgentProposal = z.object({
     detail: z.string(),
     estCost: z.number().nonnegative().optional(), // USD, whole trip (not per-person) — frozen by A
     day: z.number().int().optional(),
+    startTime: z.string().optional(),             // HH:mm; schedule fields are optional as a group
+    endTime: z.string().optional(),
+    location: z.string().optional(),
   })),
   assumptions: z.array(z.string()),
   conflictsWith: z.array(z.string()).default([]),
@@ -254,17 +260,28 @@ The web client talks to the server through one contract
 (`packages/shared/src/chat.ts`):
 
 ```ts
-export const ChatRequest  = z.object({ tripId: z.string(), message: z.string().min(1) });
+export const ChatRequest = z.object({
+  tripId: z.string(),
+  message: z.string().min(1),
+  brief: TripBrief.optional(),
+});
 export const ChatResponse = z.object({ reply: z.string(), plan: TripPlan });
 ```
 
-`POST /api/chat` takes a `ChatRequest`, re-runs the orchestrator, returns a
-`ChatResponse`; the client holds `plan` in React state and swaps it on each reply.
+`POST /api/chat` takes a `ChatRequest`, extracts explicit changes into a validated
+`TripBrief`, re-runs the orchestrator, and returns a `ChatResponse`. The browser sends
+the latest brief with each request so incremental updates also work in a serverless
+runtime; older clients may omit it and start from `DEMO_BRIEF`. The client holds
+`plan` in React state and swaps it on each reply.
 Streaming can be added later without changing this shape.
 
 ---
 
 ## 5. Team roles
+
+> The five rows below are a coursework ownership and review plan, not a technical requirement.
+> The application runs as one deployable and can be developed by one person; in that case the same
+> interfaces still provide useful boundaries, but work is delivered vertically one feature at a time.
 
 Split by **module ownership** (each person owns one or two agents plus their tooling), **not** by
 frontend / backend / testing. Rationale, in course terms: each module maps to one area of

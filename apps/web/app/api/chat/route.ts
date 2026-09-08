@@ -1,12 +1,6 @@
-// Owner: A — the chat entry point.
-// Contract: POST ChatRequest -> ChatResponse (both in @trip/shared).
-// TODO(A):
-//   1. read short-term memory for this trip (ctx.mem)
-//   2. use an LLM to turn `message` into / update a TripBrief
-//   3. run the loop, persist, return the fresh plan
 import { NextResponse } from "next/server";
-import { runOrchestrator, DEMO_BRIEF } from "@trip/orchestrator";
-import { ChatRequest, type ChatResponse } from "@trip/shared";
+import { runTripChat } from "@trip/orchestrator";
+import { ChatRequest, ChatResponse } from "@trip/shared";
 
 export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}));
@@ -15,13 +9,13 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "invalid ChatRequest" }, { status: 400 });
   }
 
-  // TODO(A): parse parsed.data.message into a TripBrief via the LLM + short-term
-  // memory. For now every message just re-runs the demo brief.
-  const plan = await runOrchestrator({ ...DEMO_BRIEF, tripId: parsed.data.tripId });
-
-  const res: ChatResponse = {
-    reply: `Ran the orchestrator (${plan.round} round${plan.round > 1 ? "s" : ""}). Wire real chat parsing in apps/web/app/api/chat/route.ts (A).`,
-    plan,
-  };
-  return NextResponse.json(res);
+  try {
+    return NextResponse.json(ChatResponse.parse(await runTripChat(parsed.data)));
+  } catch (error) {
+    console.error("[chat] planning failed", error);
+    return NextResponse.json(
+      { error: "Unable to update this trip. Check the request and try again." },
+      { status: 422 },
+    );
+  }
 }

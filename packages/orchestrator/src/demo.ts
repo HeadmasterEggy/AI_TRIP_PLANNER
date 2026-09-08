@@ -1,7 +1,7 @@
 import type { TripBrief } from "@trip/shared";
 
-// Used by the web app for first render until real chat parsing exists.
-// TODO(A): replace with a TripBrief built from the chat + short-term memory.
+// Used for the web app's first render and as a backward-compatible chat baseline
+// when a client does not yet send its latest TripBrief.
 export const DEMO_BRIEF: TripBrief = {
   tripId: "demo-trip",
   userId: "demo-user",

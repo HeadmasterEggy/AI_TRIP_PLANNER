@@ -1,53 +1,145 @@
-// Owner: B — TransportAgent
-// TODO(B): inter-city + local transport options, timing, price ranges.
-//   - call `ctx.tools.maps.route(...)`
-//   - expose a time/geo conflict-check helper the Orchestrator can call
-//   - flesh out revise() for real (right now it just drops to a cheaper mode)
+import {
+  TripBrief as TripBriefSchema,
+  type Agent,
+  type AgentContext,
+  type AgentProposal,
+  type RevisionRequest,
+  type TripBrief,
+} from "@trip/shared";
 
-import type { Agent, AgentProposal, TripBrief, AgentContext, RevisionRequest } from "@trip/shared";
+const DAY_MS = 86_400_000;
+
+function tripDays([start, end]: [string, string]): number {
+  const days = Math.round((Date.parse(end) - Date.parse(start)) / DAY_MS);
+  if (!Number.isSafeInteger(days) || days < 1) throw new Error("Transport requires ordered dates.");
+  return days;
+}
+
+function cities(destination: string): string[] {
+  const result = destination
+    .split(/\s*&\s*/)
+    .map((city) => city.trim())
+    .filter(Boolean);
+  if (!result.length) throw new Error("Transport requires at least one destination.");
+  return result;
+}
+
+function clock(totalMinutes: number): string {
+  if (totalMinutes < 0 || totalMinutes >= 24 * 60) {
+    throw new Error("A transport leg cannot fit inside one planning day.");
+  }
+  return `${String(Math.floor(totalMinutes / 60)).padStart(2, "0")}:${String(totalMinutes % 60).padStart(2, "0")}`;
+}
+
+async function planTransport(
+  briefInput: TripBrief,
+  ctx: AgentContext,
+  revision?: RevisionRequest,
+): Promise<AgentProposal> {
+  ctx.signal?.throwIfAborted();
+  const brief = TripBriefSchema.parse(briefInput);
+  const destinations = cities(brief.destination);
+  const days = tripDays(brief.dates);
+  const preferences = await ctx.mem.getLongTerm(brief.userId);
+  const origin =
+    preferences.find((preference) => preference.key === "transport.origin")?.value.trim() ||
+    "Sydney";
+  const budgetRevision =
+    revision !== undefined &&
+    /budget|cost|cheaper|overrun/i.test([revision.reason, ...revision.constraints].join(" "));
+  const scheduleRevision = revision !== undefined && /time|overlap|schedule/i.test(revision.reason);
+
+  const routeQueries = destinations.slice(1).map((destination, index) => ({
+    from: destinations[index]!,
+    to: destination,
+    date: brief.dates[0],
+    day: Math.min(days, Math.floor((days * (index + 1)) / destinations.length) + 1),
+  }));
+  if (origin.toLowerCase() === destinations[0]!.toLowerCase() && routeQueries.length === 0) {
+    routeQueries.push({
+      from: `${destinations[0]} airport`,
+      to: destinations[0]!,
+      date: brief.dates[0],
+      day: 1,
+    });
+  }
+
+  const [flightOptions, routed] = await Promise.all([
+    origin.toLowerCase() === destinations[0]!.toLowerCase()
+      ? Promise.resolve([])
+      : ctx.tools.booking.searchFlights({
+          from: origin,
+          to: destinations[0]!,
+          depart: brief.dates[0],
+          return: brief.dates[1],
+          passengers: brief.groupSize,
+        }),
+    Promise.all(
+      routeQueries.map(async (query) => ({ query, legs: await ctx.tools.maps.route(query) })),
+    ),
+  ]);
+  ctx.signal?.throwIfAborted();
+
+  const flight = flightOptions.length
+    ? budgetRevision
+      ? [...flightOptions].sort((left, right) => left.priceUsd - right.priceUsd)[0]
+      : (flightOptions.find((option) => /flex/i.test(option.carrier)) ?? flightOptions[0])
+    : undefined;
+  const routeStart = scheduleRevision ? 6 * 60 : 9 * 60;
+  const routeItems = routed.flatMap(({ query, legs }) => {
+    let cursor = routeStart;
+    return legs.map((leg) => {
+      const startTime = clock(cursor);
+      cursor += leg.durationMin;
+      const endTime = clock(cursor);
+      return {
+        kind: "transport",
+        day: query.day,
+        startTime,
+        endTime,
+        location: `${query.from} → ${query.to}`,
+        detail: `${leg.mode} from ${query.from} to ${query.to}; ${leg.durationMin} minutes${leg.note ? `; ${leg.note}` : ""}.`,
+        estCost: leg.priceUsd,
+      };
+    });
+  });
+  const items = [
+    ...(flight
+      ? [
+          {
+            kind: "transport",
+            day: 1,
+            location: `${origin} → ${destinations[0]}`,
+            detail: `${flight.carrier}: ${origin} to ${destinations[0]}, returning ${brief.dates[1]}; whole-group fare${flight.note ? `; ${flight.note}` : ""}.`,
+            estCost: flight.priceUsd,
+          },
+        ]
+      : []),
+    ...routeItems,
+  ];
+  const total = items.reduce((sum, item) => sum + item.estCost, 0);
+  return {
+    agent: "transport",
+    summary: `${items.length} transport option(s) for ${origin} ↔ ${destinations.join(" → ")} · USD ${total.toFixed(2)}`,
+    items,
+    assumptions: [
+      `Origin defaults to Sydney unless long-term preference "transport.origin" is set; current origin: ${origin}.`,
+      "Injected booking and maps results are treated as estimates, not reservations or live availability.",
+      ...(budgetRevision ? ["Budget revision selected the lowest returned flight fare."] : []),
+      ...(scheduleRevision ? ["Schedule revision moved routed legs to an early departure."] : []),
+    ],
+    conflictsWith: [],
+  };
+}
 
 export const transportAgent: Agent = {
   name: "transport",
   label: "Getting around",
-
-  async run(brief: TripBrief, ctx: AgentContext): Promise<AgentProposal> {
-    // demo: flights + rail — deliberately pricey so the budget loop has
-    // something to trim in round 2.
-    const legs = await ctx.tools.maps.route({ from: "home", to: brief.destination });
-    const railCost = legs.reduce((s, l) => s + l.priceUsd, 0);
-    return {
-      agent: "transport",
-      summary: `Getting around ${brief.destination} — STUB (flights + rail)`,
-      items: [
-        { kind: "transport", detail: "TODO(B): real transport options", estCost: 1800 + railCost },
-      ],
-      assumptions: ["STUB IMPLEMENTATION — replace in packages/agents/src/transport"],
-      conflictsWith: [],
-    };
-  },
-
-  // Example revise(): a budget cut swaps the pricey option for a cheaper one.
-  // TODO(B): real re-planning against req.constraints (mode, timing, comfort).
-  async revise(
-    brief: TripBrief,
-    _ctx: AgentContext,
-    req: RevisionRequest,
-  ): Promise<AgentProposal> {
-    const budgetCut = /budget/i.test(req.reason);
-    return {
-      agent: "transport",
-      summary: budgetCut
-        ? `Getting around ${brief.destination} — STUB (rail only, cheaper)`
-        : `Getting around ${brief.destination} — STUB (revised)`,
-      items: [
-        {
-          kind: "transport",
-          detail: "TODO(B): cheaper transport plan",
-          estCost: budgetCut ? 700 : 1800,
-        },
-      ],
-      assumptions: [`revised for: ${req.reason}`],
-      conflictsWith: [],
-    };
+  run: (brief, ctx) => planTransport(brief, ctx),
+  async revise(brief, ctx, request: RevisionRequest) {
+    if (request.tripId !== brief.tripId || request.targetAgent !== "transport") {
+      throw new Error("Transport revision must target this trip and agent.");
+    }
+    return planTransport(brief, ctx, request);
   },
 };

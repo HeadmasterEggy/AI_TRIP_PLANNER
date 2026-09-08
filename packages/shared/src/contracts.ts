@@ -47,9 +47,9 @@ export const ProposalItem = z
     location: z.string().trim().min(1).optional(),
   })
   // `.check()` (Zod 4's superRefine) keeps this a plain object, so B/C/D/E can
-  // still `.extend()` / `.pick()` it. Two cross-field rules:
+  // still `.extend()` / `.pick()` it. Three cross-field rules:
   .check((ctx) => {
-    const { startTime, endTime } = ctx.value;
+    const { day, startTime, endTime } = ctx.value;
     if (Boolean(startTime) !== Boolean(endTime)) {
       ctx.issues.push({
         code: "custom",
@@ -63,6 +63,14 @@ export const ProposalItem = z
         message: "endTime must be after startTime on the same day",
         input: ctx.value,
         path: ["endTime"],
+      });
+    }
+    if (startTime && day === undefined) {
+      ctx.issues.push({
+        code: "custom",
+        message: "day must be provided when startTime/endTime are set",
+        input: ctx.value,
+        path: ["day"],
       });
     }
   });
