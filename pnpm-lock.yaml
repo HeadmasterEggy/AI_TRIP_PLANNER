@@ -97,6 +97,9 @@ importers:
       '@langchain/langgraph':
         specifier: ^1.4.14
         version: 1.4.14(@langchain/core@1.2.9(openai@7.10.0(zod@4.5.4)))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(zod@4.5.4)
+      '@langchain/openai':
+        specifier: ^1.5.11
+        version: 1.5.11(@langchain/core@1.2.9(openai@7.10.0(zod@4.5.4)))
       '@trip/agents':
         specifier: workspace:*
         version: link:../agents

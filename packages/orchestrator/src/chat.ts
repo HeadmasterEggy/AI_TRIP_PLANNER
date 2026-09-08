@@ -1,4 +1,5 @@
 import { ChatAnthropic } from "@langchain/anthropic";
+import { ChatOpenAI } from "@langchain/openai";
 import { memory } from "@trip/services";
 import {
   ChatTurn,
@@ -137,7 +138,44 @@ export function applyBriefPatch(current: TripBrief, patch: BriefPatch, tripId: s
   return next;
 }
 
-function createLangChainExtractor(): BriefExtractor | undefined {
+function extractionPrompt(message: string, current: TripBrief): string {
+  return `Extract only explicit updates to the trip brief. Use null for every field the user did not specify. Do not infer dates, nationality, group size, destination, or budget. Budget is total USD. Dates must be YYYY-MM-DD.\n\nCurrent brief:\n${JSON.stringify(current)}\n\nUser message:\n${message}`;
+}
+
+function createOpenAIExtractor(): BriefExtractor | undefined {
+  const apiKey = process.env.GPT_API_KEY || process.env.OPENAI_API_KEY;
+  if (!apiKey) return undefined;
+
+  // GPT is used for short, high-precision intent extraction. `max` is accepted
+  // as a product-level setting and mapped to the API's highest supported effort.
+  const configuredEffort = process.env.GPT_REASONING_EFFORT || "high";
+  const reasoningEffort = configuredEffort === "max" ? "high" : configuredEffort;
+  const model = new ChatOpenAI({
+    apiKey,
+    model: process.env.GPT_MODEL || "gpt-5.6-luna",
+    reasoning: { effort: reasoningEffort as "low" | "medium" | "high" },
+    maxTokens: 512,
+    streamUsage: false,
+    configuration: {
+      baseURL: process.env.GPT_BASE_URL || "https://api.openai.com/v1",
+    },
+  });
+  const structured = model.withStructuredOutput(ModelPatchSchema, {
+    name: "TripBriefPatch",
+    method: "functionCalling",
+    strict: true,
+  });
+  return {
+    async extract(message, current) {
+      const result = await structured.invoke(extractionPrompt(message, current));
+      return BriefPatchSchema.parse(
+        Object.fromEntries(Object.entries(result).filter(([, value]) => value !== null)),
+      );
+    },
+  };
+}
+
+function createAnthropicExtractor(): BriefExtractor | undefined {
   if (!process.env.ANTHROPIC_API_KEY) return undefined;
   const model = new ChatAnthropic({
     apiKey: process.env.ANTHROPIC_API_KEY,
@@ -151,14 +189,18 @@ function createLangChainExtractor(): BriefExtractor | undefined {
   });
   return {
     async extract(message, current) {
-      const result = await structured.invoke(
-        `Extract only explicit updates to the trip brief. Use null for every field the user did not specify. Do not infer dates, nationality, group size, destination, or budget. Budget is total USD. Dates must be YYYY-MM-DD.\n\nCurrent brief:\n${JSON.stringify(current)}\n\nUser message:\n${message}`,
-      );
+      const result = await structured.invoke(extractionPrompt(message, current));
       return BriefPatchSchema.parse(
         Object.fromEntries(Object.entries(result).filter(([, value]) => value !== null)),
       );
     },
   };
+}
+
+function createLangChainExtractor(): BriefExtractor | undefined {
+  // Prefer the GPT profile for chat/intent extraction, then preserve the
+  // existing Anthropic profile for teams that still configure that provider.
+  return createOpenAIExtractor() ?? createAnthropicExtractor();
 }
 
 async function extractPatch(
