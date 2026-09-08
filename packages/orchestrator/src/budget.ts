@@ -20,8 +20,17 @@ export function sumUsd(amounts: number[]): number {
   return total / 100;
 }
 
+/**
+ * A single agent returning a nonsense `estCost` (negative / NaN / Infinity) must
+ * not throw and take down the whole plan. Treat it as 0 — the proposal `detail`
+ * still records what the agent actually proposed, and the section shows $0.
+ */
+function safeCost(value: number | undefined): number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : 0;
+}
+
 export function costOf(proposal: AgentProposal): number {
-  return sumUsd(proposal.items.map((item) => item.estCost ?? 0));
+  return sumUsd(proposal.items.map((item) => safeCost(item.estCost)));
 }
 
 export function assessBudget(
