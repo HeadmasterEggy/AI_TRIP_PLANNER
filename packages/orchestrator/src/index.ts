@@ -16,15 +16,20 @@ import type {
 import { allAgents } from "@trip/agents";
 import { createToolGateway } from "@trip/tools";
 import { memory } from "@trip/services";
+import {
+  assessBudget,
+  costOf,
+  rollUpCost,
+  NEGOTIATION_OVERRUN_PCT,
+  ESCALATION_OVERRUN_PCT,
+} from "./budget";
 
 export { DEMO_BRIEF } from "./demo";
+export { rollUpCost } from "./budget";
 
 const MAX_ROUNDS = 3; // K
-// TODO(C): tune the escalation threshold — % over budget that needs a human.
-const ESCALATION_OVERRUN_PCT = 10;
 
 const AGENT_BY_NAME = new Map(allAgents.map((a) => [a.name, a]));
-const costOf = (p: AgentProposal) => p.items.reduce((s, i) => s + (i.estCost ?? 0), 0);
 
 export async function runOrchestrator(brief: TripBrief): Promise<TripPlan> {
   // One shared tool gateway + memory store for the whole run, injected into
@@ -75,10 +80,8 @@ export async function runOrchestrator(brief: TripBrief): Promise<TripPlan> {
 //          RevisionRequest per affected agent.
 // ---------------------------------------------------------------------------
 export function detectConflicts(proposals: AgentProposal[], brief: TripBrief): RevisionRequest[] {
-  const estTotal = proposals.reduce((s, p) => s + costOf(p), 0);
-  const overrunPct =
-    brief.budgetTotal > 0 ? ((estTotal - brief.budgetTotal) / brief.budgetTotal) * 100 : 0;
-  if (overrunPct <= ESCALATION_OVERRUN_PCT) return [];
+  const { overrunPct } = assessBudget(proposals.map(costOf), brief.budgetTotal);
+  if (overrunPct <= NEGOTIATION_OVERRUN_PCT) return [];
 
   return [...proposals]
     .filter((p) => costOf(p) > 0)
@@ -87,7 +90,7 @@ export function detectConflicts(proposals: AgentProposal[], brief: TripBrief): R
     .map((p) => ({
       tripId: brief.tripId,
       targetAgent: p.agent,
-      reason: `plan is ${Math.round(overrunPct)}% over budget`,
+      reason: `plan is ${overrunPct.toFixed(2)}% over budget`,
       constraints: [`cut ${p.agent} cost by ~30%`],
     }));
 }
@@ -121,16 +124,6 @@ function toSection(p: AgentProposal, unresolved: RevisionRequest[]): TripSection
   };
 }
 
-// The one bit of real logic: add up the sections and compare to the budget.
-export function rollUpCost(
-  sections: TripSection[],
-  budgetTotal: number,
-): { estTotal: number; overrunPct: number } {
-  const estTotal = Math.round(sections.reduce((sum, s) => sum + s.estCost, 0));
-  const overrunPct = budgetTotal > 0 ? Math.round(((estTotal - budgetTotal) / budgetTotal) * 100) : 0;
-  return { estTotal, overrunPct };
-}
-
 // TODO(A): richer HITL — per-section confirm, hotel-picker payload, resume tokens.
 function buildHitl(brief: TripBrief, overrunPct: number, unresolved: boolean): HitlCheckpoint[] {
   const items: HitlCheckpoint[] = [
@@ -149,7 +142,7 @@ function buildHitl(brief: TripBrief, overrunPct: number, unresolved: boolean): H
       title: "Needs a human decision",
       detail: unresolved
         ? `Agents did not converge within ${MAX_ROUNDS} rounds.`
-        : `Plan is ${overrunPct}% over budget.`,
+        : `Plan is ${overrunPct.toFixed(2)}% over budget.`,
       status: "pending",
     });
   }
