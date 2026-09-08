@@ -14,6 +14,10 @@ or hits a red line it is escalated to the Human Founder. The final plan is shown
 > diagrams, use cases): the Google Doc *ELEC5620 Project1--docs*. This README only covers *how we
 > build together*; it does not repeat the architecture modelling.
 
+**🚀 Live demo:** [elec5620-ai-trip-planner.vercel.app](https://elec5620-ai-trip-planner.vercel.app)
+— auto-deploys from `main` on every merge. This is the one canonical deployment for the team; please
+don't link any other Vercel URL in submissions or demos.
+
 ---
 
 ## 1. Architecture overview
