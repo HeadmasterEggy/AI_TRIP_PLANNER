@@ -32,32 +32,47 @@ export type TripBrief = z.infer<typeof TripBrief>;
 // AgentProposal — what every specialist agent returns for one round.
 // The `estCost` rule (currency = USD, whole trip not per-person) is frozen by A.
 // ---------------------------------------------------------------------------
+const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
+
 export const ProposalItem = z
   .object({
     kind: z.string(), // "transport" | "hotel" | "activity" | "meal" | "note" ...
     detail: z.string(),
     estCost: z.number().nonnegative().optional(),
     day: z.number().int().optional(),
-    // Optional schedule metadata lets the orchestrator detect cross-agent time
-    // conflicts without parsing human-readable detail strings.
-    startTime: z
-      .string()
-      .regex(/^([01]\d|2[0-3]):[0-5]\d$/)
-      .optional(),
-    endTime: z
-      .string()
-      .regex(/^([01]\d|2[0-3]):[0-5]\d$/)
-      .optional(),
+    // Optional schedule metadata: lets the orchestrator detect cross-agent time
+    // conflicts without parsing human-readable `detail` strings.
+    startTime: z.string().regex(HHMM, "startTime must be HH:MM (24h)").optional(),
+    endTime: z.string().regex(HHMM, "endTime must be HH:MM (24h)").optional(),
     location: z.string().trim().min(1).optional(),
   })
-  .refine((item) => Boolean(item.startTime) === Boolean(item.endTime), {
-    message: "startTime and endTime must be provided together",
-  })
-  .refine((item) => !item.startTime || item.day !== undefined, {
-    message: "day must be provided when startTime/endTime are set",
-  })
-  .refine((item) => !item.startTime || !item.endTime || item.startTime < item.endTime, {
-    message: "endTime must be after startTime on the same day",
+  // `.check()` (Zod 4's superRefine) keeps this a plain object, so B/C/D/E can
+  // still `.extend()` / `.pick()` it. Three cross-field rules:
+  .check((ctx) => {
+    const { day, startTime, endTime } = ctx.value;
+    if (Boolean(startTime) !== Boolean(endTime)) {
+      ctx.issues.push({
+        code: "custom",
+        message: "startTime and endTime must be provided together",
+        input: ctx.value,
+        path: [startTime ? "endTime" : "startTime"],
+      });
+    } else if (startTime && endTime && startTime >= endTime) {
+      ctx.issues.push({
+        code: "custom",
+        message: "endTime must be after startTime on the same day",
+        input: ctx.value,
+        path: ["endTime"],
+      });
+    }
+    if (startTime && day === undefined) {
+      ctx.issues.push({
+        code: "custom",
+        message: "day must be provided when startTime/endTime are set",
+        input: ctx.value,
+        path: ["day"],
+      });
+    }
   });
 export type ProposalItem = z.infer<typeof ProposalItem>;
 
