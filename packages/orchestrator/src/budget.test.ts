@@ -45,9 +45,12 @@ describe("budget calculations", () => {
     expect(() => assessBudget([100], budget)).toThrow();
   });
 
-  it.each([-1, NaN, Infinity])("rejects an invalid cost passed directly to assessBudget: %s", (cost) => {
-    expect(() => assessBudget([cost], 1000)).toThrow();
-  });
+  it.each([-1, NaN, Infinity])(
+    "rejects an invalid cost passed directly to assessBudget: %s",
+    (cost) => {
+      expect(() => assessBudget([cost], 1000)).toThrow();
+    },
+  );
 
   it.each([-1, NaN, Infinity, undefined])(
     "costOf treats a bad estCost from one agent as 0 instead of throwing: %s",
@@ -82,10 +85,11 @@ describe("budget calculations", () => {
 });
 
 describe("accommodation integration with negotiation", () => {
-  it("preserves the demo's round-2 convergence using selected hotel prices", async () => {
+  it("converges with selected hotel prices and the dining budget envelope", async () => {
     const plan = await runOrchestrator(DEMO_BRIEF);
     expect(plan.round).toBe(2);
-    expect(plan.estTotal).toBe(3230);
+    expect(plan.estTotal).toBe(3930);
+    expect(plan.sections.find((section) => section.id === "dining")!.estCost).toBe(700);
     expect(plan.sections.find((section) => section.id === "accommodation")!.estCost).toBe(1480);
     expect(plan.hitl.some((checkpoint) => checkpoint.type === "escalation")).toBe(false);
     expect(plan.sections.every((section) => section.status === "draft")).toBe(true);
@@ -94,7 +98,7 @@ describe("accommodation integration with negotiation", () => {
   it("stops at K=3 and escalates when the cheapest valid plan is still too expensive", async () => {
     const plan = await runOrchestrator({ ...DEMO_BRIEF, budgetTotal: 1200 });
     expect(plan.round).toBe(3);
-    expect(plan.estTotal).toBe(3230);
+    expect(plan.estTotal).toBe(3470);
     expect(plan.hitl.some((checkpoint) => checkpoint.type === "escalation")).toBe(true);
     expect(plan.sections.find((section) => section.id === "accommodation")!.status).toBe(
       "needs_you",
@@ -102,7 +106,7 @@ describe("accommodation integration with negotiation", () => {
   });
 
   it("also escalates an unresolved sub-10% overrun instead of silently accepting it", async () => {
-    const plan = await runOrchestrator({ ...DEMO_BRIEF, budgetTotal: 3000 });
+    const plan = await runOrchestrator({ ...DEMO_BRIEF, budgetTotal: 3800 });
     expect(plan.round).toBe(3);
     expect(plan.overrunPct).toBeGreaterThan(0);
     expect(plan.overrunPct).toBeLessThan(10);

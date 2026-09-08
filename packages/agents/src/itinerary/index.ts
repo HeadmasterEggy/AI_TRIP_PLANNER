@@ -1,4 +1,3 @@
-import { ChatOpenAI } from "@langchain/openai";
 import {
   TripBrief as TripBriefSchema,
   type Agent,
@@ -10,6 +9,7 @@ import {
   type UserPreference,
 } from "@trip/shared";
 import { z } from "zod/v4";
+import { createRoutedStructuredInvoker } from "../models";
 
 const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
 const MODEL_ACTIVITY_BUDGET_SHARE = 0.4;
@@ -124,27 +124,11 @@ function fallbackDraft(brief: TripBrief, days: number, places: Place[]): Itinera
 }
 
 function createDeepSeekGenerator(): ItineraryGenerator | undefined {
-  const apiKey = process.env.DEEPSEEK_API_KEY;
-  if (!apiKey) return undefined;
-  const model = new ChatOpenAI({
-    apiKey,
-    model: process.env.DEEPSEEK_MODEL || "deepseek-v4-flash",
-    temperature: 0,
-    streamUsage: false,
-    // DeepSeek V4 enables thinking by default, but its thinking mode rejects
-    // the tool_choice used by LangChain structured output.
-    modelKwargs: { thinking: { type: "disabled" } },
-    configuration: {
-      baseURL: process.env.DEEPSEEK_BASE_URL || "https://api.deepseek.com",
-    },
-  });
-  const structured = model.withStructuredOutput(ItineraryDraft, {
-    name: "TripItineraryDraft",
-    method: "functionCalling",
-  });
+  const structured = createRoutedStructuredInvoker("itinerary", ItineraryDraft, "TripItineraryDraft");
+  if (!structured) return undefined;
   return {
     async generate(input) {
-      return structured.invoke(
+      return structured(
         `Create a practical trip itinerary using only the supplied facts. Return every trip day from 1 through ${input.days}. Each day needs 1-3 non-overlapping activities with 24-hour HH:mm times. Leave at least 150 minutes between activities at different locations so transport can be feasible. Keep total activity cost at or below ${(input.brief.budgetTotal * MODEL_ACTIVITY_BUDGET_SHARE).toFixed(2)} USD for the whole group. Do not claim live opening hours, availability, safety, visa or weather facts. Treat candidate places as unverified suggestions. If a revision is present, address it exactly.\n\nTrip brief:\n${JSON.stringify(input.brief)}\n\nConfirmed preferences:\n${JSON.stringify(input.preferences)}\n\nCandidate places:\n${JSON.stringify(input.places)}\n\nRevision:\n${JSON.stringify(input.revision ?? null)}`,
       );
     },

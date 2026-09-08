@@ -113,7 +113,17 @@ export function detectConflicts(proposals: AgentProposal[], brief: TripBrief): R
           : ([left.agent, right.agent] as const);
       const reason = `time overlap on day ${left.item.day}: ${left.item.startTime}-${left.item.endTime} conflicts with ${right.item.startTime}-${right.item.endTime}`;
       for (const target of new Set<AgentName>(targets)) {
-        add(target, reason, `reschedule day ${left.item.day} without changing trip dates`);
+        // A revising agent only sees its own proposal, so name the window it has
+        // to work around and who owns it. Without this it is guessing, and the
+        // graph burns every remaining round without converging.
+        const blocker = target === left.agent ? right : left;
+        add(
+          target,
+          reason,
+          `on day ${left.item.day} keep clear of ${blocker.item.startTime}-${blocker.item.endTime}, held by ${blocker.agent}${
+            blocker.item.location ? ` (${blocker.item.location})` : ""
+          }; reschedule without changing trip dates`,
+        );
       }
     }
   }
