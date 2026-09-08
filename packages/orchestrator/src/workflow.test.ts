@@ -17,7 +17,6 @@ const brief: TripBrief = {
   dates: ["2026-10-01", "2026-10-04"],
   groupSize: 2,
   budgetTotal: 1000,
-  travelStyle: "P",
 };
 
 const tools: ToolGateway = {

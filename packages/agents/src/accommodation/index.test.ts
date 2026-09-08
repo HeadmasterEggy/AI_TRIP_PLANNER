@@ -15,7 +15,6 @@ const brief: TripBrief = {
   dates: ["2026-10-01", "2026-10-05"],
   groupSize: 3,
   budgetTotal: 4000,
-  travelStyle: "P",
 };
 const options: StayOption[] = [
   { name: "Standard", area: "Central", pricePerNightUsd: 100, rating: 8.7, freeCancellation: true },
