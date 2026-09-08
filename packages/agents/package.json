@@ -13,9 +13,11 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@langchain/openai": "^1.5.11",
     "@trip/services": "workspace:*",
     "@trip/shared": "workspace:*",
-    "@trip/tools": "workspace:*"
+    "@trip/tools": "workspace:*",
+    "zod": "^4.5.4"
   },
   "devDependencies": {
     "typescript": "^5.7.2"

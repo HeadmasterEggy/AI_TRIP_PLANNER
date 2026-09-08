@@ -25,8 +25,8 @@ internal `StateSchema` uses its local Zod v4 dependency.
 ## Execution rules
 
 - `dispatch_specialists` runs all registered agents with `Promise.all`.
-- `detect_conflicts` currently implements budget conflict detection. Time and geography checks are
-  still pending.
+- `detect_conflicts` combines budget overruns, structured cross-agent schedule overlaps, and
+  geography conflicts reported after itinerary route-duration checks.
 - `revise_conflicts` runs only targeted agents that implement `revise`, also with `Promise.all`.
 - A conditional edge repeats detection/revision up to `maxRounds` (default `3`).
 - `build_plan` preserves the existing cost roll-up and HITL/escalation behavior.
@@ -35,8 +35,9 @@ internal `StateSchema` uses its local Zod v4 dependency.
 This is intentionally a workflow rather than an unconstrained supervisor agent: the control path,
 budget red lines, and stopping condition should not depend on a model improvising the next step.
 Before graph execution, `runTripChat` uses LangChain structured output to extract only explicit
-`TripBrief` updates when an Anthropic key is available, with a deterministic local fallback. Future
-specialist reasoning can be added inside bounded nodes without changing this graph shape.
+`TripBrief` updates when an Anthropic key is available, with a deterministic local fallback. Inside
+the graph, the itinerary node can use DeepSeek V4 Flash through LangChain's OpenAI-compatible
+adapter; schema, budget, schedule and route checks gate its output before aggregation.
 
 ## Verification
 

@@ -8,7 +8,7 @@ import type {
   ToolGateway,
   TripBrief,
 } from "@trip/shared";
-import { createOrchestratorGraph, runOrchestrator } from "./workflow";
+import { createOrchestratorGraph, detectConflicts, runOrchestrator } from "./workflow";
 
 const brief: TripBrief = {
   tripId: "graph-test",
@@ -107,6 +107,54 @@ describe("LangGraph orchestrator workflow", () => {
     expect(started).toEqual(expect.arrayContaining(["accommodation", "transport"]));
     expect(plan).toMatchObject({ round: 2, estTotal: 700 });
     expect(plan.hitl.some((checkpoint) => checkpoint.type === "escalation")).toBe(false);
+  });
+
+  it("targets itinerary when activity and transport schedules overlap", () => {
+    const requests = detectConflicts(
+      [
+        {
+          ...proposal("itinerary", 100),
+          items: [
+            {
+              kind: "activity",
+              detail: "Museum",
+              day: 2,
+              startTime: "09:00",
+              endTime: "12:00",
+              location: "Museum",
+              estCost: 100,
+            },
+          ],
+          conflictsWith: ["geography conflict on day 2: route needs more time"],
+        },
+        {
+          ...proposal("transport", 50),
+          items: [
+            {
+              kind: "transport",
+              detail: "Train",
+              day: 2,
+              startTime: "10:00",
+              endTime: "11:30",
+              location: "Station",
+              estCost: 50,
+            },
+          ],
+        },
+      ],
+      { ...brief, budgetTotal: 1000 },
+    );
+
+    expect(requests).toHaveLength(1);
+    expect(requests[0]).toMatchObject({ targetAgent: "itinerary" });
+    expect(requests[0]!.reason).toContain("geography conflict");
+    expect(requests[0]!.reason).toContain("time overlap on day 2");
+    expect(requests[0]!.constraints).toEqual(
+      expect.arrayContaining([
+        "make the route geographically feasible",
+        "reschedule day 2 without changing trip dates",
+      ]),
+    );
   });
 
   it("ends at the configured round limit and marks unresolved sections", async () => {

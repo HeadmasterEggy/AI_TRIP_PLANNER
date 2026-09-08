@@ -32,12 +32,30 @@ export type TripBrief = z.infer<typeof TripBrief>;
 // AgentProposal — what every specialist agent returns for one round.
 // The `estCost` rule (currency = USD, whole trip not per-person) is frozen by A.
 // ---------------------------------------------------------------------------
-export const ProposalItem = z.object({
-  kind: z.string(), // "transport" | "hotel" | "activity" | "meal" | "note" ...
-  detail: z.string(),
-  estCost: z.number().nonnegative().optional(),
-  day: z.number().int().optional(),
-});
+export const ProposalItem = z
+  .object({
+    kind: z.string(), // "transport" | "hotel" | "activity" | "meal" | "note" ...
+    detail: z.string(),
+    estCost: z.number().nonnegative().optional(),
+    day: z.number().int().optional(),
+    // Optional schedule metadata lets the orchestrator detect cross-agent time
+    // conflicts without parsing human-readable detail strings.
+    startTime: z
+      .string()
+      .regex(/^([01]\d|2[0-3]):[0-5]\d$/)
+      .optional(),
+    endTime: z
+      .string()
+      .regex(/^([01]\d|2[0-3]):[0-5]\d$/)
+      .optional(),
+    location: z.string().trim().min(1).optional(),
+  })
+  .refine((item) => Boolean(item.startTime) === Boolean(item.endTime), {
+    message: "startTime and endTime must be provided together",
+  })
+  .refine((item) => !item.startTime || !item.endTime || item.startTime < item.endTime, {
+    message: "endTime must be after startTime on the same day",
+  });
 export type ProposalItem = z.infer<typeof ProposalItem>;
 
 export const AgentProposal = z.object({

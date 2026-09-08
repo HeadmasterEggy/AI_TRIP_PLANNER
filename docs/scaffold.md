@@ -1,9 +1,9 @@
 # Scaffold map — where everyone codes
 
 This repo is an end-to-end scaffold with a real LangGraph workflow, incremental chat
-intake, and an implemented accommodation agent. The other four specialist agents still
-return stub proposals, the memory store is an in-memory `Map`, and tools return canned
-data. You can build each remaining slice against a real `TripPlan` shape from day one.
+intake, and implemented itinerary, transport, and accommodation agents. Destination-guide
+and dining still return stub proposals, the memory store is an in-memory `Map`, and tools
+return canned data. You can build each remaining slice against a real `TripPlan` shape.
 
 ### What already works (so you have a pattern to copy)
 
@@ -12,7 +12,7 @@ data. You can build each remaining slice against a real `TripPlan` shape from da
   `ctx` so your unit tests can pass fakes. Interfaces live in `packages/shared/src/ports.ts`.
 - **The LangGraph K-round negotiation loop actually fires.** The compiled graph in
   `packages/orchestrator/src/workflow.ts` makes dispatch, conflict detection, targeted revision and
-  aggregation observable nodes. With `DEMO_BRIEF` the round-1 estimate is ~17% over budget, so
+  aggregation observable nodes. With `DEMO_BRIEF` the round-1 estimate is ~20% over budget, so
   `detectConflicts` asks the two priciest agents (transport, accommodation) to cut; their revisions
   run in parallel; round 2 converges. `plan.round` shows how many rounds ran.
 - **`AgentName`** is a union of the 5 ids; `Agent` now has a `label` (the panel
@@ -51,11 +51,11 @@ pnpm build
 | Path | Owner | Fill in |
 |---|---|---|
 | `packages/shared/src/**` | A | contracts — freeze early, announce changes |
-| `packages/orchestrator/src/workflow.ts` | A | LangGraph workflow; add real time/geo conflicts, status promotion, richer HITL |
+| `packages/orchestrator/src/workflow.ts` | A | LangGraph workflow; add richer conflict policies, status promotion and HITL |
 | `apps/web/app/api/chat/route.ts`, `packages/orchestrator/src/chat.ts` | A | enrich chat clarification/extraction and move from process-local to durable memory (structured extraction + fallback + loop wiring done) |
 | `packages/tools/src/gateway.ts` + `mock-server.mjs` | A | real-vs-mock routing |
-| `packages/agents/src/itinerary/**` | B | day-by-day plan |
-| `packages/agents/src/transport/**` | B | transport options + time/geo conflict helper |
+| `packages/agents/src/itinerary/**` | B | enrich the implemented model/fallback daily plan with live opening-hour data |
+| `packages/agents/src/transport/**` | B | replace injected mock fares/routes with live adapter data |
 | `packages/tools/src/maps.ts` | B | real Maps / Places adapter |
 | `packages/agents/src/accommodation/**` | C | lodging search + room allocation |
 | `packages/tools/src/booking.ts` | C | real Booking / Price adapter (mock only for payment) |

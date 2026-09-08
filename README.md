@@ -38,7 +38,7 @@ flowchart TB
     subgraph TOOLS[ToolGateway: external tool adapters]
       MAPS[(Maps / Places API · mock)]
       BOOK[(Booking / Price API · mock)]
-      LLM[(Claude · LangChain ChatAnthropic)]
+      LLM[(Claude / DeepSeek · LangChain)]
     end
 
     IT --> MEM
@@ -58,8 +58,8 @@ flowchart TB
 | Layer | Name | Responsibility | Owner |
 |---|---|---|---|
 | Orchestrator | `OrchestratorAgent` | chat intake, requirement decomposition, task dispatch, proposal aggregation, conflict detection, up-to-K=3 revision rounds, **all HITL and escalation**, cost roll-up | A |
-| Specialist | `ItineraryPlannerAgent` | day-by-day plan, pacing from dates/group/prefs, holiday closures, activity ordering | B |
-| Specialist | `TransportAgent` | inter-city + local transport options, timing, price ranges | B |
+| Specialist | `ItineraryPlannerAgent` | structured day-by-day schedule, pacing from dates/group/prefs, model-backed drafting with deterministic fallback, route-feasibility checks | B |
+| Specialist | `TransportAgent` | group flight pricing, inter-city/local routes, explicit timing, budget and schedule revisions | B |
 | Specialist | `AccommodationAgent` | lodging search and comparison, individual / group room allocation | C |
 | Specialist | `DestinationGuideAgent` | attractions, local customs, safety, visa / vaccine by nationality; **+ weather and packing advice as an LLM sub-function (no weather API)** | D |
 | Specialist | `DiningAgent` | cuisine recommendations, dietary restrictions | D |
@@ -77,7 +77,7 @@ flowchart TB
 
 ### External tools / systems
 
-- **LLM** — Claude, via LangChain's `@langchain/anthropic`; a conservative local parser keeps the mock flow usable without an API key
+- **LLM** — Claude for chat extraction and DeepSeek V4 Flash for itinerary drafting via LangChain; conservative deterministic fallbacks keep the flow usable without API keys
 - **Maps / Places API** — routes and price info, mockable
 - **Booking / Price API** — lodging / flight pricing, **mock**; real payment is out of scope
 - No weather API — weather advice is an LLM sub-function inside `DestinationGuideAgent`
@@ -106,7 +106,7 @@ flowchart TB
 | Monorepo / package manager | pnpm workspaces + Turborepo |
 | Web framework | Next.js 15 (App Router) — frontend + server-side agent logic in one deployable (Route Handlers / Server Actions) |
 | Agent orchestration | **LangGraph.js** (`@langchain/langgraph`): typed graph state, parallel specialist dispatch, conditional conflict/revision loop |
-| LLM calls | LangChain `ChatAnthropic.withStructuredOutput()` extracts explicit chat updates when `ANTHROPIC_API_KEY` is set; the deterministic local fallback and specialist mocks require no API key |
+| LLM calls | LangChain `ChatAnthropic.withStructuredOutput()` extracts chat updates; `ChatOpenAI` targets DeepSeek's OpenAI-compatible endpoint for itinerary drafts; both have validated deterministic fallbacks |
 | Contracts / validation | **Zod** — every inter-agent message and tool input/output |
 | State / memory | SQLite (`better-sqlite3`) or JSON files in dev; add Redis (optional in compose) if cross-request sharing is needed |
 | Testing | Vitest |
@@ -118,8 +118,8 @@ flowchart TB
 ## 3. Repository structure
 
 The end-to-end scaffold now includes LangGraph orchestration, incremental chat intake,
-and a working accommodation agent. Four specialist agents and the external tool adapters
-remain explicit `TODO(owner)` mocks.
+and working itinerary, transport, and accommodation agents. Destination-guide, dining,
+and the external tool adapters remain explicit `TODO(owner)` mocks.
 See [`docs/scaffold.md`](docs/scaffold.md) for the full "who codes where" map, and
 [`docs/class-diagram.md`](docs/class-diagram.md) for the design-time UML class model
 (ELEC5620 Lab 4 Part 2).
@@ -135,8 +135,8 @@ ai-trip-planner/
 │   ├── orchestrator/src/             # LangGraph workflow: parallel dispatch,
 │   │                                 #   conflict loop, HITL, cost roll-up           (A)
 │   ├── agents/src/
-│   │   ├── itinerary/                #                                              (B)
-│   │   ├── transport/                #                                              (B)
+│   │   ├── itinerary/                # model/fallback daily schedule + route checks (B)
+│   │   ├── transport/                # flight/route estimates + timed legs           (B)
 │   │   ├── accommodation/            #                                              (C)
 │   │   ├── destination-guide/        # incl. weather / packing sub-function         (D)
 │   │   └── dining/                   #                                              (D)
@@ -204,6 +204,9 @@ export const AgentProposal = z.object({
     detail: z.string(),
     estCost: z.number().nonnegative().optional(), // USD, whole trip (not per-person) — frozen by A
     day: z.number().int().optional(),
+    startTime: z.string().optional(),             // HH:mm; schedule fields are optional as a group
+    endTime: z.string().optional(),
+    location: z.string().optional(),
   })),
   assumptions: z.array(z.string()),
   conflictsWith: z.array(z.string()).default([]),

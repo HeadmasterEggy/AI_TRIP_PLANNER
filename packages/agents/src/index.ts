@@ -19,8 +19,9 @@ export const allAgents: Agent[] = [
 
 export {
   itineraryAgent,
-  transportAgent,
-  accommodationAgent,
-  destinationGuideAgent,
-  diningAgent,
-};
+  createItineraryAgent,
+  type ItineraryAgentOptions,
+  type ItineraryDraft,
+  type ItineraryGenerator,
+} from "./itinerary";
+export { transportAgent, accommodationAgent, destinationGuideAgent, diningAgent };
