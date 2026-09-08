@@ -45,9 +45,22 @@ describe("budget calculations", () => {
     expect(() => assessBudget([100], budget)).toThrow();
   });
 
-  it.each([-1, NaN, Infinity])("rejects an invalid cost: %s", (cost) => {
+  it.each([-1, NaN, Infinity])("rejects an invalid cost passed directly to assessBudget: %s", (cost) => {
     expect(() => assessBudget([cost], 1000)).toThrow();
   });
+
+  it.each([-1, NaN, Infinity, undefined])(
+    "costOf treats a bad estCost from one agent as 0 instead of throwing: %s",
+    (badCost) => {
+      const bad = proposal("dining", 0);
+      bad.items = [{ kind: "meal", detail: "junk", estCost: badCost }];
+      expect(costOf(bad)).toBe(0);
+      // detectConflicts must not crash the whole run over one agent's bad number.
+      expect(() =>
+        detectConflicts([bad, proposal("accommodation", 5000)], DEMO_BRIEF),
+      ).not.toThrow();
+    },
+  );
 
   it("requests revision even for an overrun of one cent", () => {
     expect(
