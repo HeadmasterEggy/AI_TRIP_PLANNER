@@ -53,6 +53,9 @@ export const ProposalItem = z
   .refine((item) => Boolean(item.startTime) === Boolean(item.endTime), {
     message: "startTime and endTime must be provided together",
   })
+  .refine((item) => !item.startTime || item.day !== undefined, {
+    message: "day must be provided when startTime/endTime are set",
+  })
   .refine((item) => !item.startTime || !item.endTime || item.startTime < item.endTime, {
     message: "endTime must be after startTime on the same day",
   });
