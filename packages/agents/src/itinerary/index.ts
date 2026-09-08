@@ -9,7 +9,7 @@ import {
   type UserPreference,
 } from "@trip/shared";
 import { z } from "zod/v4";
-import { createRoutedChatModel } from "../models";
+import { createRoutedStructuredInvoker } from "../models";
 
 const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
 const MODEL_ACTIVITY_BUDGET_SHARE = 0.4;
@@ -124,15 +124,11 @@ function fallbackDraft(brief: TripBrief, days: number, places: Place[]): Itinera
 }
 
 function createDeepSeekGenerator(): ItineraryGenerator | undefined {
-  const model = createRoutedChatModel("itinerary");
-  if (!model) return undefined;
-  const structured = model.withStructuredOutput(ItineraryDraft, {
-    name: "TripItineraryDraft",
-    method: "functionCalling",
-  });
+  const structured = createRoutedStructuredInvoker("itinerary", ItineraryDraft, "TripItineraryDraft");
+  if (!structured) return undefined;
   return {
     async generate(input) {
-      return structured.invoke(
+      return structured(
         `Create a practical trip itinerary using only the supplied facts. Return every trip day from 1 through ${input.days}. Each day needs 1-3 non-overlapping activities with 24-hour HH:mm times. Leave at least 150 minutes between activities at different locations so transport can be feasible. Keep total activity cost at or below ${(input.brief.budgetTotal * MODEL_ACTIVITY_BUDGET_SHARE).toFixed(2)} USD for the whole group. Do not claim live opening hours, availability, safety, visa or weather facts. Treat candidate places as unverified suggestions. If a revision is present, address it exactly.\n\nTrip brief:\n${JSON.stringify(input.brief)}\n\nConfirmed preferences:\n${JSON.stringify(input.preferences)}\n\nCandidate places:\n${JSON.stringify(input.places)}\n\nRevision:\n${JSON.stringify(input.revision ?? null)}`,
       );
     },

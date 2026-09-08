@@ -8,7 +8,7 @@ import {
   type UserPreference,
 } from "@trip/shared";
 import { z } from "zod/v4";
-import { createRoutedChatModel } from "../models";
+import { createRoutedStructuredInvoker } from "../models";
 
 const GuideAttraction = z.object({
   name: z.string().trim().min(1).max(120),
@@ -98,17 +98,13 @@ function fallbackDraft(brief: TripBrief, month: string, places: Place[]): Destin
 }
 
 function createMiniMaxGenerator(): DestinationGuideGenerator | undefined {
-  const model = createRoutedChatModel("destination-guide");
-  if (!model) return undefined;
-  const structured = model.withStructuredOutput(DestinationGuideDraft, {
-    name: "DestinationGuideDraft",
-    method: "functionCalling",
-  });
+  const structured = createRoutedStructuredInvoker("destination-guide", DestinationGuideDraft, "DestinationGuideDraft");
+  if (!structured) return undefined;
 
   return {
     async generate(input) {
-      return structured.invoke(
-        `Create concise destination guidance using only the supplied trip facts and attraction candidates. Attraction names must exactly match candidate names; return no attractions if the list is empty. Weather must be described as typical planning context for the month, never a forecast. Do not state that a traveller is eligible to enter, that a vaccine is required, or that an area is safe. Instead, give practical checks and clearly direct the traveller to current official immigration, public-health and travel-advisory sources. Never claim live opening hours or availability. Respect confirmed preferences without inventing facts.\n\nTrip brief:\n${JSON.stringify(input.brief)}\n\nTravel month:\n${input.travelMonth}\n\nConfirmed preferences:\n${JSON.stringify(input.preferences)}\n\nAttraction candidates from MapsPort:\n${JSON.stringify(input.places)}`,
+      return structured(
+        `Create concise destination guidance using only the supplied trip facts and attraction candidates. Hard limits, which the tool schema states but you must also respect literally: summary at most 400 characters; at most 5 attractions; customs, safety and entryHealth are arrays of at most 4 strings each; weather at most 500 characters; packing at most 6 strings; assumptions at most 6 strings. Attraction names must exactly match candidate names; return no attractions if the list is empty. Weather must be described as typical planning context for the month, never a forecast. Do not state that a traveller is eligible to enter, that a vaccine is required, or that an area is safe. Instead, give practical checks and clearly direct the traveller to current official immigration, public-health and travel-advisory sources. Never claim live opening hours or availability. Respect confirmed preferences without inventing facts.\n\nTrip brief:\n${JSON.stringify(input.brief)}\n\nTravel month:\n${input.travelMonth}\n\nConfirmed preferences:\n${JSON.stringify(input.preferences)}\n\nAttraction candidates from MapsPort:\n${JSON.stringify(input.places)}`,
       );
     },
   };

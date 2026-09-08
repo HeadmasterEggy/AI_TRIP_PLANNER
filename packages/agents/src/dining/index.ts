@@ -9,7 +9,7 @@ import {
   type UserPreference,
 } from "@trip/shared";
 import { z } from "zod/v4";
-import { createRoutedChatModel } from "../models";
+import { createRoutedStructuredInvoker } from "../models";
 
 const DAY_MS = 86_400_000;
 const DINING_BUDGET_SHARE = 0.2;
@@ -134,17 +134,13 @@ function fallbackDraft(
 }
 
 function createMiniMaxGenerator(): DiningGenerator | undefined {
-  const model = createRoutedChatModel("dining");
-  if (!model) return undefined;
-  const structured = model.withStructuredOutput(DiningDraft, {
-    name: "DiningDraft",
-    method: "functionCalling",
-  });
+  const structured = createRoutedStructuredInvoker("dining", DiningDraft, "DiningDraft");
+  if (!structured) return undefined;
 
   return {
     async generate(input) {
-      return structured.invoke(
-        `Create concise dining recommendations and a realistic daily per-person meal budget in USD. The budget must be non-negative and no more than ${input.maxDailyPerPersonUsd.toFixed(2)}. Venue names must exactly match supplied candidate names; return no picks if candidates are empty. Never claim live opening hours, availability, menu items, allergen safety, halal/kosher certification or dietary suitability. Tell travellers to confirm important dietary constraints directly with venues. Respect every confirmed dietary preference. If a revision is supplied, address it within the stated budget ceiling.\n\nTrip brief:\n${JSON.stringify(input.brief)}\n\nTrip planning days:\n${input.days}\n\nConfirmed dietary preferences:\n${JSON.stringify(input.dietaryPreferences)}\n\nVenue candidates from MapsPort:\n${JSON.stringify(input.places)}\n\nRevision:\n${JSON.stringify(input.revision ?? null)}`,
+      return structured(
+        `Create concise dining recommendations and a realistic daily per-person meal budget in USD. Hard limits, which the tool schema states but you must also respect literally: summary at most 400 characters; at most 5 picks; each pick name at most 120 characters and each detail at most 500 characters; assumptions at most 6 strings of at most 400 characters each. The budget must be non-negative and no more than ${input.maxDailyPerPersonUsd.toFixed(2)}. Venue names must exactly match supplied candidate names; return no picks if candidates are empty. Never claim live opening hours, availability, menu items, allergen safety, halal/kosher certification or dietary suitability. Tell travellers to confirm important dietary constraints directly with venues. Respect every confirmed dietary preference. If a revision is supplied, address it within the stated budget ceiling.\n\nTrip brief:\n${JSON.stringify(input.brief)}\n\nTrip planning days:\n${input.days}\n\nConfirmed dietary preferences:\n${JSON.stringify(input.dietaryPreferences)}\n\nVenue candidates from MapsPort:\n${JSON.stringify(input.places)}\n\nRevision:\n${JSON.stringify(input.revision ?? null)}`,
       );
     },
   };
