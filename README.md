@@ -89,7 +89,7 @@ flowchart TB
 
 ### External tools / systems
 
-- **LLM** — Claude for chat extraction and DeepSeek V4 Flash for itinerary drafting via LangChain; conservative deterministic fallbacks keep the flow usable without API keys
+- **LLM** — GPT (preferred) or Claude for chat extraction via LangChain structured output; DeepSeek V4 Flash for itinerary drafting; deterministic fallbacks keep the flow usable without API keys
 - **Maps / Places API** — routes and price info, mockable
 - **Booking / Price API** — lodging / flight pricing, **mock**; real payment is out of scope
 - No weather API — weather advice is an LLM sub-function inside `DestinationGuideAgent`
