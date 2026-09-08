@@ -14,7 +14,7 @@ export function Workspace({ initialPlan }: { initialPlan: TripPlan }) {
   return (
     <main className="layout">
       <FiltersPanel brief={plan.brief} />
-      <ChatPanel tripId={plan.tripId} onPlan={setPlan} />
+      <ChatPanel brief={plan.brief} onPlan={setPlan} />
       <TripPanel plan={plan} />
     </main>
   );

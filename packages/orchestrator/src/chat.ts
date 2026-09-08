@@ -1,0 +1,220 @@
+import { ChatAnthropic } from "@langchain/anthropic";
+import { memory } from "@trip/services";
+import {
+  ChatTurn,
+  TripBrief as TripBriefSchema,
+  type ChatRequest,
+  type ChatResponse,
+  type MemoryStore,
+  type TripBrief,
+} from "@trip/shared";
+import { z } from "zod/v4";
+import { DEMO_BRIEF } from "./demo";
+import { runOrchestrator, type OrchestratorOptions } from "./workflow";
+
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+const BriefPatchSchema = z.object({
+  destination: z.string().trim().min(1).optional(),
+  dates: z.tuple([z.string().regex(ISO_DATE), z.string().regex(ISO_DATE)]).optional(),
+  groupSize: z.number().int().positive().optional(),
+  budgetTotal: z.number().positive().optional(),
+  nationality: z.string().trim().min(1).optional(),
+});
+
+export type BriefPatch = z.infer<typeof BriefPatchSchema>;
+
+export interface BriefExtractor {
+  extract(message: string, current: TripBrief): Promise<BriefPatch>;
+}
+
+export interface TripChatOptions extends OrchestratorOptions {
+  extractor?: BriefExtractor;
+}
+
+const ModelPatchSchema = z.object({
+  destination: z.string().trim().min(1).nullable(),
+  dates: z.tuple([z.string().regex(ISO_DATE), z.string().regex(ISO_DATE)]).nullable(),
+  groupSize: z.number().int().positive().nullable(),
+  budgetTotal: z.number().positive().nullable(),
+  nationality: z.string().trim().min(1).nullable(),
+});
+
+function validDate(value: string): boolean {
+  const time = Date.parse(`${value}T00:00:00.000Z`);
+  return (
+    ISO_DATE.test(value) &&
+    Number.isFinite(time) &&
+    new Date(time).toISOString().slice(0, 10) === value
+  );
+}
+
+function amount(value: string): number | undefined {
+  const parsed = Number(value.replaceAll(",", ""));
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+}
+
+function cleanDestination(value: string): string {
+  return value
+    .trim()
+    .replace(/\s+(?:trip|travel|holiday)$/i, "")
+    .replace(/[，,。.]+$/, "")
+    .trim();
+}
+
+export function extractBriefPatchLocally(message: string): BriefPatch {
+  const patch: BriefPatch = {};
+
+  const dates = message.match(
+    /(\d{4}-\d{2}-\d{2})\s*(?:to|through|until|–|—|至|到)\s*(\d{4}-\d{2}-\d{2})/i,
+  );
+  if (dates?.[1] && dates[2]) patch.dates = [dates[1], dates[2]];
+
+  const budget =
+    message.match(
+      /(?:budget|预算(?:改成|调整为|是|为)?)[^\d]{0,12}(?:USD\s*)?\$?\s*([\d,]+(?:\.\d+)?)/i,
+    ) ?? message.match(/\$\s*([\d,]+(?:\.\d+)?)/);
+  if (budget?.[1]) patch.budgetTotal = amount(budget[1]);
+
+  const group = message.match(/(\d+)\s*(?:people|persons?|travell?ers?|人)/i);
+  if (group?.[1]) patch.groupSize = amount(group[1]);
+  if (!patch.groupSize) {
+    const chineseGroup = message.match(/([一二两三四五六七八九十])\s*(?:个)?人/);
+    const values: Record<string, number> = {
+      一: 1,
+      二: 2,
+      两: 2,
+      三: 3,
+      四: 4,
+      五: 5,
+      六: 6,
+      七: 7,
+      八: 8,
+      九: 9,
+      十: 10,
+    };
+    if (chineseGroup?.[1]) patch.groupSize = values[chineseGroup[1]];
+  }
+
+  const englishDestination = message.match(
+    /(?:trip|travel|holiday|go|going)\s+(?:to|in)\s+(.+?)(?=\s+(?:for|from|between|on|with|budget)\b|[,.;]|$)/i,
+  );
+  const explicitDestination = message.match(
+    /(?:destination|place)(?:\s+(?:is|to|as))?\s*[:=]?\s+(.+?)(?=\s+(?:and\s+)?(?:for|from|between|on|with|budget)\b|[,.;]|$)/i,
+  );
+  const leadingDestination = message.match(
+    /^\s*([A-Za-z][A-Za-z &.\-]+?)\s*[,，]\s*\d{4}-\d{2}-\d{2}/,
+  );
+  const chineseDestination = message.match(
+    /(?:去|前往|目的地(?:是|为|改成|调整为)?)[：:\s]*([\p{Script=Han}A-Za-z][\p{Script=Han}A-Za-z&·\- ]*?)(?=\s*(?:旅行|旅游|玩|，|,|。|预算|\d{4}-|$))/u,
+  );
+  const destination = cleanDestination(
+    englishDestination?.[1] ??
+      explicitDestination?.[1] ??
+      leadingDestination?.[1] ??
+      chineseDestination?.[1] ??
+      "",
+  );
+  if (destination) patch.destination = destination;
+
+  const passport =
+    message.match(/([A-Za-z][A-Za-z ]+?)\s+passport/i) ??
+    message.match(/([\p{Script=Han}]{2,12})护照/u);
+  if (passport?.[1]) patch.nationality = passport[1].trim();
+
+  return BriefPatchSchema.parse(patch);
+}
+
+export function applyBriefPatch(current: TripBrief, patch: BriefPatch, tripId: string): TripBrief {
+  const parsedPatch = BriefPatchSchema.parse(patch);
+  const next = TripBriefSchema.parse({ ...current, ...parsedPatch, tripId });
+  if (!validDate(next.dates[0]) || !validDate(next.dates[1])) {
+    throw new Error("Trip dates must be real dates in YYYY-MM-DD format.");
+  }
+  if (Date.parse(next.dates[1]) <= Date.parse(next.dates[0])) {
+    throw new Error("Trip end date must be after the start date.");
+  }
+  return next;
+}
+
+function createLangChainExtractor(): BriefExtractor | undefined {
+  if (!process.env.ANTHROPIC_API_KEY) return undefined;
+  const model = new ChatAnthropic({
+    apiKey: process.env.ANTHROPIC_API_KEY,
+    model: process.env.AI_MODEL || "claude-haiku-4-5-20251001",
+    temperature: 0,
+  });
+  const structured = model.withStructuredOutput(ModelPatchSchema, {
+    name: "TripBriefPatch",
+    method: "functionCalling",
+    strict: true,
+  });
+  return {
+    async extract(message, current) {
+      const result = await structured.invoke(
+        `Extract only explicit updates to the trip brief. Use null for every field the user did not specify. Do not infer dates, nationality, group size, destination, or budget. Budget is total USD. Dates must be YYYY-MM-DD.\n\nCurrent brief:\n${JSON.stringify(current)}\n\nUser message:\n${message}`,
+      );
+      return BriefPatchSchema.parse(
+        Object.fromEntries(Object.entries(result).filter(([, value]) => value !== null)),
+      );
+    },
+  };
+}
+
+async function extractPatch(
+  message: string,
+  current: TripBrief,
+  extractor?: BriefExtractor,
+): Promise<BriefPatch> {
+  const selected = extractor ?? createLangChainExtractor();
+  if (selected) {
+    try {
+      return await selected.extract(message, current);
+    } catch {
+      console.warn("[chat] LangChain brief extraction failed; using the local parser.");
+    }
+  }
+  return extractBriefPatchLocally(message);
+}
+
+function changedFields(before: TripBrief, after: TripBrief): string[] {
+  return (["destination", "dates", "groupSize", "budgetTotal", "nationality"] as const).filter(
+    (key) => JSON.stringify(before[key]) !== JSON.stringify(after[key]),
+  );
+}
+
+function replyFor(message: string, fields: string[], plan: ChatResponse["plan"]): string {
+  const chinese = /\p{Script=Han}/u.test(message);
+  if (chinese) {
+    const update = fields.length
+      ? `已更新：${fields.join("、")}。`
+      : "没有识别到明确的新字段，已保留现有需求。";
+    return `${update}规划在第 ${plan.round} 轮完成，预计总价 USD ${plan.estTotal.toFixed(2)}。`;
+  }
+  const update = fields.length
+    ? `Updated: ${fields.join(", ")}.`
+    : "I could not find an explicit trip-field update, so I kept the current brief.";
+  return `${update} The plan completed in round ${plan.round} at an estimated USD ${plan.estTotal.toFixed(2)}.`;
+}
+
+export async function runTripChat(
+  request: ChatRequest,
+  options: TripChatOptions = {},
+): Promise<ChatResponse> {
+  const { extractor, ...orchestrationOptions } = options;
+  const current = TripBriefSchema.parse({
+    ...(request.brief ?? DEMO_BRIEF),
+    tripId: request.tripId,
+  });
+  const patch = await extractPatch(request.message, current, extractor);
+  const brief = applyBriefPatch(current, patch, request.tripId);
+  const mem: MemoryStore = orchestrationOptions.mem ?? memory;
+  await mem.appendShortTerm(
+    request.tripId,
+    ChatTurn.parse({ role: "user", content: request.message }),
+  );
+  const plan = await runOrchestrator(brief, { ...orchestrationOptions, mem });
+  const reply = replyFor(request.message, changedFields(current, brief), plan);
+  await mem.appendShortTerm(request.tripId, ChatTurn.parse({ role: "assistant", content: reply }));
+  return { reply, plan };
+}

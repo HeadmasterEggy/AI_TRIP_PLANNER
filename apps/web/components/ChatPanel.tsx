@@ -3,26 +3,22 @@
 // Owner: E (shell) + A (wire to real orchestrator chat parsing).
 // Posts a ChatRequest to /api/chat and lifts the returned plan up to Workspace.
 import { useState } from "react";
-import type { ChatResponse, TripPlan } from "@trip/shared";
+import type { ChatResponse, TripBrief, TripPlan } from "@trip/shared";
 
 type Msg = { role: "user" | "agent"; text: string };
 
 const SEED: Msg[] = [
   {
-    role: "user",
-    text: "Plan a 7-day trip to Tokyo and Kyoto for 2 people in mid June. Budget ~$4000.",
-  },
-  {
     role: "agent",
-    text: "Stub assistant. TODO(A): parse this into a TripBrief and run the orchestrator per message.",
+    text: "Tell me what to change — for example: “Sydney, 2026-10-01 to 2026-10-05, 2 people, budget $3000.”",
   },
 ];
 
 export function ChatPanel({
-  tripId,
+  brief,
   onPlan,
 }: {
-  tripId: string;
+  brief: TripBrief;
   onPlan: (plan: TripPlan) => void;
 }) {
   const [messages, setMessages] = useState<Msg[]>(SEED);
@@ -40,14 +36,11 @@ export function ChatPanel({
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ tripId, message: text }),
+        body: JSON.stringify({ tripId: brief.tripId, message: text, brief }),
       });
       const data = (await res.json()) as Partial<ChatResponse> & { error?: string };
       if (data.plan) onPlan(data.plan);
-      setMessages((m) => [
-        ...m,
-        { role: "agent", text: data.reply ?? data.error ?? "(no reply)" },
-      ]);
+      setMessages((m) => [...m, { role: "agent", text: data.reply ?? data.error ?? "(no reply)" }]);
     } catch {
       setMessages((m) => [...m, { role: "agent", text: "Request failed." }]);
     } finally {
@@ -80,7 +73,9 @@ export function ChatPanel({
           {busy ? "…" : "Send"}
         </button>
       </form>
-      <p className="disclaimer">AI-generated results may be inaccurate. Double-check important details.</p>
+      <p className="disclaimer">
+        AI-generated results may be inaccurate. Double-check important details.
+      </p>
     </section>
   );
 }

@@ -1,9 +1,9 @@
 # Scaffold map — where everyone codes
 
-This repo is a **skeleton**. Nothing is really implemented yet: every agent returns
-a stub proposal, the memory store is an in-memory `Map`, tools return canned data.
-The whole pipeline still runs end to end, so you can build your slice against a real
-`TripPlan` shape from day one.
+This repo is an end-to-end scaffold with a real LangGraph workflow, incremental chat
+intake, and an implemented accommodation agent. The other four specialist agents still
+return stub proposals, the memory store is an in-memory `Map`, and tools return canned
+data. You can build each remaining slice against a real `TripPlan` shape from day one.
 
 ### What already works (so you have a pattern to copy)
 
@@ -19,8 +19,10 @@ The whole pipeline still runs end to end, so you can build your slice against a 
   section title) so `SECTION_LABELS` is gone from the orchestrator.
 - **Chat contract**: `POST /api/chat` takes `ChatRequest` and returns `ChatResponse`
   (`{ reply, plan }`) — both Zod schemas in `packages/shared/src/chat.ts`. The web
-  client holds `plan` in state (`components/Workspace.tsx`) and swaps it on each reply.
-  Streaming can be layered on later without changing the shape.
+  client includes its latest optional `brief`, then swaps the returned `plan` into state
+  (`components/Workspace.tsx`). The route uses LangChain structured extraction when an
+  Anthropic key is configured and a conservative English/Chinese parser otherwise.
+  Streaming can be layered on later without changing the response shape.
 
 ## Run it
 
@@ -50,7 +52,7 @@ pnpm build
 |---|---|---|
 | `packages/shared/src/**` | A | contracts — freeze early, announce changes |
 | `packages/orchestrator/src/workflow.ts` | A | LangGraph workflow; add real time/geo conflicts, status promotion, richer HITL |
-| `apps/web/app/api/chat/route.ts` | A | chat → TripBrief (LLM), persist short-term memory (contract + loop wiring done) |
+| `apps/web/app/api/chat/route.ts`, `packages/orchestrator/src/chat.ts` | A | enrich chat clarification/extraction and move from process-local to durable memory (structured extraction + fallback + loop wiring done) |
 | `packages/tools/src/gateway.ts` + `mock-server.mjs` | A | real-vs-mock routing |
 | `packages/agents/src/itinerary/**` | B | day-by-day plan |
 | `packages/agents/src/transport/**` | B | transport options + time/geo conflict helper |

@@ -38,7 +38,7 @@ flowchart TB
     subgraph TOOLS[ToolGateway: external tool adapters]
       MAPS[(Maps / Places API · mock)]
       BOOK[(Booking / Price API · mock)]
-      LLM[(Claude · AI SDK)]
+      LLM[(Claude · LangChain ChatAnthropic)]
     end
 
     IT --> MEM
@@ -77,7 +77,7 @@ flowchart TB
 
 ### External tools / systems
 
-- **LLM** — Claude, via Vercel AI SDK (`@ai-sdk/anthropic`); API key provided by the course
+- **LLM** — Claude, via LangChain's `@langchain/anthropic`; a conservative local parser keeps the mock flow usable without an API key
 - **Maps / Places API** — routes and price info, mockable
 - **Booking / Price API** — lodging / flight pricing, **mock**; real payment is out of scope
 - No weather API — weather advice is an LLM sub-function inside `DestinationGuideAgent`
@@ -106,7 +106,7 @@ flowchart TB
 | Monorepo / package manager | pnpm workspaces + Turborepo |
 | Web framework | Next.js 15 (App Router) — frontend + server-side agent logic in one deployable (Route Handlers / Server Actions) |
 | Agent orchestration | **LangGraph.js** (`@langchain/langgraph`): typed graph state, parallel specialist dispatch, conditional conflict/revision loop |
-| LLM calls | Provider model adapters can be added inside graph nodes or specialist agents; the current deterministic mock flow requires no API key |
+| LLM calls | LangChain `ChatAnthropic.withStructuredOutput()` extracts explicit chat updates when `ANTHROPIC_API_KEY` is set; the deterministic local fallback and specialist mocks require no API key |
 | Contracts / validation | **Zod** — every inter-agent message and tool input/output |
 | State / memory | SQLite (`better-sqlite3`) or JSON files in dev; add Redis (optional in compose) if cross-request sharing is needed |
 | Testing | Vitest |
@@ -117,7 +117,9 @@ flowchart TB
 
 ## 3. Repository structure
 
-The scaffold is in place — every module is a stub with a `TODO(owner)` marker.
+The end-to-end scaffold now includes LangGraph orchestration, incremental chat intake,
+and a working accommodation agent. Four specialist agents and the external tool adapters
+remain explicit `TODO(owner)` mocks.
 See [`docs/scaffold.md`](docs/scaffold.md) for the full "who codes where" map, and
 [`docs/class-diagram.md`](docs/class-diagram.md) for the design-time UML class model
 (ELEC5620 Lab 4 Part 2).
@@ -243,12 +245,19 @@ The web client talks to the server through one contract
 (`packages/shared/src/chat.ts`):
 
 ```ts
-export const ChatRequest  = z.object({ tripId: z.string(), message: z.string().min(1) });
+export const ChatRequest = z.object({
+  tripId: z.string(),
+  message: z.string().min(1),
+  brief: TripBrief.optional(),
+});
 export const ChatResponse = z.object({ reply: z.string(), plan: TripPlan });
 ```
 
-`POST /api/chat` takes a `ChatRequest`, re-runs the orchestrator, returns a
-`ChatResponse`; the client holds `plan` in React state and swaps it on each reply.
+`POST /api/chat` takes a `ChatRequest`, extracts explicit changes into a validated
+`TripBrief`, re-runs the orchestrator, and returns a `ChatResponse`. The browser sends
+the latest brief with each request so incremental updates also work in a serverless
+runtime; older clients may omit it and start from `DEMO_BRIEF`. The client holds
+`plan` in React state and swaps it on each reply.
 Streaming can be added later without changing this shape.
 
 ---

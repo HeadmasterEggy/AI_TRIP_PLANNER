@@ -34,8 +34,9 @@ internal `StateSchema` uses its local Zod v4 dependency.
 
 This is intentionally a workflow rather than an unconstrained supervisor agent: the control path,
 budget red lines, and stopping condition should not depend on a model improvising the next step.
-LLM-backed brief extraction and specialist reasoning can be added inside bounded nodes without
-changing this graph shape.
+Before graph execution, `runTripChat` uses LangChain structured output to extract only explicit
+`TripBrief` updates when an Anthropic key is available, with a deterministic local fallback. Future
+specialist reasoning can be added inside bounded nodes without changing this graph shape.
 
 ## Verification
 

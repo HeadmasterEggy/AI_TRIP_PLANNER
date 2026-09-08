@@ -2,6 +2,14 @@
 
 export { DEMO_BRIEF } from "./demo";
 export {
+  applyBriefPatch,
+  extractBriefPatchLocally,
+  runTripChat,
+  type BriefExtractor,
+  type BriefPatch,
+  type TripChatOptions,
+} from "./chat";
+export {
   createOrchestratorGraph,
   detectConflicts,
   runOrchestrator,

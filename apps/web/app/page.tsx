@@ -4,8 +4,8 @@ import { Header } from "@/components/Header";
 import { Workspace } from "@/components/Workspace";
 
 export default async function Page() {
-  // TODO(A/E): once chat parsing exists, the first render can stay on DEMO_BRIEF
-  // but every message re-runs the orchestrator via POST /api/chat (ChatResponse).
+  // Start with a complete example; each chat request then updates this brief and
+  // re-runs the orchestrator through POST /api/chat.
   const plan = await runOrchestrator(DEMO_BRIEF);
 
   return (

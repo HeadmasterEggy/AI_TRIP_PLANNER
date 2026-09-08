@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { TripBrief } from "./contracts";
 import { TripPlan } from "./plan";
 
 // The contract between the web client and POST /api/chat.
@@ -9,6 +10,9 @@ import { TripPlan } from "./plan";
 export const ChatRequest = z.object({
   tripId: z.string(),
   message: z.string().min(1),
+  // Optional for backward compatibility. The browser sends the latest brief so
+  // serverless requests can apply incremental edits without sticky process state.
+  brief: TripBrief.optional(),
 });
 export type ChatRequest = z.infer<typeof ChatRequest>;
 
