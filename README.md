@@ -11,22 +11,14 @@ Live demo: [elec5620-ai-trip-planner.vercel.app](https://elec5620-ai-trip-planne
 
 ## Current status
 
-The LangChain agent migration is currently in progress.
+The refactor branch is `codex/langchain-agent-refactor`.
 
-- Supervisor and all five specialists now use named LangChain JS agents in the production path.
+- Supervisor, destination and itinerary agents now use named LangChain JS agents.
 - Typed delegation tools, Zod response schemas and deterministic fallbacks are in place.
 - Existing memory, HITL, conflict validation, UI and proposal contracts remain compatible.
-- Revisions use a dedicated supervisor with immutable, targeted delegation tools. The legacy
-  `Agent.run()` / `revise()` adapters remain only as an offline and test compatibility seam.
+- Dining, transport and accommodation still use the legacy boundary and are next to migrate.
 
 See [the architecture and migration plan](docs/agent-architecture.md) for details.
-
-## Prerequisites
-
-- Node.js 22 LTS or newer
-- Corepack-enabled pnpm
-- API keys are optional for local development; deterministic fallbacks and mock tools are enabled
-  by default.
 
 ## Architecture
 
@@ -63,19 +55,8 @@ pnpm test
 pnpm build
 ```
 
-Copy `.env.example` to `.env.local`. `USE_MOCK_TOOLS=true` uses local map and booking fixtures;
-set it to `false` to use the OpenStreetMap adapters. GPT handles chat extraction, DeepSeek handles
-itinerary generation, and provider failures fall back to validated deterministic output.
+Copy `.env.example` to `.env.local`. Mock tools allow local development without external API keys.
 Docker setup is documented in [docs/development.md](docs/development.md).
-
-## API entry points
-
-The web server exposes the core workflow through:
-
-- `POST /api/chat` — extract trip updates, run planning and return the current plan.
-
-The HITL and saved-trip routes from the Stage 5.3 prototype will be reconnected after the Agent
-migration. See [docs/api.md](docs/api.md) for the current route and migration notes.
 
 ## Repository layout
 
@@ -95,9 +76,8 @@ docs/                     Architecture, workflow, roadmap and session notes
 - [Development environment](docs/development.md)
 - [Team and Git workflow](docs/team-workflow.md)
 - [Product roadmap](docs/roadmap.md)
-- [API entry points](docs/api.md)
 - [Scaffold and module ownership](docs/scaffold.md)
-- [UML and design model](docs/class-diagram.md), including the [diagram index](docs/diagrams/)
+- [UML and design model](docs/class-diagram.md)
 - [Session-log template](docs/session-logs/TEMPLATE.md)
 
 ## Scope

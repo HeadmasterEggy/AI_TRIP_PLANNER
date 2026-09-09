@@ -15,22 +15,6 @@ An agent owns a durable role definition: model, `name`, `systemPrompt`, tools an
 The supervisor chooses which specialist tools to call. It must not rewrite the TripBrief or invent
 facts. Tool inputs are typed and specialist outputs are validated with Zod.
 
-## UML diagrams
-
-The design-time UML set remains under [`docs/diagrams/`](diagrams/):
-
-| Diagram                    | File                                                                      |
-| -------------------------- | ------------------------------------------------------------------------- |
-| Architecture spine         | [`class-1-spine.svg`](diagrams/class-1-spine.svg)                         |
-| Domain model               | [`class-2-domain.svg`](diagrams/class-2-domain.svg)                       |
-| Agents and orchestration   | [`class-3-agents.svg`](diagrams/class-3-agents.svg)                       |
-| Ports and adapters         | [`class-4-ports.svg`](diagrams/class-4-ports.svg)                         |
-| Class model with use cases | [`class-5-with-use-cases.svg`](diagrams/class-5-with-use-cases.svg)       |
-| Combined architecture map  | [`combined-architecture-map.svg`](diagrams/combined-architecture-map.svg) |
-| Use-case diagram           | [`use-case-diagram.svg`](diagrams/use-case-diagram.svg)                   |
-
-The explanatory model and relationship notes are in [`docs/class-diagram.md`](class-diagram.md).
-
 ## Migration rules
 
 1. Use LangChain JS/TypeScript `createAgent`; do not add a Python runtime or another agent framework.
@@ -46,18 +30,15 @@ The explanatory model and relationship notes are in [`docs/class-diagram.md`](cl
 Completed on `codex/langchain-agent-refactor`:
 
 - `packages/orchestrator/src/supervisor.ts` provides a named supervisor and typed delegation tools.
-- Destination, itinerary and dining generation use named agents with typed evidence tools and Zod
-  structured responses. Transport and accommodation use named agents around typed deterministic
-  calculators so models cannot invent prices, routes or properties.
-- Revision requests are immutable inputs to targeted typed tools selected by a dedicated revision
-  supervisor; LangGraph verifies conflicts again after each round.
+- Destination and itinerary model generation use named agents with typed evidence tools and Zod
+  structured responses.
 - Legacy Agent adapters remain as a compatibility seam for tests and offline fallback.
 
 Next:
 
-- Remove the legacy `Agent.run()` / `revise()` adapters once callers and tests inject the new
-  specialist abstraction directly.
-- Add persistent supervisor checkpoints and stream individual tool-loop events to the UI.
+- Migrate dining, transport and accommodation to named agents.
+- Move revision requests into typed supervisor/delegation tools.
+- Remove the legacy `Agent.run()` dispatch once all specialists and tests use the new path.
 
 ## Contracts
 
@@ -73,10 +54,10 @@ The workflow should continue to validate proposals before aggregation and persis
 
 ## Specialist responsibilities
 
-| Agent         | Responsibility                                                        |
-| ------------- | --------------------------------------------------------------------- |
-| Itinerary     | Grounded day-by-day schedule, pacing and route feasibility            |
-| Destination   | Attractions, customs, safety, entry/health checks and packing context |
-| Dining        | Grounded venues, dietary preferences and meal budget                  |
-| Transport     | Flights, inter-city/local routes and timing                           |
-| Accommodation | Lodging search, comparison and room allocation                        |
+| Agent | Responsibility |
+| --- | --- |
+| Itinerary | Grounded day-by-day schedule, pacing and route feasibility |
+| Destination | Attractions, customs, safety, entry/health checks and packing context |
+| Dining | Grounded venues, dietary preferences and meal budget |
+| Transport | Flights, inter-city/local routes and timing |
+| Accommodation | Lodging search, comparison and room allocation |
