@@ -46,7 +46,9 @@ export function TripPanel({ plan }: { plan: TripPlan }) {
           <span>
             <strong>{pendingHitl[0]!.title}</strong>
             <br />
-            {pendingHitl.length} of {plan.sections.length} things need you
+            {pendingHitl.length === 1
+              ? pendingHitl[0]!.detail
+              : `${pendingHitl.length} decisions need you`}
           </span>
         </div>
       )}
