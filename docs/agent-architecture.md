@@ -15,6 +15,22 @@ An agent owns a durable role definition: model, `name`, `systemPrompt`, tools an
 The supervisor chooses which specialist tools to call. It must not rewrite the TripBrief or invent
 facts. Tool inputs are typed and specialist outputs are validated with Zod.
 
+## UML diagrams
+
+The design-time UML set remains under [`docs/diagrams/`](diagrams/):
+
+| Diagram | File |
+| --- | --- |
+| Architecture spine | [`class-1-spine.svg`](diagrams/class-1-spine.svg) |
+| Domain model | [`class-2-domain.svg`](diagrams/class-2-domain.svg) |
+| Agents and orchestration | [`class-3-agents.svg`](diagrams/class-3-agents.svg) |
+| Ports and adapters | [`class-4-ports.svg`](diagrams/class-4-ports.svg) |
+| Class model with use cases | [`class-5-with-use-cases.svg`](diagrams/class-5-with-use-cases.svg) |
+| Combined architecture map | [`combined-architecture-map.svg`](diagrams/combined-architecture-map.svg) |
+| Use-case diagram | [`use-case-diagram.svg`](diagrams/use-case-diagram.svg) |
+
+The explanatory model and relationship notes are in [`docs/class-diagram.md`](class-diagram.md).
+
 ## Migration rules
 
 1. Use LangChain JS/TypeScript `createAgent`; do not add a Python runtime or another agent framework.
