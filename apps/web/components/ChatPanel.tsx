@@ -42,9 +42,12 @@ const SEED: Msg[] = [
 export function ChatPanel({
   brief,
   onPlan,
+  inputRef,
 }: {
   brief: TripBrief;
   onPlan: (plan: TripPlan) => void;
+  /** Lets the trip panel hand off to the composer, which is where a plan is changed. */
+  inputRef?: React.Ref<HTMLInputElement>;
 }) {
   const [messages, setMessages] = useState<Msg[]>(SEED);
   const [input, setInput] = useState("");
@@ -203,6 +206,7 @@ export function ChatPanel({
       <form className="chat__form" onSubmit={send}>
         <input
           className="field"
+          ref={inputRef}
           placeholder={busy ? "Planning your trip…" : "Message AI Trip Planner…"}
           aria-label="Message AI Trip Planner"
           value={input}

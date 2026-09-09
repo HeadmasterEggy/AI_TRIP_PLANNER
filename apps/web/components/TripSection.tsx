@@ -24,7 +24,7 @@ export function TripSection({ section }: { section: TripSectionData }) {
         aria-expanded={open}
         aria-controls={bodyId}
       >
-        <span style={{ flex: 1, minWidth: 0 }}>
+        <span className="section__label">
           <strong>{section.label}</strong>
           <small>{section.summary}</small>
         </span>

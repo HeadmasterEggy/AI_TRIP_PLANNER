@@ -344,6 +344,27 @@ button {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
+  gap: var(--space-3);
+}
+.trip__head h2 {
+  margin: 0;
+}
+.trip__meta {
+  font-size: 12px;
+  color: var(--text-mut);
+  white-space: nowrap;
+}
+.trip__budget {
+  display: flex;
+  justify-content: space-between;
+  font-size: 13px;
+  margin-bottom: var(--space-1);
+}
+.trip__budget-label {
+  color: var(--text-dim);
+}
+.trip__budget-total {
+  color: var(--text-mut);
 }
 .trip__sub {
   font-size: 12px;
@@ -436,6 +457,10 @@ button {
 }
 .section--open .section__chevron {
   transform: rotate(90deg);
+}
+.section__label {
+  flex: 1;
+  min-width: 0;
 }
 .section__row strong {
   font-weight: 500;
