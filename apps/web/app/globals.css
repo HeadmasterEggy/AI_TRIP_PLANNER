@@ -176,6 +176,7 @@ button {
 }
 .agent-activity__row {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
   gap: 10px;
   padding: 3px 0;
@@ -200,6 +201,7 @@ button {
 }
 .chat__form input {
   flex: 1;
+  margin-bottom: 0;
 }
 .chat__form button {
   padding: 8px 14px;
@@ -246,6 +248,16 @@ button {
 }
 /* Read-only mirrors of the brief: keep them legible, but stop them inviting
    edits that would go nowhere. */
+.agent-activity__error {
+  flex-basis: 100%;
+  margin: 2px 0 0;
+  font-size: 11px;
+  color: var(--warn);
+}
+.chat__form input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
 .field[readonly] {
   cursor: default;
   color: var(--text-dim);

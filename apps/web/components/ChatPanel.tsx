@@ -2,7 +2,7 @@
 
 // Owner: E (shell) + A (wire to real orchestrator chat parsing).
 // Posts a ChatRequest to /api/chat and lifts the returned plan up to Workspace.
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   AGENT_NAMES,
   type AgentName,
@@ -50,6 +50,18 @@ export function ChatPanel({
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [activity, setActivity] = useState<AgentActivity[]>([]);
+  const streamRef = useRef<HTMLDivElement>(null);
+  const abortRef = useRef<AbortController>(null);
+
+  // Keep the newest turn in view; without this the reply lands below the fold
+  // and the panel looks like it did nothing.
+  useEffect(() => {
+    streamRef.current?.scrollTo({ top: streamRef.current.scrollHeight, behavior: "smooth" });
+  }, [messages, activity]);
+
+  // A turn takes tens of seconds. If the panel goes away mid-stream, stop
+  // reading rather than writing state into an unmounted component.
+  useEffect(() => () => abortRef.current?.abort(), []);
 
   async function send(e: React.FormEvent) {
     e.preventDefault();
@@ -59,11 +71,15 @@ export function ChatPanel({
     setInput("");
     setBusy(true);
     setActivity(AGENT_NAMES.map((agent) => ({ agent, status: "queued" })));
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
     try {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ tripId: brief.tripId, message: text, brief }),
+        signal: controller.signal,
       });
       if (!res.ok) {
         // The route answers 400/422 with { error } as plain JSON, not as a
@@ -140,10 +156,12 @@ export function ChatPanel({
         setMessages((m) => [...m, { role: "agent", text: streamError ?? "(no reply)" }]);
       }
     } catch (error) {
+      if (controller.signal.aborted) return;
       console.error("[chat] request failed", error);
-      const text = error instanceof Error ? error.message : "Request failed.";
-      setMessages((m) => [...m, { role: "agent", text }]);
+      const detail = error instanceof Error ? error.message : "Request failed.";
+      setMessages((m) => [...m, { role: "agent", text: detail }]);
     } finally {
+      if (abortRef.current === controller) abortRef.current = null;
       setBusy(false);
     }
   }
@@ -151,7 +169,7 @@ export function ChatPanel({
   return (
     <section className="panel chat">
       <h2>AI Trip Planner · Agent</h2>
-      <div className="chat__stream">
+      <div className="chat__stream" ref={streamRef} aria-live="polite" aria-busy={busy}>
         {messages.map((m, i) => (
           <div key={i} className={`msg msg--${m.role === "user" ? "user" : "agent"}`}>
             {m.text}
@@ -172,6 +190,8 @@ export function ChatPanel({
                         ? `Complete${item.round && item.round > 1 ? ` · round ${item.round}` : ""}`
                         : "Needs attention"}
                 </span>
+                {/* The failure reason was captured and then never shown. */}
+                {item.error && <p className="agent-activity__error">{item.error}</p>}
               </div>
             ))}
           </div>
@@ -183,9 +203,10 @@ export function ChatPanel({
       <form className="chat__form" onSubmit={send}>
         <input
           className="field"
-          style={{ marginBottom: 0 }}
-          placeholder="Message AI Trip Planner…"
+          placeholder={busy ? "Planning your trip…" : "Message AI Trip Planner…"}
+          aria-label="Message AI Trip Planner"
           value={input}
+          disabled={busy}
           onChange={(e) => setInput(e.target.value)}
         />
         <button type="submit" disabled={busy}>
