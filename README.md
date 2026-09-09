@@ -13,10 +13,11 @@ Live demo: [elec5620-ai-trip-planner.vercel.app](https://elec5620-ai-trip-planne
 
 The LangChain agent migration is currently in progress.
 
-- Supervisor, destination and itinerary agents now use named LangChain JS agents.
+- Supervisor and all five specialists now use named LangChain JS agents in the production path.
 - Typed delegation tools, Zod response schemas and deterministic fallbacks are in place.
 - Existing memory, HITL, conflict validation, UI and proposal contracts remain compatible.
-- Dining, transport and accommodation still use the legacy boundary and are next to migrate.
+- Revisions use a dedicated supervisor with immutable, targeted delegation tools. The legacy
+  `Agent.run()` / `revise()` adapters remain only as an offline and test compatibility seam.
 
 See [the architecture and migration plan](docs/agent-architecture.md) for details.
 

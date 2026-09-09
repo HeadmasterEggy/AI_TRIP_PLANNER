@@ -1,4 +1,5 @@
 import {
+  AgentProposal as AgentProposalSchema,
   TripBrief as TripBriefSchema,
   type Agent,
   type AgentContext,
@@ -6,6 +7,9 @@ import {
   type RevisionRequest,
   type TripBrief,
 } from "@trip/shared";
+import { createAgent, tool } from "langchain";
+import { z } from "zod/v4";
+import { createRoutedChatModel } from "../models";
 
 const DAY_MS = 86_400_000;
 
@@ -31,7 +35,7 @@ function clock(totalMinutes: number): string {
   return `${String(Math.floor(totalMinutes / 60)).padStart(2, "0")}:${String(totalMinutes % 60).padStart(2, "0")}`;
 }
 
-async function planTransport(
+async function buildTransportProposal(
   briefInput: TripBrief,
   ctx: AgentContext,
   revision?: RevisionRequest,
@@ -130,6 +134,60 @@ async function planTransport(
     ],
     conflictsWith: [],
   };
+}
+
+async function planTransport(
+  brief: TripBrief,
+  ctx: AgentContext,
+  revision?: RevisionRequest,
+): Promise<AgentProposal> {
+  const model = createRoutedChatModel("transport");
+  if (!model) return buildTransportProposal(brief, ctx, revision);
+
+  let evidence: AgentProposal | undefined;
+  const calculate = tool(
+    async () => {
+      evidence = AgentProposalSchema.parse(await buildTransportProposal(brief, ctx, revision));
+      return evidence;
+    },
+    {
+      name: "calculate_transport_options",
+      description:
+        "Search the injected booking/maps ports and calculate a validated transport proposal for this trip and revision.",
+      schema: z.object({}),
+    },
+  );
+  const specialist = createAgent({
+    name: "transport_specialist",
+    model,
+    tools: [calculate],
+    systemPrompt:
+      "You are the transport specialist. Always call calculate_transport_options. Return its proposal unchanged: do not invent carriers, routes, prices, schedules or availability. The calculator owns all selection, costing and revision rules. Return the requested structured AgentProposal.",
+    responseFormat: AgentProposalSchema,
+  });
+  try {
+    const result = await specialist.invoke({
+      messages: [
+        {
+          role: "user",
+          content: JSON.stringify({
+            task: "Return the calculated transport proposal.",
+            tripId: brief.tripId,
+            revision: revision?.reason,
+          }),
+        },
+      ],
+    });
+    const proposal = AgentProposalSchema.parse(result.structuredResponse);
+    if (proposal.agent !== "transport" || !evidence) {
+      throw new Error("Transport specialist returned the wrong proposal type or skipped its tool.");
+    }
+    return proposal;
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : "unknown model error";
+    console.warn(`[transport] Agent failed; using deterministic fallback: ${reason}`);
+    return evidence ?? buildTransportProposal(brief, ctx, revision);
+  }
 }
 
 export const transportAgent: Agent = {

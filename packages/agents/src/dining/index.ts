@@ -9,7 +9,8 @@ import {
   type UserPreference,
 } from "@trip/shared";
 import { z } from "zod/v4";
-import { createRoutedStructuredInvoker } from "../models";
+import { createAgent, tool } from "langchain";
+import { createRoutedChatModel } from "../models";
 
 const DAY_MS = 86_400_000;
 const DINING_BUDGET_SHARE = 0.2;
@@ -134,14 +135,38 @@ function fallbackDraft(
 }
 
 function createMiniMaxGenerator(): DiningGenerator | undefined {
-  const structured = createRoutedStructuredInvoker("dining", DiningDraft, "DiningDraft");
-  if (!structured) return undefined;
+  const model = createRoutedChatModel("dining");
+  if (!model) return undefined;
 
   return {
     async generate(input) {
-      return structured(
-        `Create concise dining recommendations and a realistic daily per-person meal budget in USD. Hard limits, which the tool schema states but you must also respect literally: summary at most 400 characters; at most 5 picks; each pick name at most 120 characters and each detail at most 500 characters; assumptions at most 6 strings of at most 400 characters each. The budget must be non-negative and no more than ${input.maxDailyPerPersonUsd.toFixed(2)}. Venue names must exactly match supplied candidate names; return no picks if candidates are empty. Never claim live opening hours, availability, menu items, allergen safety, halal/kosher certification or dietary suitability. Tell travellers to confirm important dietary constraints directly with venues. Respect every confirmed dietary preference. If a revision is supplied, address it within the stated budget ceiling.\n\nTrip brief:\n${JSON.stringify(input.brief)}\n\nTrip planning days:\n${input.days}\n\nConfirmed dietary preferences:\n${JSON.stringify(input.dietaryPreferences)}\n\nVenue candidates from MapsPort:\n${JSON.stringify(input.places)}\n\nRevision:\n${JSON.stringify(input.revision ?? null)}`,
-      );
+      const evidence = tool(async () => input, {
+        name: "read_dining_evidence",
+        description:
+          "Read the validated trip facts, grounded restaurant candidates, confirmed dietary preferences, budget ceiling and revision request.",
+        schema: z.object({}),
+      });
+      const specialist = createAgent({
+        name: "dining_specialist",
+        model,
+        tools: [evidence],
+        systemPrompt:
+          "You are the dining specialist. Always call read_dining_evidence and use only its facts and exact venue names. Stay within its daily per-person USD ceiling and address any revision. Never claim live hours, availability, menu items, allergen safety, certification or dietary suitability; tell travellers to confirm important constraints directly. Return the requested structured dining draft.",
+        responseFormat: DiningDraft,
+      });
+      const result = await specialist.invoke({
+        messages: [
+          {
+            role: "user",
+            content: JSON.stringify({
+              task: "Draft dining guidance from the validated evidence available through your tool.",
+              tripId: input.brief.tripId,
+              revision: input.revision?.reason,
+            }),
+          },
+        ],
+      });
+      return DiningDraft.parse(result.structuredResponse);
     },
   };
 }

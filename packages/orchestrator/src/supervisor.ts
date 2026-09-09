@@ -3,6 +3,7 @@ import {
   type Agent,
   type AgentContext,
   type AgentProposal,
+  type RevisionRequest,
   type TripBrief,
 } from "@trip/shared";
 import { createRoutedChatModel } from "@trip/agents";
@@ -23,6 +24,11 @@ export interface SupervisorDispatchOptions {
   agents: Agent[];
   context: AgentContext;
   model?: BaseChatModel;
+}
+
+export interface SupervisorRevisionOptions extends SupervisorDispatchOptions {
+  proposals: AgentProposal[];
+  requests: RevisionRequest[];
 }
 
 /**
@@ -50,6 +56,37 @@ export function createSupervisorTools(
       },
     ),
   );
+}
+
+/** Create one immutable, typed delegation tool for each targeted revision. */
+export function createRevisionTools(
+  options: Omit<SupervisorRevisionOptions, "model" | "proposals">,
+  onProposal: (proposal: AgentProposal) => void,
+) {
+  const agents = new Map(options.agents.map((agent) => [agent.name, agent]));
+  return options.requests.flatMap((request) => {
+    const specialist = agents.get(request.targetAgent);
+    if (!specialist?.revise) return [];
+    return [
+      tool(
+        async ({ objective }) => {
+          const proposal = AgentProposalSchema.parse(
+            await specialist.revise!(options.brief, options.context, request),
+          );
+          if (proposal.agent !== request.targetAgent) {
+            throw new Error(`Revision tool returned ${proposal.agent} for ${request.targetAgent}.`);
+          }
+          onProposal(proposal);
+          return { objective, request, proposal };
+        },
+        {
+          name: `revise_${request.targetAgent.replaceAll("-", "_")}_specialist`,
+          description: `Send the validated conflict and constraints to the ${specialist.label} specialist. The request is immutable and already targets this specialist.`,
+          schema: DelegationRequest,
+        },
+      ),
+    ];
+  });
 }
 
 /** Run a genuine LangChain supervisor tool loop and return only called specialists. */
@@ -90,4 +127,44 @@ export async function dispatchWithSupervisor(
     const proposal = proposals.get(agent.name);
     return proposal ? [proposal] : [];
   });
+}
+
+/** Route validated revision requests through a named supervisor tool loop. */
+export async function reviseWithSupervisor(
+  options: SupervisorRevisionOptions,
+): Promise<AgentProposal[]> {
+  const model = options.model ?? createRoutedChatModel("itinerary");
+  if (!model) throw new Error("Revision supervisor requires a configured routed chat model.");
+
+  const revised = new Map<AgentProposal["agent"], AgentProposal>();
+  const tools = createRevisionTools(options, (proposal) => revised.set(proposal.agent, proposal));
+  if (tools.length === 0) return options.proposals;
+
+  const supervisor = createAgent({
+    name: "trip_revision_supervisor",
+    model,
+    tools,
+    systemPrompt:
+      "You are the trip revision supervisor. Call every provided revision specialist tool exactly once so each validated conflict request reaches its targeted owner. Do not rewrite requests, constraints or trip facts, and do not solve specialist work yourself. Stop after all revision tools return; LangGraph will re-run deterministic conflict validation.",
+  });
+  await supervisor.invoke({
+    messages: [
+      {
+        role: "user",
+        content: JSON.stringify({
+          task: "Delegate every pending revision request to its typed specialist tool.",
+          tripId: options.brief.tripId,
+          requests: options.requests,
+        }),
+      },
+    ],
+  });
+
+  const expected = new Set(tools.map((revisionTool) => revisionTool.name));
+  if (revised.size !== expected.size) {
+    throw new Error(
+      `Revision supervisor delegated ${revised.size} of ${expected.size} pending request(s).`,
+    );
+  }
+  return options.proposals.map((proposal) => revised.get(proposal.agent) ?? proposal);
 }

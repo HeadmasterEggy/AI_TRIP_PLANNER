@@ -18,6 +18,9 @@ export {
 export { rollUpCost } from "./budget";
 export {
   createSupervisorTools,
+  createRevisionTools,
   dispatchWithSupervisor,
+  reviseWithSupervisor,
   type SupervisorDispatchOptions,
+  type SupervisorRevisionOptions,
 } from "./supervisor";
