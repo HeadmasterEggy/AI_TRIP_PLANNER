@@ -276,3 +276,46 @@ button {
   font-size: 12px;
   padding: 8px 0;
 }
+
+/* Streaming placeholder shown while the orchestrator computes the first plan. */
+.skeleton {
+  background: var(--border);
+  border-radius: 6px;
+  opacity: 0.5;
+  animation: skeleton-pulse 1.4s ease-in-out infinite;
+}
+.skeleton--line {
+  height: 10px;
+  margin: 10px 0;
+}
+.skeleton--field {
+  height: 34px;
+  margin: 0 0 18px;
+}
+.skeleton--bar {
+  height: 6px;
+  margin: 6px 0 20px;
+}
+.skeleton__section {
+  padding: 14px 0;
+  border-top: 1px solid var(--border);
+}
+.skeleton__status {
+  font-size: 13px;
+  color: var(--text-dim);
+  margin: 0;
+}
+@keyframes skeleton-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .skeleton {
+    animation: none;
+  }
+}

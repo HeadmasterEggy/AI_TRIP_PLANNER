@@ -10,10 +10,11 @@ import * as bookingAdapter from "./booking";
 export function createToolGateway(): ToolGateway {
   const useMock = process.env.USE_MOCK_TOOLS !== "false";
   if (!useMock) {
-    // TODO(B/C): construct and return the real Maps / Booking adapters here.
-    console.warn(
-      "[tools] USE_MOCK_TOOLS=false but real adapters are not implemented — falling back to mocks.",
-    );
+    const selected = process.env.MAPS_PROVIDER || (process.env.MAPS_API_KEY ? "google" : "osm");
+    if (selected === "osm" && !process.env.OSM_USER_AGENT) {
+      console.warn("[tools] OSM_USER_AGENT is unset; configure one before production traffic.");
+    }
+    console.warn(`[tools] Live ${selected} Maps adapter enabled; booking remains fixture-backed.`);
   }
   return { maps: mapsAdapter, booking: bookingAdapter };
 }

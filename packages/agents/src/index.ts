@@ -24,4 +24,19 @@ export {
   type ItineraryDraft,
   type ItineraryGenerator,
 } from "./itinerary";
-export { transportAgent, accommodationAgent, destinationGuideAgent, diningAgent };
+export {
+  destinationGuideAgent,
+  createDestinationGuideAgent,
+  type DestinationGuideAgentOptions,
+  type DestinationGuideDraft,
+  type DestinationGuideGenerator,
+} from "./destination-guide";
+export {
+  diningAgent,
+  createDiningAgent,
+  type DiningAgentOptions,
+  type DiningDraft,
+  type DiningGenerator,
+} from "./dining";
+export { MODEL_ROUTING, createRoutedChatModel, type RoutedModelTask } from "./models";
+export { transportAgent, accommodationAgent };

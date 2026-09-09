@@ -11,8 +11,8 @@ or hits a red line it is escalated to the Human Founder. The final plan is shown
 **mind-map + timeline**.
 
 > **Requirements / architecture source of truth** (Stage 1 deliverable — 4+1 viewpoints, feature
-> diagrams, use cases): the Google Doc *ELEC5620 Project1--docs*. This README only covers *how we
-> build together*; it does not repeat the architecture modelling.
+> diagrams, use cases): the Google Doc _ELEC5620 Project1--docs_. This README only covers _how we
+> build together_; it does not repeat the architecture modelling.
 
 **🚀 Live demo:** [elec5620-ai-trip-planner.vercel.app](https://elec5620-ai-trip-planner.vercel.app)
 — auto-deploys from `main` on every merge. This is the one canonical deployment for the team; please
@@ -42,7 +42,7 @@ flowchart TB
     subgraph TOOLS[ToolGateway: external tool adapters]
       MAPS[(OpenStreetMap / Nominatim / OSRM · mockable)]
       BOOK[(Booking / Price API · mock)]
-      LLM[(Claude / DeepSeek · LangChain)]
+      LLM[(GPT / DeepSeek / MiniMax · LangChain)]
     end
 
     IT --> MEM
@@ -71,14 +71,14 @@ flowchart TB
 
 ### Agents
 
-| Layer | Name | Responsibility | Owner |
-|---|---|---|---|
-| Orchestrator | `OrchestratorAgent` | chat intake, requirement decomposition, task dispatch, proposal aggregation, conflict detection, up-to-K=3 revision rounds, **all HITL and escalation**, cost roll-up | A |
-| Specialist | `ItineraryPlannerAgent` | structured day-by-day schedule, pacing from dates/group/prefs, model-backed drafting with deterministic fallback, route-feasibility checks | B |
-| Specialist | `TransportAgent` | group flight pricing, inter-city/local routes, explicit timing, budget and schedule revisions | B |
-| Specialist | `AccommodationAgent` | lodging search and comparison, individual / group room allocation | C |
-| Specialist | `DestinationGuideAgent` | attractions, local customs, safety, visa / vaccine by nationality; **+ weather and packing advice as an LLM sub-function (no weather API)** | D |
-| Specialist | `DiningAgent` | cuisine recommendations, dietary restrictions | D |
+| Layer        | Name                    | Responsibility                                                                                                                                                        | Owner |
+| ------------ | ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----- |
+| Orchestrator | `OrchestratorAgent`     | chat intake, requirement decomposition, task dispatch, proposal aggregation, conflict detection, up-to-K=3 revision rounds, **all HITL and escalation**, cost roll-up | A     |
+| Specialist   | `ItineraryPlannerAgent` | structured day-by-day schedule, pacing from dates/group/prefs, model-backed drafting with deterministic fallback, route-feasibility checks                            | B     |
+| Specialist   | `TransportAgent`        | group flight pricing, inter-city/local routes, explicit timing, budget and schedule revisions                                                                         | B     |
+| Specialist   | `AccommodationAgent`    | lodging search and comparison, individual / group room allocation                                                                                                     | C     |
+| Specialist   | `DestinationGuideAgent` | MiniMax-backed grounded attractions, customs/safety checklist, official-source entry/health reminders, typical-weather packing context                                | D     |
+| Specialist   | `DiningAgent`           | MiniMax-backed grounded venue suggestions, dietary preferences and one whole-trip meal budget envelope                                                                | D     |
 
 ### Non-agent modules
 
@@ -115,19 +115,19 @@ flowchart TB
 
 ## 2. Tech stack
 
-| Area | Choice |
-|---|---|
-| Language | **TypeScript** (`strict: true`) |
-| Runtime | Node.js 22 LTS |
-| Monorepo / package manager | pnpm workspaces + Turborepo |
-| Web framework | Next.js 15 (App Router) — frontend + server-side agent logic in one deployable (Route Handlers / Server Actions) |
-| Agent orchestration | **LangGraph.js** (`@langchain/langgraph`): typed graph state, parallel specialist dispatch, conditional conflict/revision loop |
-| LLM calls | LangChain `ChatAnthropic.withStructuredOutput()` extracts chat updates; `ChatOpenAI` targets DeepSeek's OpenAI-compatible endpoint for itinerary drafts; both have validated deterministic fallbacks |
-| Contracts / validation | **Zod** — every inter-agent message and tool input/output |
-| State / memory | SQLite (`better-sqlite3`) or JSON files in dev; add Redis (optional in compose) if cross-request sharing is needed |
-| Testing | Vitest |
-| Lint / format | ESLint + Prettier (or Biome) |
-| CI | GitHub Actions: lint + typecheck + test + build |
+| Area                       | Choice                                                                                                                                                                                                       |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Language                   | **TypeScript** (`strict: true`)                                                                                                                                                                              |
+| Runtime                    | Node.js 22 LTS                                                                                                                                                                                               |
+| Monorepo / package manager | pnpm workspaces + Turborepo                                                                                                                                                                                  |
+| Web framework              | Next.js 15 (App Router) — frontend + server-side agent logic in one deployable (Route Handlers / Server Actions)                                                                                             |
+| Agent orchestration        | **LangGraph.js** (`@langchain/langgraph`): typed graph state, parallel specialist dispatch, conditional conflict/revision loop                                                                               |
+| LLM calls                  | LangChain structured output; `ChatOpenAI` routes itinerary to DeepSeek and destination/dining to MiniMax, while chat extraction supports GPT or Anthropic; every path has a validated deterministic fallback |
+| Contracts / validation     | **Zod** — every inter-agent message and tool input/output                                                                                                                                                    |
+| State / memory             | SQLite (`better-sqlite3`) or JSON files in dev; add Redis (optional in compose) if cross-request sharing is needed                                                                                           |
+| Testing                    | Vitest                                                                                                                                                                                                       |
+| Lint / format              | ESLint + Prettier (or Biome)                                                                                                                                                                                 |
+| CI                         | GitHub Actions: lint + typecheck + test + build                                                                                                                                                              |
 
 ---
 
@@ -155,8 +155,8 @@ ai-trip-planner/
 │   │   ├── itinerary/                # model/fallback daily schedule + route checks (B)
 │   │   ├── transport/                # flight/route estimates + timed legs           (B)
 │   │   ├── accommodation/            #                                              (C)
-│   │   ├── destination-guide/        # incl. weather / packing sub-function         (D)
-│   │   └── dining/                   #                                              (D)
+│   │   ├── destination-guide/        # grounded guide + weather/packing context      (D)
+│   │   └── dining/                   # grounded venues + dietary meal budget         (D)
 │   ├── services/src/
 │   │   ├── memory/                   # file-backed dev memory; DB migration planned (E)
 │   │   ├── notification/             # stub                                         (E)
@@ -253,7 +253,11 @@ other side's I/O and develops independently — no waiting for others.**
 import { z } from "zod";
 
 export const AGENT_NAMES = [
-  "itinerary", "transport", "accommodation", "destination-guide", "dining",
+  "itinerary",
+  "transport",
+  "accommodation",
+  "destination-guide",
+  "dining",
 ] as const;
 export type AgentName = (typeof AGENT_NAMES)[number];
 
@@ -261,7 +265,7 @@ export const TripBrief = z.object({
   tripId: z.string(),
   userId: z.string().default("demo-user"),
   destination: z.string(),
-  dates: z.tuple([z.string(), z.string()]),      // [start, end] ISO
+  dates: z.tuple([z.string(), z.string()]), // [start, end] ISO
   groupSize: z.number().int().positive(),
   budgetTotal: z.number().positive(),
   nationality: z.string().optional(),
@@ -271,15 +275,17 @@ export type TripBrief = z.infer<typeof TripBrief>;
 export const AgentProposal = z.object({
   agent: z.enum(AGENT_NAMES),
   summary: z.string(),
-  items: z.array(z.object({
-    kind: z.string(),                             // "transport" | "hotel" | "activity" ...
-    detail: z.string(),
-    estCost: z.number().nonnegative().optional(), // USD, whole trip (not per-person) — frozen by A
-    day: z.number().int().optional(),
-    startTime: z.string().optional(),             // HH:mm; schedule fields are optional as a group
-    endTime: z.string().optional(),
-    location: z.string().optional(),
-  })),
+  items: z.array(
+    z.object({
+      kind: z.string(), // "transport" | "hotel" | "activity" ...
+      detail: z.string(),
+      estCost: z.number().nonnegative().optional(), // USD, whole trip (not per-person) — frozen by A
+      day: z.number().int().optional(),
+      startTime: z.string().optional(), // HH:mm; schedule fields are optional as a group
+      endTime: z.string().optional(),
+      location: z.string().optional(),
+    }),
+  ),
   assumptions: z.array(z.string()),
   conflictsWith: z.array(z.string()).default([]),
 });
@@ -288,7 +294,7 @@ export type AgentProposal = z.infer<typeof AgentProposal>;
 export const RevisionRequest = z.object({
   tripId: z.string(),
   targetAgent: z.enum(AGENT_NAMES),
-  reason: z.string(),                             // "plan is 18% over budget" ...
+  reason: z.string(), // "plan is 18% over budget" ...
   constraints: z.array(z.string()),
 });
 export type RevisionRequest = z.infer<typeof RevisionRequest>;
@@ -303,14 +309,14 @@ unit-testable with fakes. Interfaces (`ToolGateway`, `MemoryStore`) live in
 interface AgentContext {
   tripId: string;
   round: number;
-  tools: ToolGateway;   // ctx.tools.maps.route(...) / ctx.tools.booking.searchStays(...)
-  mem: MemoryStore;      // ctx.mem.getLongTerm(brief.userId) ...
+  tools: ToolGateway; // ctx.tools.maps.route(...) / ctx.tools.booking.searchStays(...)
+  mem: MemoryStore; // ctx.mem.getLongTerm(brief.userId) ...
   signal?: AbortSignal;
 }
 
 interface Agent {
   name: AgentName;
-  label: string;         // section title in the "Your trip" panel
+  label: string; // section title in the "Your trip" panel
   run(brief: TripBrief, ctx: AgentContext): Promise<AgentProposal>;
   revise?(brief: TripBrief, ctx: AgentContext, req: RevisionRequest): Promise<AgentProposal>;
 }
@@ -348,13 +354,13 @@ frontend / backend / testing. Rationale, in course terms: each module maps to on
 conceptual homogeneity; control stays centralised in the Orchestrator; control is separated from
 function.
 
-| Person | Owns | Depends on | Delivers |
-|---|---|---|---|
-| **A — Orchestrator & integration lead** | `OrchestratorAgent`, negotiation loop, conflict detection, **all HITL & escalation policy**, `packages/shared` contracts, `ToolGateway` interface, CI, weekly integration, `main` merge gate | everyone's proposal schema | working end-to-end flow: chat → full trip plan |
-| **B — Itinerary & transport** | `ItineraryPlannerAgent`, `TransportAgent`, maps adapter (mock), time / geo conflict-check helper | shared contracts, maps data (mock) | day-by-day itinerary with transport |
-| **C — Stay & budget** | `AccommodationAgent`, booking adapter (mock), cost-aggregation module (sum vs budget → overrun %) | shared contracts, booking data (mock), `estCost` from B / D | lodging plan + live "cost vs budget" number |
-| **D — Destination guide & dining** | `DestinationGuideAgent` (attractions, customs, safety, visa / vaccine by nationality, + weather / packing advice as an LLM sub-function), `DiningAgent` | shared contracts | destination guidance + dining recommendations |
-| **E — Frontend & memory** | Web app (chat, filters / preferences, "Your trip" panel), `PreferenceMemoryService` (short / long-term memory), notification & auth stubs | A's orchestrator API | working web UI: chat, live plan, confirm actions |
+| Person                                  | Owns                                                                                                                                                                                         | Depends on                                                  | Delivers                                         |
+| --------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- | ------------------------------------------------ |
+| **A — Orchestrator & integration lead** | `OrchestratorAgent`, negotiation loop, conflict detection, **all HITL & escalation policy**, `packages/shared` contracts, `ToolGateway` interface, CI, weekly integration, `main` merge gate | everyone's proposal schema                                  | working end-to-end flow: chat → full trip plan   |
+| **B — Itinerary & transport**           | `ItineraryPlannerAgent`, `TransportAgent`, maps adapter (mock), time / geo conflict-check helper                                                                                             | shared contracts, maps data (mock)                          | day-by-day itinerary with transport              |
+| **C — Stay & budget**                   | `AccommodationAgent`, booking adapter (mock), cost-aggregation module (sum vs budget → overrun %)                                                                                            | shared contracts, booking data (mock), `estCost` from B / D | lodging plan + live "cost vs budget" number      |
+| **D — Destination guide & dining**      | `DestinationGuideAgent` (attractions, customs, safety, visa / vaccine by nationality, + weather / packing advice as an LLM sub-function), `DiningAgent`                                      | shared contracts                                            | destination guidance + dining recommendations    |
+| **E — Frontend & memory**               | Web app (chat, filters / preferences, "Your trip" panel), `PreferenceMemoryService` (short / long-term memory), notification & auth stubs                                                    | A's orchestrator API                                        | working web UI: chat, live plan, confirm actions |
 
 **Tech lead / reviewer.** A is tech lead and integration owner, with final merge authority on `main`
 (after review) — but **not** the sole reviewer. Use the ring-review table in §6; every PR needs ≥1
@@ -369,13 +375,13 @@ Physical, and Scenario views.
 按**模块 owner** 分工(每人负责一到两个 agent 加上它的工具),**不按**前端 / 后端 / 测试横切。
 理由(课程术语):每个模块对应一块概念同质的领域;控制集中在 Orchestrator;控制与功能分离。
 
-| 人 | 负责 | 依赖 | 交付 |
-|---|---|---|---|
-| **A(530527086|Ziqi He) —— 编排与集成负责人** | `OrchestratorAgent`、协商循环、冲突检测、**全部 HITL 与升级策略**、`packages/shared` 契约、`ToolGateway` 接口、CI、每周集成、`main` 合并把关 | 大家的提案格式(schema) | 能跑通的主流程:聊天 → 一份完整行程 |
-| **B(540532755|Tingsong Jin) —— 行程与交通** | `ItineraryPlannerAgent`、`TransportAgent`、地图适配器(mock)、时间 / 地理冲突检查 helper | 共享契约、地图数据(mock) | 带交通的每日行程 |
-| **C(550378747|YI QIAO) —— 住宿与预算** | `AccommodationAgent`、订房适配器(mock)、成本汇总模块(加总 vs 预算 → 超支 %) | 共享契约、订房数据(mock)、B / D 的 `estCost` 字段 | 住宿方案 + 实时"花费 vs 预算"数字 |
-| **D(550066431|Jiahang Bian) —— 目的地向导与美食** | `DestinationGuideAgent`(景点、当地习俗、安全、按国籍的签证 / 疫苗,+ 天气 / 行李建议作为 LLM 子功能)、`DiningAgent` | 共享契约 | 目的地指南 + 美食推荐 |
-| **E (550414791|Weihao Wang)—— 前端与记忆** | Web 应用(聊天、筛选 / 偏好、"你的行程"面板)、`PreferenceMemoryService`(短期 / 长期记忆)、通知与登录 stub | A 的 orchestrator 接口 | 能用的网页:聊天、行程实时更新、确认操作 |
+| 人                                                 | 负责                                                                                                                                         | 依赖                                              | 交付                                    |
+| -------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- | --------------------------------------- |
+| **A(530527086\|Ziqi He) —— 编排与集成负责人**      | `OrchestratorAgent`、协商循环、冲突检测、**全部 HITL 与升级策略**、`packages/shared` 契约、`ToolGateway` 接口、CI、每周集成、`main` 合并把关 | 大家的提案格式(schema)                            | 能跑通的主流程:聊天 → 一份完整行程      |
+| **B(540532755\|Tingsong Jin) —— 行程与交通**       | `ItineraryPlannerAgent`、`TransportAgent`、地图适配器(mock)、时间 / 地理冲突检查 helper                                                      | 共享契约、地图数据(mock)                          | 带交通的每日行程                        |
+| **C(550378747\|YI QIAO) —— 住宿与预算**            | `AccommodationAgent`、订房适配器(mock)、成本汇总模块(加总 vs 预算 → 超支 %)                                                                  | 共享契约、订房数据(mock)、B / D 的 `estCost` 字段 | 住宿方案 + 实时"花费 vs 预算"数字       |
+| **D(550066431\|Jiahang Bian) —— 目的地向导与美食** | `DestinationGuideAgent`(景点、当地习俗、安全、按国籍的签证 / 疫苗,+ 天气 / 行李建议作为 LLM 子功能)、`DiningAgent`                           | 共享契约                                          | 目的地指南 + 美食推荐                   |
+| **E (550414791\|Weihao Wang)—— 前端与记忆**        | Web 应用(聊天、筛选 / 偏好、"你的行程"面板)、`PreferenceMemoryService`(短期 / 长期记忆)、通知与登录 stub                                     | A 的 orchestrator 接口                            | 能用的网页:聊天、行程实时更新、确认操作 |
 
 **技术负责人 / reviewer**:A 是技术负责人和集成 owner,拥有 `main` 的最终合并权(必须先过
 review)—— 但**不是唯一 reviewer**。用 §6 的环形 review 表,每个 PR 至少 1 人 approve。没有
@@ -411,12 +417,12 @@ Commit message prefix: `feat:` / `fix:` / `docs:` / `refactor:` / `test:` / `cho
 ### Review assignment (ring — don't review your own)
 
 | PR author | Reviewer |
-|---|---|
-| A | B |
-| B | C |
-| C | D |
-| D | E |
-| E | A |
+| --------- | -------- |
+| A         | B        |
+| B         | C        |
+| C         | D        |
+| D         | E        |
+| E         | A        |
 
 ### Issues / board
 
@@ -499,12 +505,12 @@ services:
     ports: ["3000:3000"]
     env_file: [.env.local]
     environment:
-      - WATCHPACK_POLLING=true      # file watching on Windows
+      - WATCHPACK_POLLING=true # file watching on Windows
       - CHOKIDAR_USEPOLLING=true
       - MOCK_API_URL=http://mock-apis:4000
     volumes:
       - .:/app
-      - /app/node_modules           # don't let the host node_modules shadow the container's
+      - /app/node_modules # don't let the host node_modules shadow the container's
     depends_on: [mock-apis]
 
   mock-apis:
@@ -560,11 +566,11 @@ Keep a copy of the template at `docs/session-logs/TEMPLATE.md`:
 
 - Author:
 - Date:
-- Module(s):            # directory name, e.g. agents/transport
-- Goal / requirement source:   # which Google Doc line / which Issue
+- Module(s): # directory name, e.g. agents/transport
+- Goal / requirement source: # which Google Doc line / which Issue
 - What was done:
 - Files changed:
-- Contract impact:      # did packages/shared change? if so, @ the whole team
+- Contract impact: # did packages/shared change? if so, @ the whole team
 - Assumptions:
 - External tools / mocks used:
 - Open issues / TODO:

@@ -149,12 +149,16 @@ describe("LangGraph orchestrator workflow", () => {
     expect(requests[0]).toMatchObject({ targetAgent: "itinerary" });
     expect(requests[0]!.reason).toContain("geography conflict");
     expect(requests[0]!.reason).toContain("time overlap on day 2");
-    expect(requests[0]!.constraints).toEqual(
-      expect.arrayContaining([
-        "make the route geographically feasible",
-        "reschedule day 2 without changing trip dates",
-      ]),
+    expect(requests[0]!.constraints).toContain("make the route geographically feasible");
+    // The revising agent cannot see the other proposals, so the constraint has
+    // to name the window it must avoid and who holds it.
+    const rescheduleConstraint = requests[0]!.constraints.find((constraint) =>
+      constraint.includes("reschedule"),
     );
+    expect(rescheduleConstraint).toContain("day 2");
+    expect(rescheduleConstraint).toContain("10:00-11:30");
+    expect(rescheduleConstraint).toContain("transport");
+    expect(rescheduleConstraint).toContain("without changing trip dates");
   });
 
   it("ends at the configured round limit and marks unresolved sections", async () => {
