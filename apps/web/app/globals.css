@@ -227,31 +227,49 @@ button {
   padding-bottom: 12px;
 }
 .msg {
-  max-width: 80%;
-  padding: 10px 12px;
-  border-radius: 12px;
+  max-width: min(80%, 60ch);
+  padding: 10px var(--space-3);
+  border-radius: var(--radius-lg);
   font-size: 13px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  animation: msg-in 200ms cubic-bezier(0.4, 0, 0.2, 1);
 }
+/* Flatten the corner on the side the bubble is anchored to, so the column
+   reads as a conversation rather than a stack of identical pills. */
 .msg--user {
   align-self: flex-end;
+  border-bottom-right-radius: var(--radius-sm);
   background: var(--accent-bg);
   color: var(--text);
 }
 .msg--agent {
   align-self: flex-start;
+  border-bottom-left-radius: var(--radius-sm);
   background: var(--surface-2);
 }
+@keyframes msg-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
 .agent-activity {
+  align-self: stretch;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--surface);
-  padding: 10px 12px;
+  box-shadow: var(--shadow-sm);
+  padding: 10px var(--space-3);
   font-size: 12px;
 }
 .agent-activity__title {
-  color: var(--text-dim);
+  color: var(--text-mut);
   font-weight: 600;
-  margin-bottom: 6px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: var(--space-2);
 }
 .agent-activity__row {
   display: flex;
@@ -265,6 +283,23 @@ button {
 }
 .agent-activity__status--running {
   color: var(--accent);
+}
+/* The only row actually doing work should be the one that moves. */
+.agent-activity__status--running::before {
+  content: "";
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  margin-right: 6px;
+  vertical-align: middle;
+  border-radius: var(--radius-pill);
+  background: currentColor;
+  animation: pulse 1.2s ease-in-out infinite;
+}
+@keyframes pulse {
+  50% {
+    opacity: 0.25;
+  }
 }
 .agent-activity__status--completed {
   color: var(--ok);
@@ -316,15 +351,19 @@ button {
   margin: 2px 0 14px;
 }
 .bar {
-  height: 6px;
-  border-radius: 999px;
+  height: var(--space-2);
+  border-radius: var(--radius-pill);
   background: var(--surface-2);
   overflow: hidden;
 }
 .bar > span {
   display: block;
   height: 100%;
+  border-radius: inherit;
   background: var(--ok);
+  transition:
+    width 400ms cubic-bezier(0.4, 0, 0.2, 1),
+    background var(--transition);
 }
 /* Over budget has to look different from on budget: the bar pins to 100% in
    both cases, so colour is the only signal left. */
@@ -361,13 +400,14 @@ button {
 }
 .banner {
   display: flex;
-  gap: 8px;
+  gap: var(--space-2);
   align-items: flex-start;
   background: var(--warn-bg);
   color: var(--warn);
-  border-radius: var(--radius);
-  padding: 10px 12px;
-  margin: 14px 0;
+  border-left: 3px solid var(--warn-strong);
+  border-radius: var(--radius-sm);
+  padding: 10px var(--space-3);
+  margin: var(--space-4) 0;
   font-size: 13px;
 }
 .section {
@@ -424,8 +464,9 @@ button {
 }
 .proposal-item {
   border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 9px 10px;
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius-sm);
+  padding: var(--space-2) 10px;
   background: var(--surface-2);
 }
 .proposal-item__meta {
@@ -472,8 +513,9 @@ button {
 }
 .chip {
   font-size: 11px;
-  padding: 2px 8px;
-  border-radius: 999px;
+  font-weight: 500;
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-pill);
   white-space: nowrap;
 }
 .chip--draft {
