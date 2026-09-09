@@ -1,10 +1,10 @@
 import {
   TripBrief as TripBriefSchema,
-  type Agent,
   type AgentContext,
   type AgentProposal,
   type Place,
   type RevisionRequest,
+  type Specialist,
   type TripBrief,
   type UserPreference,
 } from "@trip/shared";
@@ -265,17 +265,22 @@ async function planDining(
   };
 }
 
-/** Factory keeps provider behavior injectable while preserving the Agent contract. */
-export function createDiningAgent(options: DiningAgentOptions = {}): Agent {
+/** Factory keeps provider behavior injectable while exposing the Specialist API. */
+export function createDiningAgent(options: DiningAgentOptions = {}): Specialist {
   return {
     name: "dining",
     label: "Food & dining",
-    run: (brief, ctx) => planDining(brief, ctx, options),
-    async revise(brief, ctx, request) {
-      if (request.tripId !== brief.tripId || request.targetAgent !== "dining") {
-        throw new Error("Dining revision must target this trip and agent.");
+    supportsRevision: true,
+    async invoke(request) {
+      if (request.revision) {
+        if (
+          request.revision.tripId !== request.brief.tripId ||
+          request.revision.targetAgent !== "dining"
+        ) {
+          throw new Error("Dining revision must target this trip and agent.");
+        }
       }
-      return planDining(brief, ctx, options, request);
+      return planDining(request.brief, request.context, options, request.revision);
     },
   };
 }

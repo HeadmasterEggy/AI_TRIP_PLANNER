@@ -1,11 +1,11 @@
 // Owner: C — lodging proposals and price revisions via injected tools and memory.
 import {
   AgentProposal as AgentProposalSchema,
-  type Agent,
   type AgentProposal,
   type TripBrief,
   type AgentContext,
   type RevisionRequest,
+  type Specialist,
 } from "@trip/shared";
 import { createAgent, tool } from "langchain";
 import { z } from "zod/v4";
@@ -184,14 +184,16 @@ async function planStays(
 }
 
 // Public registry entry used by the orchestrator and revision router.
-export const accommodationAgent: Agent = {
+export const accommodationAgent: Specialist = {
   name: "accommodation",
   label: "Stay",
-  run: (brief, ctx) => planStays(brief, ctx),
-  async revise(brief, ctx, req) {
-    if (req.tripId !== brief.tripId || req.targetAgent !== "accommodation") {
-      throw new Error("Accommodation revision must target this trip and agent.");
+  supportsRevision: true,
+  async invoke({ brief, context, revision }) {
+    if (revision) {
+      if (revision.tripId !== brief.tripId || revision.targetAgent !== "accommodation") {
+        throw new Error("Accommodation revision must target this trip and agent.");
+      }
     }
-    return planStays(brief, ctx, req);
+    return planStays(brief, context, revision);
   },
 };

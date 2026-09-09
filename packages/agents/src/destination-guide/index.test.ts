@@ -62,7 +62,10 @@ const validDraft = {
 describe("destination guide", () => {
   it("builds a useful grounded fallback without a model", async () => {
     const ctx = context();
-    const result = await createDestinationGuideAgent({ generator: false }).run(brief, ctx);
+    const result = await createDestinationGuideAgent({ generator: false }).invoke({
+      brief,
+      context: ctx,
+    });
     expect(AgentProposal.safeParse(result).success).toBe(true);
     expect(result.summary).not.toContain("STUB");
     expect(result.items.filter((item) => item.kind === "attraction")).toHaveLength(2);
@@ -77,7 +80,10 @@ describe("destination guide", () => {
   it("uses a schema-valid MiniMax draft grounded in supplied places", async () => {
     const generate = vi.fn(async () => validDraft);
     const generator: DestinationGuideGenerator = { generate };
-    const result = await createDestinationGuideAgent({ generator }).run(brief, context());
+    const result = await createDestinationGuideAgent({ generator }).invoke({
+      brief,
+      context: context(),
+    });
     expect(result.assumptions.join(" ")).toContain("MiniMax/LangChain");
     expect(result.items[0]).toMatchObject({ kind: "attraction", location: "Temple Walk" });
     expect(generate).toHaveBeenCalledWith(
@@ -93,7 +99,10 @@ describe("destination guide", () => {
         attractions: [{ name: "Invented Palace", detail: "Not in MapsPort." }],
       })),
     };
-    const result = await createDestinationGuideAgent({ generator }).run(brief, context());
+    const result = await createDestinationGuideAgent({ generator }).invoke({
+      brief,
+      context: context(),
+    });
     expect(result.assumptions.join(" ")).toContain("deterministic fallback");
     expect(result.items.map((item) => item.location).filter(Boolean)).not.toContain(
       "Invented Palace",
@@ -102,10 +111,10 @@ describe("destination guide", () => {
   });
 
   it("does not invent attractions when MapsPort returns none", async () => {
-    const result = await createDestinationGuideAgent({ generator: false }).run(
+    const result = await createDestinationGuideAgent({ generator: false }).invoke({
       brief,
-      context([], false),
-    );
+      context: context([], false),
+    });
     expect(result.items.some((item) => item.kind === "attraction")).toBe(false);
     expect(result.items.some((item) => item.kind === "weather-packing")).toBe(true);
   });
@@ -113,10 +122,10 @@ describe("destination guide", () => {
   it("rejects an invalid departure date before calling tools", async () => {
     const ctx = context();
     await expect(
-      createDestinationGuideAgent({ generator: false }).run(
-        { ...brief, dates: ["2026-02-30", "2026-03-02"] },
-        ctx,
-      ),
+      createDestinationGuideAgent({ generator: false }).invoke({
+        brief: { ...brief, dates: ["2026-02-30", "2026-03-02"] },
+        context: ctx,
+      }),
     ).rejects.toThrow("valid YYYY-MM-DD");
     expect(ctx.tools.maps.places).not.toHaveBeenCalled();
   });
@@ -126,9 +135,9 @@ describe("destination guide", () => {
     const controller = new AbortController();
     controller.abort();
     await expect(
-      createDestinationGuideAgent({ generator: false }).run(brief, {
-        ...ctx,
-        signal: controller.signal,
+      createDestinationGuideAgent({ generator: false }).invoke({
+        brief,
+        context: { ...ctx, signal: controller.signal },
       }),
     ).rejects.toThrow();
     expect(ctx.tools.maps.places).not.toHaveBeenCalled();

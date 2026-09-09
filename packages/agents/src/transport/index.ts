@@ -1,10 +1,10 @@
 import {
   AgentProposal as AgentProposalSchema,
   TripBrief as TripBriefSchema,
-  type Agent,
   type AgentContext,
   type AgentProposal,
   type RevisionRequest,
+  type Specialist,
   type TripBrief,
 } from "@trip/shared";
 import { createAgent, tool } from "langchain";
@@ -202,14 +202,16 @@ async function planTransport(
 }
 
 // Default registry entry; revisions are routed through the same planner above.
-export const transportAgent: Agent = {
+export const transportAgent: Specialist = {
   name: "transport",
   label: "Getting around",
-  run: (brief, ctx) => planTransport(brief, ctx),
-  async revise(brief, ctx, request: RevisionRequest) {
-    if (request.tripId !== brief.tripId || request.targetAgent !== "transport") {
-      throw new Error("Transport revision must target this trip and agent.");
+  supportsRevision: true,
+  async invoke({ brief, context, revision }) {
+    if (revision) {
+      if (revision.tripId !== brief.tripId || revision.targetAgent !== "transport") {
+        throw new Error("Transport revision must target this trip and agent.");
+      }
     }
-    return planTransport(brief, ctx, request);
+    return planTransport(brief, context, revision);
   },
 };

@@ -6,7 +6,7 @@ import {
   type ConditionalEdgeRouter,
   type GraphNode,
 } from "@langchain/langgraph";
-import { allAgents } from "@trip/agents";
+import { allSpecialists } from "@trip/agents";
 import { memory } from "@trip/services";
 import {
   AgentProposal as AgentProposalSchema,
@@ -19,6 +19,7 @@ import {
   type HitlCheckpoint,
   type MemoryStore,
   type RevisionRequest,
+  type Specialist,
   type ToolGateway,
   type TripBrief,
   type TripPlan,
@@ -39,10 +40,31 @@ const DEFAULT_MAX_ROUNDS = 3;
 
 /** Dependencies are injectable so the graph can be tested without network or singleton state. */
 export interface OrchestratorOptions {
+  /** New framework-neutral specialist implementations. */
+  specialists?: Specialist[];
+  /** @deprecated Use `specialists`; retained for downstream compatibility. */
   agents?: Agent[];
   tools?: ToolGateway;
   mem?: MemoryStore;
   maxRounds?: number;
+}
+
+/** Adapt the old split run/revise API at the boundary only. */
+function adaptLegacyAgent(agent: Agent): Specialist {
+  return {
+    name: agent.name,
+    label: agent.label,
+    supportsRevision: Boolean(agent.revise),
+    invoke({ brief, context, revision }) {
+      if (revision) {
+        if (!agent.revise) {
+          throw new Error(`${agent.name} does not support targeted revisions.`);
+        }
+        return agent.revise(brief, context, revision);
+      }
+      return agent.run(brief, context);
+    },
+  };
 }
 
 const OrchestratorState = new StateSchema({
@@ -140,12 +162,12 @@ export function detectConflicts(proposals: AgentProposal[], brief: TripBrief): R
 function toSection(
   proposal: AgentProposal,
   unresolved: RevisionRequest[],
-  agentByName: Map<Agent["name"], Agent>,
+  specialistByName: Map<Specialist["name"], Specialist>,
 ): TripSection {
   const stillConflicting = unresolved.some((request) => request.targetAgent === proposal.agent);
   return {
     id: proposal.agent,
-    label: agentByName.get(proposal.agent)?.label ?? proposal.agent,
+    label: specialistByName.get(proposal.agent)?.label ?? proposal.agent,
     summary: proposal.summary,
     status: stillConflicting ? "needs_you" : "draft",
     estCost: costOf(proposal),
@@ -184,21 +206,26 @@ function buildHitl(
 }
 
 function resolveOptions(options: OrchestratorOptions) {
-  const agents = options.agents ?? allAgents;
+  const injected = options.specialists !== undefined || options.agents !== undefined;
+  const specialists =
+    options.specialists ?? options.agents?.map(adaptLegacyAgent) ?? allSpecialists;
   const maxRounds = options.maxRounds ?? DEFAULT_MAX_ROUNDS;
   if (!Number.isSafeInteger(maxRounds) || maxRounds < 1) {
     throw new Error("Orchestrator maxRounds must be a positive integer.");
   }
-  if (agents.length === 0) throw new Error("Orchestrator requires at least one agent.");
+  if (specialists.length === 0) throw new Error("Orchestrator requires at least one specialist.");
 
-  const agentByName = new Map(agents.map((agent) => [agent.name, agent]));
-  if (agentByName.size !== agents.length) {
-    throw new Error("Orchestrator agent names must be unique.");
+  const specialistByName = new Map(
+    specialists.map((specialist) => [specialist.name, specialist]),
+  );
+  if (specialistByName.size !== specialists.length) {
+    throw new Error("Orchestrator specialist names must be unique.");
   }
 
   return {
-    agents,
-    agentByName,
+    specialists,
+    specialistByName,
+    injected,
     maxRounds,
     tools: options.tools ?? createToolGateway(),
     mem: options.mem ?? memory,
@@ -215,7 +242,8 @@ function resolveOptions(options: OrchestratorOptions) {
  *                                 build_plan -> END
  */
 export function createOrchestratorGraph(options: OrchestratorOptions = {}) {
-  const { agents, agentByName, maxRounds, tools, mem } = resolveOptions(options);
+  const { specialists, specialistByName, injected, maxRounds, tools, mem } =
+    resolveOptions(options);
 
   const context = (brief: TripBrief, round: number): AgentContext => ({
     tripId: brief.tripId,
@@ -228,15 +256,19 @@ export function createOrchestratorGraph(options: OrchestratorOptions = {}) {
     const round = 1;
     const agentContext = context(state.brief, round);
     let proposals: AgentProposal[];
-    // Explicit agent injection is the compatibility seam used by tests and by
-    // the three specialists not migrated yet. Production uses the supervisor.
-    if (options.agents) {
-      proposals = await Promise.all(agents.map((agent) => agent.run(state.brief, agentContext)));
+    // Explicit specialist injection is the deterministic seam used by tests.
+    // Production uses the supervisor to select named specialist tools.
+    if (injected) {
+      proposals = await Promise.all(
+        specialists.map((specialist) =>
+          specialist.invoke({ brief: state.brief, context: agentContext }),
+        ),
+      );
     } else {
       try {
         proposals = await dispatchWithSupervisor({
           brief: state.brief,
-          agents,
+          specialists,
           context: agentContext,
         });
       } catch (error) {
@@ -244,7 +276,11 @@ export function createOrchestratorGraph(options: OrchestratorOptions = {}) {
         console.warn(
           `[supervisor] Delegation unavailable; using deterministic dispatch: ${reason}`,
         );
-        proposals = await Promise.all(agents.map((agent) => agent.run(state.brief, agentContext)));
+        proposals = await Promise.all(
+          specialists.map((specialist) =>
+            specialist.invoke({ brief: state.brief, context: agentContext }),
+          ),
+        );
       }
     }
     return { round, proposals: proposals.map((proposal) => AgentProposalSchema.parse(proposal)) };
@@ -263,20 +299,24 @@ export function createOrchestratorGraph(options: OrchestratorOptions = {}) {
       Promise.all(
         state.proposals.map(async (proposal) => {
           const request = requestByAgent.get(proposal.agent);
-          const agent = agentByName.get(proposal.agent);
-          if (!request || !agent?.revise) return proposal;
-          const revised = await agent.revise(state.brief, context(state.brief, round), request);
+          const specialist = specialistByName.get(proposal.agent);
+          if (!request || !specialist?.supportsRevision) return proposal;
+          const revised = await specialist.invoke({
+            brief: state.brief,
+            context: context(state.brief, round),
+            revision: request,
+          });
           return AgentProposalSchema.parse(revised);
         }),
       );
     let proposals: AgentProposal[];
-    if (options.agents) {
+    if (injected) {
       proposals = await deterministicRevision();
     } else {
       try {
         proposals = await reviseWithSupervisor({
           brief: state.brief,
-          agents,
+          specialists,
           context: context(state.brief, round),
           proposals: state.proposals,
           requests: state.conflicts,
@@ -295,7 +335,7 @@ export function createOrchestratorGraph(options: OrchestratorOptions = {}) {
   const buildPlan: WorkflowNode = (state) => {
     const unresolved = state.conflicts.length > 0;
     const sections = state.proposals.map((proposal) =>
-      toSection(proposal, state.conflicts, agentByName),
+      toSection(proposal, state.conflicts, specialistByName),
     );
     const { estTotal, overrunPct } = rollUpCost(sections, state.brief.budgetTotal);
     const plan: TripPlan = {

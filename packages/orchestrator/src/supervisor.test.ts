@@ -1,6 +1,6 @@
 import { FakeToolCallingModel } from "langchain";
 import { describe, expect, it, vi } from "vitest";
-import type { Agent, MemoryStore, ToolGateway, TripBrief } from "@trip/shared";
+import type { MemoryStore, Specialist, ToolGateway, TripBrief } from "@trip/shared";
 import { createSupervisorTools, dispatchWithSupervisor, reviseWithSupervisor } from "./supervisor";
 
 const brief: TripBrief = {
@@ -23,10 +23,10 @@ const mem: MemoryStore = {
   setLongTerm: vi.fn(async () => {}),
   promote: vi.fn(async () => {}),
 };
-const itinerary: Agent = {
+const itinerary: Specialist = {
   name: "itinerary",
   label: "Day plan",
-  run: vi.fn(async () => ({
+  invoke: vi.fn(async () => ({
     agent: "itinerary" as const,
     summary: "Three-day plan",
     items: [],
@@ -40,13 +40,13 @@ describe("LangChain supervisor", () => {
   it("exposes specialists as schema-validated tools without accepting a replacement brief", async () => {
     const received: string[] = [];
     const [itineraryTool] = createSupervisorTools(
-      { brief, agents: [itinerary], context },
+      { brief, specialists: [itinerary], context },
       (proposal) => received.push(proposal.agent),
     );
 
     expect(itineraryTool!.name).toBe("ask_itinerary_specialist");
     await itineraryTool!.invoke({ objective: "Build the daily schedule" });
-    expect(itinerary.run).toHaveBeenCalledWith(brief, context);
+    expect(itinerary.invoke).toHaveBeenCalledWith({ brief, context });
     expect(received).toEqual(["itinerary"]);
   });
 
@@ -66,7 +66,7 @@ describe("LangChain supervisor", () => {
 
     const proposals = await dispatchWithSupervisor({
       brief,
-      agents: [itinerary],
+      specialists: [itinerary],
       context,
       model,
     });
@@ -80,15 +80,16 @@ describe("LangChain supervisor", () => {
       reason: "plan is over budget",
       constraints: ["cut itinerary cost by ~30%"],
     };
-    const revisedAgent: Agent = {
+    const revisedAgent: Specialist = {
       ...itinerary,
-      revise: vi.fn(async (_brief, _context, received) => ({
-        agent: "itinerary" as const,
-        summary: received.reason,
-        items: [],
-        assumptions: received.constraints,
-        conflictsWith: [],
-      })),
+      supportsRevision: true,
+      invoke: vi.fn(async ({ revision }) => ({
+          agent: "itinerary" as const,
+          summary: revision!.reason,
+          items: [],
+          assumptions: revision!.constraints,
+          conflictsWith: [],
+        })),
     };
     const model = new FakeToolCallingModel({
       toolCalls: [
@@ -105,17 +106,17 @@ describe("LangChain supervisor", () => {
 
     const [proposal] = await reviseWithSupervisor({
       brief,
-      agents: [revisedAgent],
+      specialists: [revisedAgent],
       context: { ...context, round: 2 },
-      proposals: [await itinerary.run(brief, context)],
+      proposals: [await itinerary.invoke({ brief, context })],
       requests: [request],
       model,
     });
-    expect(revisedAgent.revise).toHaveBeenCalledWith(
+    expect(revisedAgent.invoke).toHaveBeenCalledWith({
       brief,
-      expect.objectContaining({ round: 2 }),
-      request,
-    );
+      context: expect.objectContaining({ round: 2 }),
+      revision: request,
+    });
     expect(proposal!.summary).toBe(request.reason);
   });
 });

@@ -1,10 +1,10 @@
 import {
   TripBrief as TripBriefSchema,
-  type Agent,
   type AgentContext,
   type AgentProposal,
   type Place,
   type RevisionRequest,
+  type Specialist,
   type TripBrief,
   type UserPreference,
 } from "@trip/shared";
@@ -272,17 +272,22 @@ async function planItinerary(
   };
 }
 
-/** Factory keeps the planner injectable while preserving the Agent API. */
-export function createItineraryAgent(options: ItineraryAgentOptions = {}): Agent {
+/** Factory keeps the planner injectable while exposing the Specialist API. */
+export function createItineraryAgent(options: ItineraryAgentOptions = {}): Specialist {
   return {
     name: "itinerary",
     label: "Day plan",
-    run: (brief, ctx) => planItinerary(brief, ctx, options),
-    async revise(brief, ctx, request) {
-      if (request.tripId !== brief.tripId || request.targetAgent !== "itinerary") {
-        throw new Error("Itinerary revision must target this trip and agent.");
+    supportsRevision: true,
+    async invoke(request) {
+      if (request.revision) {
+        if (
+          request.revision.tripId !== request.brief.tripId ||
+          request.revision.targetAgent !== "itinerary"
+        ) {
+          throw new Error("Itinerary revision must target this trip and agent.");
+        }
       }
-      return planItinerary(brief, ctx, options, request);
+      return planItinerary(request.brief, request.context, options, request.revision);
     },
   };
 }

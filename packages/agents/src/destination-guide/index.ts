@@ -1,9 +1,9 @@
 import {
   TripBrief as TripBriefSchema,
-  type Agent,
   type AgentContext,
   type AgentProposal,
   type Place,
+  type Specialist,
   type TripBrief,
   type UserPreference,
 } from "@trip/shared";
@@ -218,12 +218,19 @@ async function planDestinationGuide(
   };
 }
 
-/** Factory keeps the generator injectable while exposing a standard Agent API. */
-export function createDestinationGuideAgent(options: DestinationGuideAgentOptions = {}): Agent {
+/** Factory keeps the generator injectable while exposing the Specialist API. */
+export function createDestinationGuideAgent(
+  options: DestinationGuideAgentOptions = {},
+): Specialist {
   return {
     name: "destination-guide",
     label: "Destination guide",
-    run: (brief, ctx) => planDestinationGuide(brief, ctx, options),
+    async invoke({ brief, context, revision }) {
+      if (revision) {
+        throw new Error("Destination guide does not support targeted revisions.");
+      }
+      return planDestinationGuide(brief, context, options);
+    },
   };
 }
 

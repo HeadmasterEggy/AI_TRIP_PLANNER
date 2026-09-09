@@ -48,7 +48,10 @@ const validDraft = {
 
 describe("dining planner", () => {
   it("creates one whole-trip budget envelope without double-counting venues", async () => {
-    const result = await createDiningAgent({ generator: false }).run(brief, context());
+    const result = await createDiningAgent({ generator: false }).invoke({
+      brief,
+      context: context(),
+    });
     expect(AgentProposal.safeParse(result).success).toBe(true);
     expect(result.summary).not.toContain("STUB");
     expect(result.items[0]).toMatchObject({ kind: "meal-budget", estCost: 200 });
@@ -63,7 +66,10 @@ describe("dining planner", () => {
     ];
     const generate = vi.fn(async () => validDraft);
     const generator: DiningGenerator = { generate };
-    const result = await createDiningAgent({ generator }).run(brief, context(preferences));
+    const result = await createDiningAgent({ generator }).invoke({
+      brief,
+      context: context(preferences),
+    });
     expect(generate).toHaveBeenCalledWith(
       expect.objectContaining({
         dietaryPreferences: [preferences[0]],
@@ -79,7 +85,10 @@ describe("dining planner", () => {
     const generator: DiningGenerator = {
       generate: vi.fn(async () => ({ ...validDraft, dailyBudgetPerPersonUsd: 500 })),
     };
-    const result = await createDiningAgent({ generator }).run(brief, context());
+    const result = await createDiningAgent({ generator }).invoke({
+      brief,
+      context: context(),
+    });
     expect(result.items[0]!.estCost).toBe(200);
     expect(result.assumptions.join(" ")).toContain("deterministic fallback");
     warning.mockRestore();
@@ -87,17 +96,17 @@ describe("dining planner", () => {
 
   it("cuts the meal envelope by 30 percent for a budget revision", async () => {
     const agent = createDiningAgent({ generator: false });
-    const initial = await agent.run(brief, context());
-    const revised = await agent.revise!(
+    const initial = await agent.invoke({ brief, context: context() });
+    const revised = await agent.invoke({
       brief,
-      { ...context(), round: 2 },
-      {
+      context: { ...context(), round: 2 },
+      revision: {
         tripId: brief.tripId,
         targetAgent: "dining",
         reason: "plan is over budget",
         constraints: ["cut dining cost by ~30%"],
       },
-    );
+    });
     expect(initial.items[0]!.estCost).toBe(200);
     expect(revised.items[0]!.estCost).toBe(140);
     expect(revised.assumptions.join(" ")).toContain("Revision requested");
@@ -111,37 +120,53 @@ describe("dining planner", () => {
         picks: [{ name: "Invented Restaurant", detail: "Not in MapsPort." }],
       })),
     };
-    const result = await createDiningAgent({ generator }).run(brief, context());
+    const result = await createDiningAgent({ generator }).invoke({
+      brief,
+      context: context(),
+    });
     expect(result.items.map((item) => item.location).filter(Boolean)).toEqual(["Market Kitchen"]);
     warning.mockRestore();
   });
 
   it("returns only a budget envelope when no venue candidates exist", async () => {
-    const result = await createDiningAgent({ generator: false }).run(brief, context([], false));
+    const result = await createDiningAgent({ generator: false }).invoke({
+      brief,
+      context: context([], false),
+    });
     expect(result.items).toHaveLength(1);
     expect(result.items[0]!.kind).toBe("meal-budget");
   });
 
   it("does not exceed even a very small total trip budget", async () => {
     const tinyBudget = { ...brief, budgetTotal: 0.01 };
-    const result = await createDiningAgent({ generator: false }).run(tinyBudget, context());
+    const result = await createDiningAgent({ generator: false }).invoke({
+      brief: tinyBudget,
+      context: context(),
+    });
     expect(result.items[0]!.estCost).toBeLessThanOrEqual(tinyBudget.budgetTotal);
   });
 
   it("rejects invalid dates and revisions before external calls", async () => {
     const ctx = context();
     const agent = createDiningAgent({ generator: false });
-    await expect(agent.run({ ...brief, dates: ["2026-10-03", "2026-10-01"] }, ctx)).rejects.toThrow(
-      "ordered dates",
-    );
+    await expect(
+      agent.invoke({
+        brief: { ...brief, dates: ["2026-10-03", "2026-10-01"] },
+        context: ctx,
+      }),
+    ).rejects.toThrow("ordered dates");
     expect(ctx.tools.maps.places).not.toHaveBeenCalled();
 
     await expect(
-      agent.revise!(brief, context(), {
-        tripId: "wrong-trip",
-        targetAgent: "dining",
-        reason: "budget",
-        constraints: [],
+      agent.invoke({
+        brief,
+        context: context(),
+        revision: {
+          tripId: "wrong-trip",
+          targetAgent: "dining",
+          reason: "budget",
+          constraints: [],
+        },
       }),
     ).rejects.toThrow("target this trip");
   });

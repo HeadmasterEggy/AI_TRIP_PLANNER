@@ -52,7 +52,7 @@ function context(stays = options, prefs: UserPreference[] = []) {
 describe("accommodation proposals", () => {
   it("charges only the selected stay: 3 guests, 2 rooms, 4 nights = USD 800", async () => {
     const { ctx, searchStays, getLongTerm } = context();
-    const result = await accommodationAgent.run(brief, ctx);
+    const result = await accommodationAgent.invoke({ brief, context: ctx });
     expect(AgentProposal.safeParse(result).success).toBe(true);
     expect(result.items).toHaveLength(1);
     expect(result.items[0]).toMatchObject({ kind: "hotel", day: 1, estCost: 800 });
@@ -70,15 +70,15 @@ describe("accommodation proposals", () => {
     const { ctx } = context(options, [
       { key: "accommodation.roomAllocation", value: "individual", source: "filter" },
     ]);
-    expect((await accommodationAgent.run(brief, ctx)).items[0]!.estCost).toBe(1200);
+    expect((await accommodationAgent.invoke({ brief, context: ctx })).items[0]!.estCost).toBe(1200);
   });
 
   it("partitions seven nights into adjacent city stays without double-counting", async () => {
     const { ctx, searchStays } = context();
-    const result = await accommodationAgent.run(
-      { ...brief, groupSize: 2, destination: "Tokyo & Kyoto", dates: ["2026-06-15", "2026-06-22"] },
-      ctx,
-    );
+    const result = await accommodationAgent.invoke({
+      brief: { ...brief, groupSize: 2, destination: "Tokyo & Kyoto", dates: ["2026-06-15", "2026-06-22"] },
+      context: ctx,
+    });
     expect(searchStays.mock.calls).toEqual([
       [{ city: "Tokyo", checkIn: "2026-06-15", checkOut: "2026-06-19", guests: 2 }],
       [{ city: "Kyoto", checkIn: "2026-06-19", checkOut: "2026-06-22", guests: 2 }],
@@ -92,10 +92,10 @@ describe("accommodation proposals", () => {
 
   it("counts leap-day nights using calendar dates and keeps cents", async () => {
     const { ctx } = context([{ ...options[0]!, pricePerNightUsd: 99.99 }]);
-    const result = await accommodationAgent.run(
-      { ...brief, dates: ["2028-02-28", "2028-03-01"] },
-      ctx,
-    );
+    const result = await accommodationAgent.invoke({
+      brief: { ...brief, dates: ["2028-02-28", "2028-03-01"] },
+      context: ctx,
+    });
     expect(result.items[0]!.estCost).toBe(399.96);
   });
 
@@ -110,7 +110,7 @@ describe("accommodation proposals", () => {
   ])("rejects unplannable inputs before searching: %j", async (override) => {
     const { ctx, searchStays } = context();
     await expect(
-      accommodationAgent.run({ ...brief, ...override } as TripBrief, ctx),
+      accommodationAgent.invoke({ brief: { ...brief, ...override } as TripBrief, context: ctx }),
     ).rejects.toThrow();
     expect(searchStays).not.toHaveBeenCalled();
   });
@@ -121,7 +121,7 @@ describe("accommodation proposals", () => {
       [{ ...options[0]!, pricePerNightUsd: NaN }],
       [{ ...options[0]!, pricePerNightUsd: -1 }],
     ]) {
-      await expect(accommodationAgent.run(brief, context(stays).ctx)).rejects.toThrow(
+      await expect(accommodationAgent.invoke({ brief, context: context(stays).ctx })).rejects.toThrow(
         "No valid stays",
       );
     }
@@ -131,7 +131,7 @@ describe("accommodation proposals", () => {
     const { ctx } = context(options, [
       { key: "accommodation.minRating", value: "unknown", source: "filter" },
     ]);
-    await expect(accommodationAgent.run(brief, ctx)).rejects.toThrow("minRating");
+    await expect(accommodationAgent.invoke({ brief, context: ctx })).rejects.toThrow("minRating");
   });
 
   it("honours cancellation before starting tool calls", async () => {
@@ -139,7 +139,7 @@ describe("accommodation proposals", () => {
     const controller = new AbortController();
     controller.abort();
     await expect(
-      accommodationAgent.run(brief, { ...ctx, signal: controller.signal }),
+      accommodationAgent.invoke({ brief, context: { ...ctx, signal: controller.signal } }),
     ).rejects.toThrow();
     expect(searchStays).not.toHaveBeenCalled();
   });
@@ -148,7 +148,11 @@ describe("accommodation proposals", () => {
 describe("accommodation revisions", () => {
   it("reduces cost by choosing real alternatives while keeping dates and guests", async () => {
     const { ctx, searchStays } = context();
-    const result = await accommodationAgent.revise!(brief, { ...ctx, round: 2 }, request);
+    const result = await accommodationAgent.invoke({
+      brief,
+      context: { ...ctx, round: 2 },
+      revision: request,
+    });
     expect(result.items[0]!.estCost).toBe(480);
     expect(result.items[0]!.detail).toContain("Economy");
     expect(result.items[0]!.detail).toContain("no free cancellation");
@@ -164,7 +168,7 @@ describe("accommodation revisions", () => {
       { key: "accommodation.minRating", value: "8", source: "chat_confirmed" },
       { key: "accommodation.freeCancellation", value: "true", source: "filter" },
     ]);
-    const result = await accommodationAgent.revise!(brief, ctx, request);
+    const result = await accommodationAgent.invoke({ brief, context: ctx, revision: request });
     expect(result.items[0]!.estCost).toBe(800);
     expect(result.assumptions.join(" ")).toContain("Target cannot be met");
     expect(result.assumptions.join(" ")).toContain("No cheaper eligible stay");
@@ -172,16 +176,28 @@ describe("accommodation revisions", () => {
 
   it("does not keep applying fictional discounts in later rounds", async () => {
     const { ctx } = context();
-    const second = await accommodationAgent.revise!(brief, { ...ctx, round: 2 }, request);
-    const third = await accommodationAgent.revise!(brief, { ...ctx, round: 3 }, request);
+    const second = await accommodationAgent.invoke({
+      brief,
+      context: { ...ctx, round: 2 },
+      revision: request,
+    });
+    const third = await accommodationAgent.invoke({
+      brief,
+      context: { ...ctx, round: 3 },
+      revision: request,
+    });
     expect(third.items).toEqual(second.items);
   });
 
   it("does not claim a price change resolves an unsupported time conflict", async () => {
-    const result = await accommodationAgent.revise!(brief, context().ctx, {
-      ...request,
-      reason: "time overlap",
-      constraints: [],
+    const result = await accommodationAgent.invoke({
+      brief,
+      context: context().ctx,
+      revision: {
+        ...request,
+        reason: "time overlap",
+        constraints: [],
+      },
     });
     expect(result.items[0]!.estCost).toBe(800);
     expect(result.assumptions.join(" ")).toContain("updated brief");
@@ -189,7 +205,11 @@ describe("accommodation revisions", () => {
 
   it("rejects a revision addressed to another trip", async () => {
     await expect(
-      accommodationAgent.revise!(brief, context().ctx, { ...request, tripId: "someone-else" }),
+      accommodationAgent.invoke({
+        brief,
+        context: context().ctx,
+        revision: { ...request, tripId: "someone-else" },
+      }),
     ).rejects.toThrow("target this trip");
   });
 });

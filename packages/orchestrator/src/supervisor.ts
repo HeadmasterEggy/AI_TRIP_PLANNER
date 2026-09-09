@@ -1,9 +1,9 @@
 import {
   AgentProposal as AgentProposalSchema,
-  type Agent,
   type AgentContext,
   type AgentProposal,
   type RevisionRequest,
+  type Specialist,
   type TripBrief,
 } from "@trip/shared";
 import { createRoutedChatModel } from "@trip/agents";
@@ -21,7 +21,7 @@ const DelegationRequest = z.object({
 
 export interface SupervisorDispatchOptions {
   brief: TripBrief;
-  agents: Agent[];
+  specialists: Specialist[];
   context: AgentContext;
   model?: BaseChatModel;
 }
@@ -40,11 +40,11 @@ export function createSupervisorTools(
   options: Omit<SupervisorDispatchOptions, "model">,
   onProposal: (proposal: AgentProposal) => void,
 ) {
-  return options.agents.map((specialist) =>
+  return options.specialists.map((specialist) =>
     tool(
       async ({ objective }) => {
         const proposal = AgentProposalSchema.parse(
-          await specialist.run(options.brief, options.context),
+          await specialist.invoke({ brief: options.brief, context: options.context }),
         );
         onProposal(proposal);
         return { objective, proposal };
@@ -63,15 +63,21 @@ export function createRevisionTools(
   options: Omit<SupervisorRevisionOptions, "model" | "proposals">,
   onProposal: (proposal: AgentProposal) => void,
 ) {
-  const agents = new Map(options.agents.map((agent) => [agent.name, agent]));
+  const specialists = new Map(
+    options.specialists.map((specialist) => [specialist.name, specialist]),
+  );
   return options.requests.flatMap((request) => {
-    const specialist = agents.get(request.targetAgent);
-    if (!specialist?.revise) return [];
+    const specialist = specialists.get(request.targetAgent);
+    if (!specialist?.supportsRevision) return [];
     return [
       tool(
         async ({ objective }) => {
           const proposal = AgentProposalSchema.parse(
-            await specialist.revise!(options.brief, options.context, request),
+            await specialist.invoke({
+              brief: options.brief,
+              context: options.context,
+              revision: request,
+            }),
           );
           if (proposal.agent !== request.targetAgent) {
             throw new Error(`Revision tool returned ${proposal.agent} for ${request.targetAgent}.`);
@@ -123,8 +129,8 @@ export async function dispatchWithSupervisor(
   if (proposals.size === 0) {
     throw new Error("Supervisor completed without delegating to a specialist.");
   }
-  return options.agents.flatMap((agent) => {
-    const proposal = proposals.get(agent.name);
+  return options.specialists.flatMap((specialist) => {
+    const proposal = proposals.get(specialist.name);
     return proposal ? [proposal] : [];
   });
 }

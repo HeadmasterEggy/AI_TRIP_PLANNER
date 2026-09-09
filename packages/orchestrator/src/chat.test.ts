@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { Agent, MemoryStore, ToolGateway, TripBrief } from "@trip/shared";
+import type { MemoryStore, Specialist, ToolGateway, TripBrief } from "@trip/shared";
 import {
   applyBriefPatch,
   extractBriefPatchLocally,
@@ -89,10 +89,10 @@ describe("trip chat workflow", () => {
       maps: { route: vi.fn(async () => []), places: vi.fn(async () => []) },
       booking: { searchStays: vi.fn(async () => []), searchFlights: vi.fn(async () => []) },
     };
-    const itinerary: Agent = {
+    const itinerary: Specialist = {
       name: "itinerary",
       label: "Day plan",
-      async run(updated) {
+      async invoke({ brief: updated }) {
         return {
           agent: "itinerary",
           summary: `Plan for ${updated.destination}`,
@@ -105,7 +105,7 @@ describe("trip chat workflow", () => {
 
     const result = await runTripChat(
       { tripId: brief.tripId, message: "Please change the destination", brief },
-      { extractor, agents: [itinerary], tools, mem },
+      { extractor, specialists: [itinerary], tools, mem },
     );
 
     expect(extractor.extract).toHaveBeenCalledWith("Please change the destination", brief);

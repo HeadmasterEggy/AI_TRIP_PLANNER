@@ -45,7 +45,7 @@ function context(preferences: UserPreference[] = []) {
 describe("transport planner", () => {
   it("combines a whole-group flight with timed inter-city routes", async () => {
     const { ctx, route, searchFlights } = context();
-    const result = await transportAgent.run(brief, ctx);
+    const result = await transportAgent.invoke({ brief, context: ctx });
     expect(AgentProposal.safeParse(result).success).toBe(true);
     expect(result.summary).not.toContain("STUB");
     expect(result.items.map((item) => item.estCost)).toEqual([1600, 90]);
@@ -60,29 +60,40 @@ describe("transport planner", () => {
     const { ctx } = context([
       { key: "transport.origin", value: "Melbourne", source: "chat_confirmed" },
     ]);
-    const result = await transportAgent.revise!(brief, ctx, {
-      tripId: brief.tripId,
-      targetAgent: "transport",
-      reason: "plan is over budget",
-      constraints: ["cut transport cost by ~30%"],
+    const result = await transportAgent.invoke({
+      brief,
+      context: ctx,
+      revision: {
+        tripId: brief.tripId,
+        targetAgent: "transport",
+        reason: "plan is over budget",
+        constraints: ["cut transport cost by ~30%"],
+      },
     });
     expect(result.items[0]).toMatchObject({ estCost: 1200, location: "Melbourne → Tokyo" });
     expect(result.assumptions.join(" ")).toContain("lowest returned flight fare");
   });
 
   it("moves routed legs earlier for a schedule revision", async () => {
-    const result = await transportAgent.revise!(brief, context().ctx, {
-      tripId: brief.tripId,
-      targetAgent: "transport",
-      reason: "time overlap on day 3",
-      constraints: ["reschedule"],
+    const result = await transportAgent.invoke({
+      brief,
+      context: context().ctx,
+      revision: {
+        tripId: brief.tripId,
+        targetAgent: "transport",
+        reason: "time overlap on day 3",
+        constraints: ["reschedule"],
+      },
     });
     expect(result.items[1]).toMatchObject({ startTime: "06:00", endTime: "08:20" });
   });
 
   it("avoids a same-city flight and plans an airport transfer", async () => {
     const { ctx, searchFlights, route } = context();
-    const result = await transportAgent.run({ ...brief, destination: "Sydney" }, ctx);
+    const result = await transportAgent.invoke({
+      brief: { ...brief, destination: "Sydney" },
+      context: ctx,
+    });
     expect(searchFlights).not.toHaveBeenCalled();
     expect(route).toHaveBeenCalledWith(expect.objectContaining({ from: "Sydney airport" }));
     expect(result.items).toHaveLength(1);
@@ -90,11 +101,15 @@ describe("transport planner", () => {
 
   it("rejects revisions addressed to another trip", async () => {
     await expect(
-      transportAgent.revise!(brief, context().ctx, {
-        tripId: "other-trip",
-        targetAgent: "transport",
-        reason: "budget",
-        constraints: [],
+      transportAgent.invoke({
+        brief,
+        context: context().ctx,
+        revision: {
+          tripId: "other-trip",
+          targetAgent: "transport",
+          reason: "budget",
+          constraints: [],
+        },
       }),
     ).rejects.toThrow("target this trip and agent");
   });
