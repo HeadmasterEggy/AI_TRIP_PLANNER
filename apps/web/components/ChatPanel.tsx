@@ -65,6 +65,16 @@ export function ChatPanel({
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ tripId: brief.tripId, message: text, brief }),
       });
+      if (!res.ok) {
+        // The route answers 400/422 with { error } as plain JSON, not as a
+        // progress stream. Without this the body was parsed as NDJSON, matched
+        // no frame type, and the user saw "(no reply)" instead of the reason.
+        const detail = await res
+          .json()
+          .then((body: { error?: string }) => body.error)
+          .catch(() => undefined);
+        throw new Error(detail ?? `Chat request failed (${res.status}).`);
+      }
       if (!res.body) throw new Error("Chat response did not provide a progress stream.");
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
@@ -102,17 +112,26 @@ export function ChatPanel({
         }
       };
 
+      // One unparseable frame used to throw out of the read loop and discard
+      // the progress and plan already received. Skip it and keep reading.
+      const readFrame = (line: string) => {
+        if (!line.trim()) return;
+        try {
+          handleFrame(JSON.parse(line) as StreamFrame);
+        } catch (error) {
+          console.error("[chat] discarding unreadable progress frame", line, error);
+        }
+      };
+
       while (true) {
         const { value, done } = await reader.read();
         buffer += decoder.decode(value ?? new Uint8Array(), { stream: !done });
         const lines = buffer.split("\n");
         buffer = lines.pop() ?? "";
-        for (const line of lines) {
-          if (line.trim()) handleFrame(JSON.parse(line) as StreamFrame);
-        }
+        for (const line of lines) readFrame(line);
         if (done) break;
       }
-      if (buffer.trim()) handleFrame(JSON.parse(buffer) as StreamFrame);
+      readFrame(buffer);
 
       if (finalResponse) {
         onPlan(finalResponse.plan);
@@ -120,8 +139,10 @@ export function ChatPanel({
       } else {
         setMessages((m) => [...m, { role: "agent", text: streamError ?? "(no reply)" }]);
       }
-    } catch {
-      setMessages((m) => [...m, { role: "agent", text: "Request failed." }]);
+    } catch (error) {
+      console.error("[chat] request failed", error);
+      const text = error instanceof Error ? error.message : "Request failed.";
+      setMessages((m) => [...m, { role: "agent", text }]);
     } finally {
       setBusy(false);
     }
