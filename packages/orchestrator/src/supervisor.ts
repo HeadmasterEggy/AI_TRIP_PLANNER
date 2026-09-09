@@ -2,6 +2,7 @@ import {
   AgentProposal as AgentProposalSchema,
   type AgentContext,
   type AgentProposal,
+  type AgentProgressEvent,
   type RevisionRequest,
   type Specialist,
   type TripBrief,
@@ -24,6 +25,7 @@ export interface SupervisorDispatchOptions {
   specialists: Specialist[];
   context: AgentContext;
   model?: BaseChatModel;
+  onProgress?: (event: AgentProgressEvent) => void;
 }
 
 export interface SupervisorRevisionOptions extends SupervisorDispatchOptions {
@@ -43,9 +45,30 @@ export function createSupervisorTools(
   return options.specialists.map((specialist) =>
     tool(
       async ({ objective }) => {
-        const proposal = AgentProposalSchema.parse(
-          await specialist.invoke({ brief: options.brief, context: options.context }),
-        );
+        options.onProgress?.({
+          type: "agent_started",
+          agent: specialist.name,
+          round: options.context.round,
+        });
+        let proposal: AgentProposal;
+        try {
+          proposal = AgentProposalSchema.parse(
+            await specialist.invoke({ brief: options.brief, context: options.context }),
+          );
+        } catch (error) {
+          options.onProgress?.({
+            type: "agent_failed",
+            agent: specialist.name,
+            round: options.context.round,
+            error: error instanceof Error ? error.message : "unknown agent error",
+          });
+          throw error;
+        }
+        options.onProgress?.({
+          type: "agent_completed",
+          agent: specialist.name,
+          round: options.context.round,
+        });
         onProposal(proposal);
         return { objective, proposal };
       },
@@ -72,13 +95,34 @@ export function createRevisionTools(
     return [
       tool(
         async ({ objective }) => {
-          const proposal = AgentProposalSchema.parse(
-            await specialist.invoke({
-              brief: options.brief,
-              context: options.context,
-              revision: request,
-            }),
-          );
+          options.onProgress?.({
+            type: "agent_started",
+            agent: specialist.name,
+            round: options.context.round,
+          });
+          let proposal: AgentProposal;
+          try {
+            proposal = AgentProposalSchema.parse(
+              await specialist.invoke({
+                brief: options.brief,
+                context: options.context,
+                revision: request,
+              }),
+            );
+          } catch (error) {
+            options.onProgress?.({
+              type: "agent_failed",
+              agent: specialist.name,
+              round: options.context.round,
+              error: error instanceof Error ? error.message : "unknown agent error",
+            });
+            throw error;
+          }
+          options.onProgress?.({
+            type: "agent_completed",
+            agent: specialist.name,
+            round: options.context.round,
+          });
           if (proposal.agent !== request.targetAgent) {
             throw new Error(`Revision tool returned ${proposal.agent} for ${request.targetAgent}.`);
           }

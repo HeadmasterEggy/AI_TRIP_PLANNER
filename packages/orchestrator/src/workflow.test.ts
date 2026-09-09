@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type {
   AgentName,
   AgentProposal,
+  AgentProgressEvent,
   MemoryStore,
   Specialist,
   SpecialistRequest,
@@ -111,6 +112,23 @@ describe("LangGraph orchestrator workflow", () => {
     expect(plan.hitl.some((checkpoint) => checkpoint.type === "escalation")).toBe(false);
   });
 
+  it("reports specialist lifecycle progress for the UI", async () => {
+    const itinerary = agent("itinerary", 400);
+    const events: AgentProgressEvent[] = [];
+
+    await runOrchestrator(brief, {
+      specialists: [itinerary],
+      tools,
+      mem,
+      onProgress: (event) => events.push(event),
+    });
+
+    expect(events).toEqual([
+      { type: "agent_started", agent: "itinerary", round: 1 },
+      { type: "agent_completed", agent: "itinerary", round: 1 },
+    ]);
+  });
+
   it("targets itinerary when activity and transport schedules overlap", () => {
     const requests = detectConflicts(
       [
@@ -189,9 +207,9 @@ describe("LangGraph orchestrator workflow", () => {
     expect(() => createOrchestratorGraph({ specialists: [], tools, mem })).toThrow(
       "at least one specialist",
     );
-    expect(() => createOrchestratorGraph({ specialists: [duplicate, duplicate], tools, mem })).toThrow(
-      "unique",
-    );
+    expect(() =>
+      createOrchestratorGraph({ specialists: [duplicate, duplicate], tools, mem }),
+    ).toThrow("unique");
     expect(() =>
       createOrchestratorGraph({ specialists: [duplicate], tools, mem, maxRounds: 0 }),
     ).toThrow("positive integer");

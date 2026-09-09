@@ -14,6 +14,7 @@ import {
   TripPlan as TripPlanSchema,
   type AgentContext,
   type AgentProposal,
+  type AgentProgressEvent,
   type AgentName,
   type HitlCheckpoint,
   type MemoryStore,
@@ -43,6 +44,7 @@ export interface OrchestratorOptions {
   tools?: ToolGateway;
   mem?: MemoryStore;
   maxRounds?: number;
+  onProgress?: (event: AgentProgressEvent) => void;
 }
 
 const OrchestratorState = new StateSchema({
@@ -192,9 +194,7 @@ function resolveOptions(options: OrchestratorOptions) {
   }
   if (specialists.length === 0) throw new Error("Orchestrator requires at least one specialist.");
 
-  const specialistByName = new Map(
-    specialists.map((specialist) => [specialist.name, specialist]),
-  );
+  const specialistByName = new Map(specialists.map((specialist) => [specialist.name, specialist]));
   if (specialistByName.size !== specialists.length) {
     throw new Error("Orchestrator specialist names must be unique.");
   }
@@ -206,6 +206,7 @@ function resolveOptions(options: OrchestratorOptions) {
     maxRounds,
     tools: options.tools ?? createToolGateway(),
     mem: options.mem ?? memory,
+    onProgress: options.onProgress,
   };
 }
 
@@ -219,7 +220,7 @@ function resolveOptions(options: OrchestratorOptions) {
  *                                 build_plan -> END
  */
 export function createOrchestratorGraph(options: OrchestratorOptions = {}) {
-  const { specialists, specialistByName, injected, maxRounds, tools, mem } =
+  const { specialists, specialistByName, injected, maxRounds, tools, mem, onProgress } =
     resolveOptions(options);
 
   const context = (brief: TripBrief, round: number): AgentContext => ({
@@ -228,6 +229,30 @@ export function createOrchestratorGraph(options: OrchestratorOptions = {}) {
     tools,
     mem,
   });
+
+  const invokeSpecialist = async (
+    specialist: Specialist,
+    request: Parameters<Specialist["invoke"]>[0],
+  ): Promise<AgentProposal> => {
+    onProgress?.({ type: "agent_started", agent: specialist.name, round: request.context.round });
+    try {
+      const proposal = AgentProposalSchema.parse(await specialist.invoke(request));
+      onProgress?.({
+        type: "agent_completed",
+        agent: specialist.name,
+        round: request.context.round,
+      });
+      return proposal;
+    } catch (error) {
+      onProgress?.({
+        type: "agent_failed",
+        agent: specialist.name,
+        round: request.context.round,
+        error: error instanceof Error ? error.message : "unknown agent error",
+      });
+      throw error;
+    }
+  };
 
   const dispatchSpecialists: WorkflowNode = async (state) => {
     const round = 1;
@@ -238,7 +263,7 @@ export function createOrchestratorGraph(options: OrchestratorOptions = {}) {
     if (injected) {
       proposals = await Promise.all(
         specialists.map((specialist) =>
-          specialist.invoke({ brief: state.brief, context: agentContext }),
+          invokeSpecialist(specialist, { brief: state.brief, context: agentContext }),
         ),
       );
     } else {
@@ -247,6 +272,7 @@ export function createOrchestratorGraph(options: OrchestratorOptions = {}) {
           brief: state.brief,
           specialists,
           context: agentContext,
+          onProgress,
         });
       } catch (error) {
         const reason = error instanceof Error ? error.message : "unknown supervisor error";
@@ -255,7 +281,7 @@ export function createOrchestratorGraph(options: OrchestratorOptions = {}) {
         );
         proposals = await Promise.all(
           specialists.map((specialist) =>
-            specialist.invoke({ brief: state.brief, context: agentContext }),
+            invokeSpecialist(specialist, { brief: state.brief, context: agentContext }),
           ),
         );
       }
@@ -278,12 +304,11 @@ export function createOrchestratorGraph(options: OrchestratorOptions = {}) {
           const request = requestByAgent.get(proposal.agent);
           const specialist = specialistByName.get(proposal.agent);
           if (!request || !specialist?.supportsRevision) return proposal;
-          const revised = await specialist.invoke({
+          return invokeSpecialist(specialist, {
             brief: state.brief,
             context: context(state.brief, round),
             revision: request,
           });
-          return AgentProposalSchema.parse(revised);
         }),
       );
     let proposals: AgentProposal[];
@@ -297,6 +322,7 @@ export function createOrchestratorGraph(options: OrchestratorOptions = {}) {
           context: context(state.brief, round),
           proposals: state.proposals,
           requests: state.conflicts,
+          onProgress,
         });
       } catch (error) {
         const reason = error instanceof Error ? error.message : "unknown revision supervisor error";
