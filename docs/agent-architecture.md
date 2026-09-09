@@ -46,15 +46,15 @@ The explanatory model and relationship notes are in [`docs/class-diagram.md`](cl
 Completed on `codex/langchain-agent-refactor`:
 
 - `packages/orchestrator/src/supervisor.ts` provides a named supervisor and typed delegation tools.
-- Destination and itinerary model generation use named agents with typed evidence tools and Zod
-  structured responses.
+- Destination, itinerary, dining, transport and accommodation model generation use named agents
+  with typed evidence/calculator tools and Zod structured responses.
+- Revision requests use immutable, targeted supervisor delegation tools.
 - Legacy Agent adapters remain as a compatibility seam for tests and offline fallback.
 
 Next:
 
-- Migrate dining, transport and accommodation to named agents.
-- Move revision requests into typed supervisor/delegation tools.
 - Remove the legacy `Agent.run()` dispatch once all specialists and tests use the new path.
+- Add supervisor checkpoint persistence and fine-grained UI tool-loop streaming.
 
 ## Contracts
 
