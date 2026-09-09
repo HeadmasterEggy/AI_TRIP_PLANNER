@@ -32,7 +32,9 @@ export function TripSection({ section }: { section: TripSectionData }) {
           {STATUS_LABEL[section.status] ?? section.status}
         </span>
         <span className="cost">${Math.round(section.estCost).toLocaleString()}</span>
-        <span aria-hidden>{open ? "▾" : "▸"}</span>
+        <span className="section__chevron" aria-hidden>
+          ▸
+        </span>
       </button>
 
       {open && (
