@@ -9,7 +9,7 @@ import {
 } from "@trip/shared";
 import { createAgent, tool } from "langchain";
 import { z } from "zod/v4";
-import { createRoutedChatModel } from "../models";
+import { createRoutedChatModel, readStructuredResponse } from "../models";
 import { chooseInitial, eligibleOptions, readPreferences, splitStay, stayCost } from "./planning";
 
 /** Build the grounded lodging proposal that remains correct without an LLM. */
@@ -169,7 +169,7 @@ async function planStays(
         },
       ],
     });
-    const proposal = AgentProposalSchema.parse(result.structuredResponse);
+    const proposal = readStructuredResponse("accommodation", AgentProposalSchema, result);
     if (proposal.agent !== "accommodation" || !evidence) {
       throw new Error(
         "Accommodation specialist returned the wrong proposal type or skipped its tool.",

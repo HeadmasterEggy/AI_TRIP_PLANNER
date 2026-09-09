@@ -10,7 +10,7 @@ import {
 } from "@trip/shared";
 import { z } from "zod/v4";
 import { createAgent, tool } from "langchain";
-import { createRoutedChatModel } from "../models";
+import { createRoutedChatModel, readStructuredResponse } from "../models";
 
 // The itinerary schema and guardrails constrain model output before it reaches
 // the shared proposal format or the route-conflict checker.
@@ -161,7 +161,7 @@ function createDeepSeekGenerator(): ItineraryGenerator | undefined {
         model,
         tools: [evidence],
         systemPrompt:
-          "You are the itinerary specialist. Always call read_itinerary_evidence before drafting. Use only its facts and candidate place names. Cover every trip day with 1-3 non-overlapping activities using 24-hour HH:mm times, leave 150 minutes between different locations, and keep activity cost within 40% of the total trip budget. Never claim live hours, availability, safety, visa or weather facts. Address a supplied revision exactly. Return the requested structured itinerary draft.",
+          "You are the itinerary specialist. Always call read_itinerary_evidence before drafting. Use only its facts and candidate place names. Cover every trip day with 1-3 non-overlapping activities using 24-hour HH:mm times, leave 150 minutes between different locations, and keep activity cost within 40% of the total trip budget. Never claim live hours, availability, safety, visa or weather facts. Address a supplied revision exactly. Return the requested structured itinerary draft.\n\nEach activity location must be a candidate's name copied character for character. Do not append its category, rating or district, and do not reword it: an activity whose location is not an exact candidate name is discarded and the whole draft is thrown away.",
         responseFormat: ItineraryDraft,
       });
       const result = await specialist.invoke({
@@ -176,7 +176,7 @@ function createDeepSeekGenerator(): ItineraryGenerator | undefined {
           },
         ],
       });
-      return ItineraryDraft.parse(result.structuredResponse);
+      return readStructuredResponse("itinerary", ItineraryDraft, result);
     },
   };
 }

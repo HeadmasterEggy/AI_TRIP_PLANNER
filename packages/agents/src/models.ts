@@ -123,3 +123,23 @@ function withCorrection(prompt: string, name: string, error: unknown): string {
         : "unknown model error";
   return `${prompt}\n\nA previous attempt failed. Call the ${name} tool and fix exactly these problems, respecting every type, minimum and maximum in the tool schema:\n${detail}`;
 }
+
+/**
+ * Read a specialist agent's structured result.
+ *
+ * `createAgent` retries extraction a few times and then finishes with
+ * `structuredResponse` left undefined. Parsing that directly reports "expected
+ * object, received undefined" against the draft schema, which reads as a schema
+ * bug rather than the agent having given up -- so name the real failure, and
+ * validate in one place for every specialist.
+ */
+export function readStructuredResponse<Schema extends z.ZodType>(
+  agentName: string,
+  schema: Schema,
+  result: { structuredResponse?: unknown },
+): z.infer<Schema> {
+  if (result.structuredResponse === undefined) {
+    throw new Error(`${agentName}: the specialist finished without producing a structured result.`);
+  }
+  return schema.parse(result.structuredResponse);
+}

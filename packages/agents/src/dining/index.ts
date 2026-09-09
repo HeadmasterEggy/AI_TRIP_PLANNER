@@ -10,7 +10,7 @@ import {
 } from "@trip/shared";
 import { z } from "zod/v4";
 import { createAgent, tool } from "langchain";
-import { createRoutedChatModel } from "../models";
+import { createRoutedChatModel, readStructuredResponse } from "../models";
 
 // Dining has an explicit budget envelope: venue candidates are unpriced unless
 // a caller separately confirms them, so only the envelope contributes cost.
@@ -167,7 +167,7 @@ function createMiniMaxGenerator(): DiningGenerator | undefined {
         model,
         tools: [evidence],
         systemPrompt:
-          "You are the dining specialist. Always call read_dining_evidence and use only its facts and exact venue names. Stay within its daily per-person USD ceiling and address any revision. Never claim live hours, availability, menu items, allergen safety, certification or dietary suitability; tell travellers to confirm important constraints directly. Return the requested structured dining draft.",
+          "You are the dining specialist. Always call read_dining_evidence and use only its facts and exact venue names. Stay within its daily per-person USD ceiling and address any revision. Never claim live hours, availability, menu items, allergen safety, certification or dietary suitability; tell travellers to confirm important constraints directly. Return the requested structured dining draft.\n\nEach pick's name must be a candidate's name copied character for character, with no category, rating or district appended. Return no picks rather than inventing a venue that is not in the evidence.",
         responseFormat: DiningDraft,
       });
       const result = await specialist.invoke({
@@ -182,7 +182,7 @@ function createMiniMaxGenerator(): DiningGenerator | undefined {
           },
         ],
       });
-      return DiningDraft.parse(result.structuredResponse);
+      return readStructuredResponse("dining", DiningDraft, result);
     },
   };
 }

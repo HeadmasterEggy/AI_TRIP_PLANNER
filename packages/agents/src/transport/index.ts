@@ -9,7 +9,7 @@ import {
 } from "@trip/shared";
 import { createAgent, tool } from "langchain";
 import { z } from "zod/v4";
-import { createRoutedChatModel } from "../models";
+import { createRoutedChatModel, readStructuredResponse } from "../models";
 
 // Transport combines booking fares with map legs and keeps all pricing in the
 // deterministic calculator that the specialist must call.
@@ -189,7 +189,7 @@ async function planTransport(
         },
       ],
     });
-    const proposal = AgentProposalSchema.parse(result.structuredResponse);
+    const proposal = readStructuredResponse("transport", AgentProposalSchema, result);
     if (proposal.agent !== "transport" || !evidence) {
       throw new Error("Transport specialist returned the wrong proposal type or skipped its tool.");
     }

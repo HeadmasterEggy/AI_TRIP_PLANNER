@@ -9,7 +9,7 @@ import {
 } from "@trip/shared";
 import { z } from "zod/v4";
 import { createAgent, tool } from "langchain";
-import { createRoutedChatModel } from "../models";
+import { createRoutedChatModel, readStructuredResponse } from "../models";
 
 // The guide schema keeps model output bounded and makes every downstream item
 // safe to render as traveller-facing content.
@@ -126,7 +126,7 @@ function createMiniMaxGenerator(): DestinationGuideGenerator | undefined {
         model,
         tools: [evidence],
         systemPrompt:
-          "You are the destination specialist. Always call read_destination_evidence before answering and use only its facts. Attraction names must exactly match grounded candidates. Give concise customs, packing and planning guidance. Treat weather as monthly context, never a forecast. Never assert entry eligibility, vaccine requirements or that an area is safe; direct travellers to current official immigration, health and travel-advisory sources. Never claim live opening hours or availability. Return the requested structured destination guide.",
+          "You are the destination specialist. Always call read_destination_evidence before answering and use only its facts. Attraction names must be a grounded candidate's name copied character for character, with no category, rating or district appended. Give concise customs, packing and planning guidance. Treat weather as monthly context, never a forecast. Never assert entry eligibility, vaccine requirements or that an area is safe; direct travellers to current official immigration, health and travel-advisory sources. Never claim live opening hours or availability. Return the requested structured destination guide.\n\nFill every field on the first attempt and respect these limits literally, because the extraction is retried only a few times before the draft is abandoned: summary at most 400 characters; at most 5 attractions, each detail at most 500 characters; customs, safety and entryHealth are each 1-4 strings of at most 400 characters; weather at most 500 characters; packing 1-6 strings of at most 300 characters; assumptions at most 6 strings.",
         responseFormat: DestinationGuideDraft,
       });
       const result = await specialist.invoke({
@@ -140,7 +140,7 @@ function createMiniMaxGenerator(): DestinationGuideGenerator | undefined {
           },
         ],
       });
-      return DestinationGuideDraft.parse(result.structuredResponse);
+      return readStructuredResponse("destination-guide", DestinationGuideDraft, result);
     },
   };
 }
