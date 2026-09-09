@@ -11,14 +11,18 @@ import { createAgent, tool } from "langchain";
 import { z } from "zod/v4";
 import { createRoutedChatModel } from "../models";
 
+// Transport combines booking fares with map legs and keeps all pricing in the
+// deterministic calculator that the specialist must call.
 const DAY_MS = 86_400_000;
 
+/** Return trip length after validating the date ordering. */
 function tripDays([start, end]: [string, string]): number {
   const days = Math.round((Date.parse(end) - Date.parse(start)) / DAY_MS);
   if (!Number.isSafeInteger(days) || days < 1) throw new Error("Transport requires ordered dates.");
   return days;
 }
 
+/** Parse the demo's ampersand-separated destination convention. */
 function cities(destination: string): string[] {
   const result = destination
     .split(/\s*&\s*/)
@@ -28,6 +32,7 @@ function cities(destination: string): string[] {
   return result;
 }
 
+/** Format a leg cursor as a same-day HH:mm value. */
 function clock(totalMinutes: number): string {
   if (totalMinutes < 0 || totalMinutes >= 24 * 60) {
     throw new Error("A transport leg cannot fit inside one planning day.");
@@ -35,6 +40,7 @@ function clock(totalMinutes: number): string {
   return `${String(Math.floor(totalMinutes / 60)).padStart(2, "0")}:${String(totalMinutes % 60).padStart(2, "0")}`;
 }
 
+/** Search fares/routes and build a deterministic proposal for the trip. */
 async function buildTransportProposal(
   briefInput: TripBrief,
   ctx: AgentContext,
@@ -59,6 +65,8 @@ async function buildTransportProposal(
     date: brief.dates[0],
     day: Math.min(days, Math.floor((days * (index + 1)) / destinations.length) + 1),
   }));
+  // A single-city trip still gets an arrival transfer when the origin matches
+  // the destination, keeping the proposal useful without inventing a flight.
   if (origin.toLowerCase() === destinations[0]!.toLowerCase() && routeQueries.length === 0) {
     routeQueries.push({
       from: `${destinations[0]} airport`,
@@ -90,6 +98,7 @@ async function buildTransportProposal(
       : (flightOptions.find((option) => /flex/i.test(option.carrier)) ?? flightOptions[0])
     : undefined;
   const routeStart = scheduleRevision ? 6 * 60 : 9 * 60;
+  // Convert each returned map leg into sequential, same-day transport items.
   const routeItems = routed.flatMap(({ query, legs }) => {
     let cursor = routeStart;
     return legs.map((leg) => {
@@ -141,6 +150,8 @@ async function planTransport(
   ctx: AgentContext,
   revision?: RevisionRequest,
 ): Promise<AgentProposal> {
+  // Prefer the model only as a narrator; all evidence, selections and costs are
+  // produced by buildTransportProposal and exposed through one calculator tool.
   const model = createRoutedChatModel("transport");
   if (!model) return buildTransportProposal(brief, ctx, revision);
 
@@ -190,6 +201,7 @@ async function planTransport(
   }
 }
 
+// Default registry entry; revisions are routed through the same planner above.
 export const transportAgent: Agent = {
   name: "transport",
   label: "Getting around",

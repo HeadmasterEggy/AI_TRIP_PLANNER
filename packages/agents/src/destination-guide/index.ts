@@ -11,6 +11,8 @@ import { z } from "zod/v4";
 import { createAgent, tool } from "langchain";
 import { createRoutedChatModel } from "../models";
 
+// The guide schema keeps model output bounded and makes every downstream item
+// safe to render as traveller-facing content.
 const GuideAttraction = z.object({
   name: z.string().trim().min(1).max(120),
   detail: z.string().trim().min(1).max(500),
@@ -27,8 +29,10 @@ const DestinationGuideDraft = z.object({
   assumptions: z.array(z.string().trim().min(1).max(400)).max(6),
 });
 
+/** Structured guide content before it is adapted to the shared proposal shape. */
 export type DestinationGuideDraft = z.infer<typeof DestinationGuideDraft>;
 
+/** Injectable model seam used by tests and alternate providers. */
 export interface DestinationGuideGenerator {
   generate(input: {
     brief: TripBrief;
@@ -38,15 +42,18 @@ export interface DestinationGuideGenerator {
   }): Promise<DestinationGuideDraft>;
 }
 
+/** Configuration for selecting an injected generator or deterministic mode. */
 export interface DestinationGuideAgentOptions {
   /** Pass false to force the grounded deterministic guide. */
   generator?: DestinationGuideGenerator | false;
 }
 
+/** Normalize names before comparing model output with map evidence. */
 function normalize(value: string): string {
   return value.trim().replace(/\s+/g, " ").toLocaleLowerCase();
 }
 
+/** Turn the trip start date into month-only context (not a weather forecast). */
 function travelMonth(date: string): string {
   const timestamp = Date.parse(`${date}T00:00:00.000Z`);
   if (
@@ -59,6 +66,7 @@ function travelMonth(date: string): string {
   return new Intl.DateTimeFormat("en", { month: "long", timeZone: "UTC" }).format(timestamp);
 }
 
+/** Reject attractions that are not present in the injected map candidates. */
 function validateDraft(draft: DestinationGuideDraft, places: Place[]): DestinationGuideDraft {
   const parsed = DestinationGuideDraft.parse(draft);
   const candidates = new Set(places.map((place) => normalize(place.name)));
@@ -73,6 +81,7 @@ function validateDraft(draft: DestinationGuideDraft, places: Place[]): Destinati
   return parsed;
 }
 
+/** Provide conservative guidance when no model is configured or it fails validation. */
 function fallbackDraft(brief: TripBrief, month: string, places: Place[]): DestinationGuideDraft {
   return {
     summary: `Practical pre-trip checklist for ${brief.destination}`,
@@ -98,12 +107,14 @@ function fallbackDraft(brief: TripBrief, month: string, places: Place[]): Destin
   };
 }
 
+/** Build the LangChain generator; the evidence tool is the model's sole source of facts. */
 function createMiniMaxGenerator(): DestinationGuideGenerator | undefined {
   const model = createRoutedChatModel("destination-guide");
   if (!model) return undefined;
 
   return {
     async generate(input) {
+      // The tool returns already-validated brief, month, places and preferences.
       const evidence = tool(async () => input, {
         name: "read_destination_evidence",
         description:
@@ -139,6 +150,8 @@ async function planDestinationGuide(
   ctx: AgentContext,
   options: DestinationGuideAgentOptions,
 ): Promise<AgentProposal> {
+  // Fetch map evidence and long-term preferences in parallel, then normalize
+  // duplicate place names before asking the model to draft guidance.
   ctx.signal?.throwIfAborted();
   const brief = TripBriefSchema.parse(briefInput);
   const month = travelMonth(brief.dates[0]);
@@ -205,6 +218,7 @@ async function planDestinationGuide(
   };
 }
 
+/** Factory keeps the generator injectable while exposing a standard Agent API. */
 export function createDestinationGuideAgent(options: DestinationGuideAgentOptions = {}): Agent {
   return {
     name: "destination-guide",
@@ -213,4 +227,5 @@ export function createDestinationGuideAgent(options: DestinationGuideAgentOption
   };
 }
 
+// Default instance used by the shared agent registry.
 export const destinationGuideAgent = createDestinationGuideAgent();

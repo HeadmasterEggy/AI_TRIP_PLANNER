@@ -9,6 +9,8 @@ import { accommodationAgent } from "./accommodation";
 import { destinationGuideAgent } from "./destination-guide";
 import { diningAgent } from "./dining";
 
+// The orchestrator consumes one stable list while callers can import an
+// individual specialist (and its factory/types) from the exports below.
 export const allAgents: Agent[] = [
   itineraryAgent,
   transportAgent,

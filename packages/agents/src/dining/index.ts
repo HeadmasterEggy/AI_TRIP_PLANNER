@@ -12,6 +12,8 @@ import { z } from "zod/v4";
 import { createAgent, tool } from "langchain";
 import { createRoutedChatModel } from "../models";
 
+// Dining has an explicit budget envelope: venue candidates are unpriced unless
+// a caller separately confirms them, so only the envelope contributes cost.
 const DAY_MS = 86_400_000;
 const DINING_BUDGET_SHARE = 0.2;
 const MAX_DAILY_PER_PERSON_USD = 75;
@@ -28,8 +30,10 @@ const DiningDraft = z.object({
   assumptions: z.array(z.string().trim().min(1).max(400)).max(6),
 });
 
+/** Structured model output before conversion to the shared AgentProposal. */
 export type DiningDraft = z.infer<typeof DiningDraft>;
 
+/** Injectable model seam used for tests and provider swaps. */
 export interface DiningGenerator {
   generate(input: {
     brief: TripBrief;
@@ -41,15 +45,18 @@ export interface DiningGenerator {
   }): Promise<DiningDraft>;
 }
 
+/** Configuration for selecting an injected generator or deterministic mode. */
 export interface DiningAgentOptions {
   /** Pass false to force deterministic recommendations and budgeting. */
   generator?: DiningGenerator | false;
 }
 
+/** Normalize venue names for grounded comparisons. */
 function normalize(value: string): string {
   return value.trim().replace(/\s+/g, " ").toLocaleLowerCase();
 }
 
+/** Validate dates and return the number of planning days. */
 function tripDays([start, end]: [string, string]): number {
   const parse = (value: string) => {
     const timestamp = Date.parse(`${value}T00:00:00.000Z`);
@@ -67,6 +74,7 @@ function tripDays([start, end]: [string, string]): number {
   return days;
 }
 
+/** Keep only preferences that can affect food choices or allergen handling. */
 function dietaryPreferences(preferences: UserPreference[]): UserPreference[] {
   return preferences.filter((preference) =>
     /diet|food|meal|allerg|halal|kosher|vegetarian|vegan|gluten|lactose/i.test(
@@ -75,6 +83,7 @@ function dietaryPreferences(preferences: UserPreference[]): UserPreference[] {
   );
 }
 
+/** Identify revisions that should tighten the meal-budget ceiling. */
 function isBudgetRevision(revision?: RevisionRequest): boolean {
   return Boolean(
     revision &&
@@ -84,6 +93,7 @@ function isBudgetRevision(revision?: RevisionRequest): boolean {
   );
 }
 
+/** Compute the per-person ceiling shared with the model and validator. */
 function budgetCeiling(brief: TripBrief, days: number, revision?: RevisionRequest): number {
   const normal = Math.min(
     MAX_DAILY_PER_PERSON_USD,
@@ -92,6 +102,7 @@ function budgetCeiling(brief: TripBrief, days: number, revision?: RevisionReques
   return isBudgetRevision(revision) ? normal * 0.7 : normal;
 }
 
+/** Ensure the draft stays within budget and references only grounded venues. */
 function validateDraft(
   draft: DiningDraft,
   places: Place[],
@@ -113,6 +124,7 @@ function validateDraft(
   return parsed;
 }
 
+/** Produce grounded venue suggestions and a conservative budget without a model. */
 function fallbackDraft(
   places: Place[],
   preferences: UserPreference[],
@@ -134,12 +146,14 @@ function fallbackDraft(
   };
 }
 
+/** Build the LangChain generator around one read-only evidence tool. */
 function createMiniMaxGenerator(): DiningGenerator | undefined {
   const model = createRoutedChatModel("dining");
   if (!model) return undefined;
 
   return {
     async generate(input) {
+      // The model receives facts through this tool instead of relying on hidden context.
       const evidence = tool(async () => input, {
         name: "read_dining_evidence",
         description:
@@ -177,6 +191,8 @@ async function planDining(
   options: DiningAgentOptions,
   revision?: RevisionRequest,
 ): Promise<AgentProposal> {
+  // Gather map candidates and persisted preferences before applying the budget
+  // guardrail and choosing either the injected or deterministic generator.
   ctx.signal?.throwIfAborted();
   const brief = TripBriefSchema.parse(briefInput);
   const days = tripDays(brief.dates);
@@ -217,6 +233,7 @@ async function planDining(
   }
 
   const total = Number((draft.dailyBudgetPerPersonUsd * brief.groupSize * days).toFixed(2));
+  // Keep venue picks informational; only the whole-trip meal envelope is priced.
   return {
     agent: "dining",
     summary: `${draft.summary} · USD ${total.toFixed(2)} meal budget`,
@@ -248,6 +265,7 @@ async function planDining(
   };
 }
 
+/** Factory keeps provider behavior injectable while preserving the Agent contract. */
 export function createDiningAgent(options: DiningAgentOptions = {}): Agent {
   return {
     name: "dining",
@@ -262,4 +280,5 @@ export function createDiningAgent(options: DiningAgentOptions = {}): Agent {
   };
 }
 
+// Default instance used by the shared agent registry.
 export const diningAgent = createDiningAgent();

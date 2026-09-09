@@ -12,6 +12,7 @@ import { z } from "zod/v4";
 import { createRoutedChatModel } from "../models";
 import { chooseInitial, eligibleOptions, readPreferences, splitStay, stayCost } from "./planning";
 
+/** Build the grounded lodging proposal that remains correct without an LLM. */
 async function buildStayProposal(
   brief: TripBrief,
   ctx: AgentContext,
@@ -26,6 +27,8 @@ async function buildStayProposal(
   const budgetRevision =
     revision !== undefined &&
     /budget|cost|cheaper|overrun/i.test([revision.reason, ...revision.constraints].join(" "));
+  // Search and filter each city independently; a multi-city trip is charged
+  // only for the selected stay in each segment.
   const selections = await Promise.all(
     segments.map(async (segment) => {
       const options = eligibleOptions(
@@ -121,6 +124,7 @@ async function buildStayProposal(
   };
 }
 
+/** Let the specialist narrate the calculator's proposal, with a safe fallback. */
 async function planStays(
   brief: TripBrief,
   ctx: AgentContext,
@@ -130,6 +134,8 @@ async function planStays(
   if (!model) return buildStayProposal(brief, ctx, revision);
 
   let evidence: AgentProposal | undefined;
+  // Expose the deterministic calculator as the only tool so the model cannot
+  // invent properties, rates, availability or revision outcomes.
   const calculate = tool(
     async () => {
       evidence = AgentProposalSchema.parse(await buildStayProposal(brief, ctx, revision));
@@ -177,6 +183,7 @@ async function planStays(
   }
 }
 
+// Public registry entry used by the orchestrator and revision router.
 export const accommodationAgent: Agent = {
   name: "accommodation",
   label: "Stay",

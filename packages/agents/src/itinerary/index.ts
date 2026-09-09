@@ -12,6 +12,8 @@ import { z } from "zod/v4";
 import { createAgent, tool } from "langchain";
 import { createRoutedChatModel } from "../models";
 
+// The itinerary schema and guardrails constrain model output before it reaches
+// the shared proposal format or the route-conflict checker.
 const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
 const MODEL_ACTIVITY_BUDGET_SHARE = 0.4;
 
@@ -30,8 +32,10 @@ const ItineraryDraft = z.object({
   assumptions: z.array(z.string().trim().min(1)),
 });
 
+/** Structured day-plan content before conversion to AgentProposal items. */
 export type ItineraryDraft = z.infer<typeof ItineraryDraft>;
 
+/** Injectable planning seam used by tests and alternate model providers. */
 export interface ItineraryGenerator {
   generate(input: {
     brief: TripBrief;
@@ -42,11 +46,13 @@ export interface ItineraryGenerator {
   }): Promise<ItineraryDraft>;
 }
 
+/** Configuration for selecting an injected generator or deterministic mode. */
 export interface ItineraryAgentOptions {
   /** Pass false to force the deterministic planner in tests or offline runs. */
   generator?: ItineraryGenerator | false;
 }
 
+/** Validate ISO dates and return the number of overnight intervals. */
 function daySpan([start, end]: [string, string]): number {
   const parse = (value: string) => {
     const timestamp = Date.parse(`${value}T00:00:00.000Z`);
@@ -64,11 +70,13 @@ function daySpan([start, end]: [string, string]): number {
   return days;
 }
 
+/** Convert an HH:mm value to minutes so schedules can be compared numerically. */
 function minutes(time: string): number {
   const [hour, minute] = time.split(":").map(Number);
   return hour! * 60 + minute!;
 }
 
+/** Enforce grounding, complete day coverage, budget and non-overlap invariants. */
 function validateDraft(
   draft: ItineraryDraft,
   brief: TripBrief,
@@ -107,6 +115,7 @@ function validateDraft(
   return parsed;
 }
 
+/** Create one low-risk activity per day when a model is unavailable or invalid. */
 function fallbackDraft(brief: TripBrief, days: number, places: Place[]): ItineraryDraft {
   const candidates = places.length
     ? places
@@ -133,11 +142,14 @@ function fallbackDraft(brief: TripBrief, days: number, places: Place[]): Itinera
   };
 }
 
+/** Build a model generator whose evidence tool exposes only validated inputs. */
 function createDeepSeekGenerator(): ItineraryGenerator | undefined {
   const model = createRoutedChatModel("itinerary");
   if (!model) return undefined;
   return {
     async generate(input) {
+      // The model must call this tool before drafting so it cannot invent places
+      // or silently ignore a revision request.
       const evidence = tool(async () => input, {
         name: "read_itinerary_evidence",
         description:
@@ -170,6 +182,8 @@ function createDeepSeekGenerator(): ItineraryGenerator | undefined {
 }
 
 async function travelConflicts(draft: ItineraryDraft, ctx: AgentContext): Promise<string[]> {
+  // Check map travel time between consecutive activities on each day. These
+  // conflicts are reported to the orchestrator rather than silently shifting times.
   const conflicts: string[] = [];
   const days = new Set(draft.activities.map((activity) => activity.day));
   for (const day of days) {
@@ -202,6 +216,8 @@ async function planItinerary(
   options: ItineraryAgentOptions,
   revision?: RevisionRequest,
 ): Promise<AgentProposal> {
+  // Validate the brief and gather map/preferences evidence in parallel before
+  // selecting the model or deterministic planner.
   ctx.signal?.throwIfAborted();
   const brief = TripBriefSchema.parse(briefInput);
   const days = daySpan(brief.dates);
@@ -237,6 +253,8 @@ async function planItinerary(
   }
   let conflicts = await travelConflicts(draft, ctx);
   if (revision && conflicts.length) {
+    // A revision must not preserve newly discovered geography conflicts; use a
+    // conservative fallback and re-check it before returning.
     draft = fallbackDraft(brief, days, places);
     conflicts = await travelConflicts(draft, ctx);
     source = "deterministic fallback";
@@ -254,6 +272,7 @@ async function planItinerary(
   };
 }
 
+/** Factory keeps the planner injectable while preserving the Agent API. */
 export function createItineraryAgent(options: ItineraryAgentOptions = {}): Agent {
   return {
     name: "itinerary",
@@ -268,4 +287,5 @@ export function createItineraryAgent(options: ItineraryAgentOptions = {}): Agent
   };
 }
 
+// Default instance used by the shared agent registry.
 export const itineraryAgent = createItineraryAgent();
