@@ -20,8 +20,7 @@ against a real `TripPlan` shape.
   validates structured output and falls back deterministically when credentials or results fail.
 - **`AgentName`** is a union of the 5 ids; `Specialist` exposes a labelled,
   framework-neutral `invoke({ brief, context, revision? })` contract so `SECTION_LABELS` is gone
-  from the orchestrator. The older `Agent.run()` / `revise()` shape remains only as a temporary
-  boundary adapter.
+  from the orchestrator.
 - **Chat contract**: `POST /api/chat` takes `ChatRequest` and returns `ChatResponse`
   (`{ reply, plan }`) — both Zod schemas in `packages/shared/src/chat.ts`. The web
   client includes its latest optional `brief`, then swaps the returned `plan` into state

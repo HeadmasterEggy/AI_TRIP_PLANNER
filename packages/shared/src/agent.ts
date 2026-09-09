@@ -42,19 +42,3 @@ export interface Specialist {
   /** produce or revise one validated proposal */
   invoke(request: SpecialistRequest): Promise<AgentProposal>;
 }
-
-/**
- * Legacy adapter shape retained temporarily for downstream callers and tests.
- * New orchestration code should depend on `Specialist` and call `invoke`.
- */
-/** @deprecated Use Specialist instead. */
-export interface Agent {
-  /** stable id, also used as the section id in the trip plan */
-  name: AgentName;
-  /** human label for the "Your trip" panel, e.g. "Getting around" */
-  label: string;
-  /** round 1: produce a proposal from the brief */
-  run(brief: TripBrief, ctx: AgentContext): Promise<AgentProposal>;
-  /** rounds 2..K (optional): revise after a conflict */
-  revise?(brief: TripBrief, ctx: AgentContext, req: RevisionRequest): Promise<AgentProposal>;
-}

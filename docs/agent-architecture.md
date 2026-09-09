@@ -53,13 +53,11 @@ Completed on `codex/langchain-agent-refactor`:
   calculators so models cannot invent prices, routes or properties.
 - Revision requests are immutable inputs to targeted typed tools selected by a dedicated revision
   supervisor; LangGraph verifies conflicts again after each round.
-- The legacy `Agent.run()` / `revise()` shape remains only as a boundary adapter for downstream
-  callers; production workflow, supervisor and tests now use `Specialist.invoke`.
+- All production callers and tests now use `Specialist.invoke`; the former `Agent.run()` /
+  `revise()` compatibility type has been removed.
 
 Next:
 
-- Remove the remaining legacy `Agent` type and boundary adapter once downstream consumers have
-  migrated to `OrchestratorOptions.specialists`.
 - Add persistent supervisor checkpoints and stream individual tool-loop events to the UI.
 
 ## Contracts

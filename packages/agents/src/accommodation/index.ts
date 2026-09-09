@@ -178,7 +178,7 @@ async function planStays(
     return proposal;
   } catch (error) {
     const reason = error instanceof Error ? error.message : "unknown model error";
-    console.warn(`[accommodation] Agent failed; using deterministic fallback: ${reason}`);
+    console.warn(`[accommodation] Specialist failed; using deterministic fallback: ${reason}`);
     return evidence ?? buildStayProposal(brief, ctx, revision);
   }
 }

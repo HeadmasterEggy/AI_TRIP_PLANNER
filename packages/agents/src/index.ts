@@ -19,9 +19,6 @@ export const allSpecialists: Specialist[] = [
   diningAgent,
 ];
 
-/** @deprecated Use allSpecialists; retained for downstream registry imports. */
-export const allAgents = allSpecialists;
-
 export {
   itineraryAgent,
   createItineraryAgent,

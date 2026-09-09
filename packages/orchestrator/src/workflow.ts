@@ -12,7 +12,6 @@ import {
   AgentProposal as AgentProposalSchema,
   TripBrief as TripBriefSchema,
   TripPlan as TripPlanSchema,
-  type Agent,
   type AgentContext,
   type AgentProposal,
   type AgentName,
@@ -40,31 +39,10 @@ const DEFAULT_MAX_ROUNDS = 3;
 
 /** Dependencies are injectable so the graph can be tested without network or singleton state. */
 export interface OrchestratorOptions {
-  /** New framework-neutral specialist implementations. */
   specialists?: Specialist[];
-  /** @deprecated Use `specialists`; retained for downstream compatibility. */
-  agents?: Agent[];
   tools?: ToolGateway;
   mem?: MemoryStore;
   maxRounds?: number;
-}
-
-/** Adapt the old split run/revise API at the boundary only. */
-function adaptLegacyAgent(agent: Agent): Specialist {
-  return {
-    name: agent.name,
-    label: agent.label,
-    supportsRevision: Boolean(agent.revise),
-    invoke({ brief, context, revision }) {
-      if (revision) {
-        if (!agent.revise) {
-          throw new Error(`${agent.name} does not support targeted revisions.`);
-        }
-        return agent.revise(brief, context, revision);
-      }
-      return agent.run(brief, context);
-    },
-  };
 }
 
 const OrchestratorState = new StateSchema({
@@ -206,9 +184,8 @@ function buildHitl(
 }
 
 function resolveOptions(options: OrchestratorOptions) {
-  const injected = options.specialists !== undefined || options.agents !== undefined;
-  const specialists =
-    options.specialists ?? options.agents?.map(adaptLegacyAgent) ?? allSpecialists;
+  const injected = options.specialists !== undefined;
+  const specialists = options.specialists ?? allSpecialists;
   const maxRounds = options.maxRounds ?? DEFAULT_MAX_ROUNDS;
   if (!Number.isSafeInteger(maxRounds) || maxRounds < 1) {
     throw new Error("Orchestrator maxRounds must be a positive integer.");

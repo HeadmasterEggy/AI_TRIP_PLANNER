@@ -29,7 +29,7 @@ Response shape: `{ reply, plan }`.
 
 The Stage 5.3 prototype contains planned `POST /api/hitl` and `POST /api/trips` routes for HITL
 decisions and saved trip workspaces. They are not present on this refactor branch yet; they will be
-reconnected after the specialist migration so the new Agent boundary remains the source of truth.
+reconnected after the specialist migration so the new Specialist boundary remains the source of truth.
 
 ## Related contracts
 
