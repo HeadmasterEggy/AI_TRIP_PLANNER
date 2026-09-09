@@ -244,6 +244,16 @@ button {
 .trip__budget-delta--over {
   color: var(--warn);
 }
+/* Read-only mirrors of the brief: keep them legible, but stop them inviting
+   edits that would go nowhere. */
+.field[readonly] {
+  cursor: default;
+  color: var(--text-dim);
+}
+.field[readonly]:focus {
+  outline: none;
+  border-color: var(--border);
+}
 .banner {
   display: flex;
   gap: 8px;
