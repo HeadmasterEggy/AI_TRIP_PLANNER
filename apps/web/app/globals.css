@@ -231,6 +231,19 @@ button {
   height: 100%;
   background: var(--ok);
 }
+/* Over budget has to look different from on budget: the bar pins to 100% in
+   both cases, so colour is the only signal left. */
+.bar--over > span {
+  background: var(--warn-strong);
+}
+.trip__budget-delta {
+  font-size: 12px;
+  margin: 6px 0 4px;
+  color: var(--ok);
+}
+.trip__budget-delta--over {
+  color: var(--warn);
+}
 .banner {
   display: flex;
   gap: 8px;

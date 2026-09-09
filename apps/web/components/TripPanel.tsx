@@ -4,8 +4,11 @@ import type { TripPlan } from "@trip/shared";
 import { TripSection } from "@/components/TripSection";
 
 export function TripPanel({ plan }: { plan: TripPlan }) {
-  const pct = Math.min(100, Math.round((plan.estTotal / plan.budgetTotal) * 100));
+  const pct = plan.budgetTotal > 0
+    ? Math.min(100, Math.round((plan.estTotal / plan.budgetTotal) * 100))
+    : 0;
   const delta = plan.budgetTotal - plan.estTotal;
+  const overBudget = delta < 0;
   const pendingHitl = plan.hitl.filter((h) => h.status === "pending");
 
   return (
@@ -29,11 +32,13 @@ export function TripPanel({ plan }: { plan: TripPlan }) {
           <span style={{ color: "var(--text-mut)" }}>/ ${plan.budgetTotal.toLocaleString()}</span>
         </span>
       </div>
-      <div className="bar">
+      <div className={`bar${overBudget ? " bar--over" : ""}`}>
         <span style={{ width: `${pct}%` }} />
       </div>
-      <p style={{ fontSize: 12, color: "var(--ok)", margin: "6px 0 4px" }}>
-        {delta >= 0 ? `$${delta.toLocaleString()} under budget` : `$${(-delta).toLocaleString()} over budget`}
+      <p className={`trip__budget-delta${overBudget ? " trip__budget-delta--over" : ""}`}>
+        {overBudget
+          ? `$${(-delta).toLocaleString()} over budget`
+          : `$${delta.toLocaleString()} under budget`}
       </p>
 
       {pendingHitl.length > 0 && (
