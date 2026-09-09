@@ -16,3 +16,8 @@ export {
   type OrchestratorOptions,
 } from "./workflow";
 export { rollUpCost } from "./budget";
+export {
+  createSupervisorTools,
+  dispatchWithSupervisor,
+  type SupervisorDispatchOptions,
+} from "./supervisor";

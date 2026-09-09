@@ -82,14 +82,14 @@ flowchart TB
 
 ### Non-agent modules
 
-| Module | What it does | Owner |
-|---|---|---|
-| Cost-aggregation | sums every agent's `estCost` against `budgetTotal`, emits an overrun % that feeds HITL / escalation | C |
-| `PreferenceMemoryService` | short-term memory (in-session requests) / long-term memory (user profile, confirmed preferences); Filter writes long-term, chat-confirmed items promote short → long | E |
-| `ToolGateway` | wraps all external tool calls, `USE_MOCK_TOOLS` switch | A (interface) + adapter owners |
-| Maps adapter | OpenStreetMap Nominatim + OSRM in live mode; deterministic mock in dev | B |
-| Booking adapter | Booking / Price API adapter, **mock** — real payment is out of scope | C |
-| `NotificationService`, `AuthService` | minimal stubs | E |
+| Module                               | What it does                                                                                                                                                         | Owner                          |
+| ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------ |
+| Cost-aggregation                     | sums every agent's `estCost` against `budgetTotal`, emits an overrun % that feeds HITL / escalation                                                                  | C                              |
+| `PreferenceMemoryService`            | short-term memory (in-session requests) / long-term memory (user profile, confirmed preferences); Filter writes long-term, chat-confirmed items promote short → long | E                              |
+| `ToolGateway`                        | wraps all external tool calls, `USE_MOCK_TOOLS` switch                                                                                                               | A (interface) + adapter owners |
+| Maps adapter                         | OpenStreetMap Nominatim + OSRM in live mode; deterministic mock in dev                                                                                               | B                              |
+| Booking adapter                      | Booking / Price API adapter, **mock** — real payment is out of scope                                                                                                 | C                              |
+| `NotificationService`, `AuthService` | minimal stubs                                                                                                                                                        | E                              |
 
 ### External tools / systems
 
@@ -146,6 +146,21 @@ The existing branch remains a reference implementation during migration. The ref
 one supervisor plus destination and itinerary specialists, proves the end-to-end tool-call loop,
 then migrates dining, transport and accommodation. Do not delete the current workflow until the
 new path passes the existing contract, business-rule, HITL and UI tests.
+
+Current refactor status (2026-09-09):
+
+- Phase 1 is implemented in `codex/langchain-agent-refactor`: the default production dispatch is a
+  named LangChain JS `createAgent` supervisor whose schema-validated tools delegate to specialists.
+- Destination and itinerary model generation now runs inside named `createAgent` harnesses with
+  stable system prompts, typed evidence tools and Zod structured responses. Their existing
+  `AgentProposal` adapters remain temporarily so conflict negotiation and the public `TripPlan`
+  contract do not change during migration.
+- The graph still supports injected legacy `Agent[]` for deterministic tests. If no model is
+  configured, or supervisor delegation fails, production falls back to the existing deterministic
+  dispatch so local/offline planning remains usable.
+- Dining, transport and accommodation still use the legacy `Agent.run` boundary and are the next
+  migration targets. Removing that interface and its fixed parallel dispatch path is intentionally
+  deferred until those three specialists and revision routing have moved to typed tools.
 
 ---
 
@@ -219,31 +234,31 @@ discover places, edit a plan, confirm decisions, save trips, and use the plan du
 
 ### Current status
 
-| Stage | Status | Scope | Exit criteria |
-| --- | --- | --- | --- |
+| Stage     | Status              | Scope                                                                                                                                    | Exit criteria                                                                           |
+| --------- | ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
 | Stage 5.2 | ✅ Complete / PR #8 | Specialist agents, budget and conflict negotiation, place grounding, free OSM/Nominatim/OSRM maps, streaming shell and demo-plan caching | CI, tests and production build pass; plan no longer accepts ungrounded itinerary places |
-| Stage 5.3 | 🚧 In progress | File-backed memory, HITL API/UI, decision recovery, atomic writes and checkpoint validation | Confirm/reject actions survive a new request and affect a versioned plan |
-| Stage 6A | ⏳ Next | Finish the existing UI: controlled filters, real detail cards, review flow, loading/error states | A user can complete planning without typing implementation-specific chat commands |
-| Stage 6B | ⏳ Planned | Save/reopen trips, preference memory, plan versions and rollback | Refreshing or restarting does not lose the user's trip |
-| Stage 6C | ⏳ Planned | Map/list view, editable timeline, add/remove/reorder/replace itinerary items | A user can manually adjust the generated plan and re-run constraint checks |
-| Stage 7 | ⏳ Planned | Start Anywhere imports (URL, image, PDF), source tracking and collections | Imported places become reviewable, attributable candidates before entering the plan |
-| Stage 8 | ⏳ Planned | Real hotel/flight/activity search and booking deep links; receipt/confirmation import | Results show provider, timestamp, price freshness and a clear booking hand-off |
-| Stage 9 | ⏳ Later | On-trip mode: nearby suggestions, delay-aware replanning, offline read-only itinerary | A saved trip remains useful while travelling with intermittent connectivity |
+| Stage 5.3 | 🚧 In progress      | File-backed memory, HITL API/UI, decision recovery, atomic writes and checkpoint validation                                              | Confirm/reject actions survive a new request and affect a versioned plan                |
+| Stage 6A  | ⏳ Next             | Finish the existing UI: controlled filters, real detail cards, review flow, loading/error states                                         | A user can complete planning without typing implementation-specific chat commands       |
+| Stage 6B  | ⏳ Planned          | Save/reopen trips, preference memory, plan versions and rollback                                                                         | Refreshing or restarting does not lose the user's trip                                  |
+| Stage 6C  | ⏳ Planned          | Map/list view, editable timeline, add/remove/reorder/replace itinerary items                                                             | A user can manually adjust the generated plan and re-run constraint checks              |
+| Stage 7   | ⏳ Planned          | Start Anywhere imports (URL, image, PDF), source tracking and collections                                                                | Imported places become reviewable, attributable candidates before entering the plan     |
+| Stage 8   | ⏳ Planned          | Real hotel/flight/activity search and booking deep links; receipt/confirmation import                                                    | Results show provider, timestamp, price freshness and a clear booking hand-off          |
+| Stage 9   | ⏳ Later            | On-trip mode: nearby suggestions, delay-aware replanning, offline read-only itinerary                                                    | A saved trip remains useful while travelling with intermittent connectivity             |
 
 ### Immediate UI completion plan
 
 The current UI contains several visible placeholders. These are the next concrete tasks, in order:
 
-| Priority | Area | Current gap | Required change |
-| --- | --- | --- | --- |
-| P0 | `FiltersPanel` | Inputs use `defaultValue` and do not update the plan | Convert to controlled fields; validate dates, group size and budget; add Apply/Replan |
-| P0 | `TripSection` | Expanded view renders raw JSON | Render real activity, transport, hotel, dining and guide cards with source/assumption labels |
-| P0 | `TripPanel` | `Review plan` is a non-functional button | Focus the next pending HITL action or open the relevant section |
-| P0 | `ChatPanel` | HITL has only basic approve/reject feedback | Add pending/success/error states and show which plan version was changed |
-| P1 | `Header` | Saved trips, My trips and language are plain text | Implement single-user Saved Trips first; remove or disable unsupported links |
-| P1 | Plan editing | No add/remove/reorder/replace interaction | Add item actions and run route/time/budget checks after each edit |
-| P1 | Persistence | Current memory is file-backed development storage | Move trips, preferences, chat turns and HITL decisions to SQLite/Postgres |
-| P1 | Errors | Provider failures are mostly silent fallbacks | Show “estimated”, “mock”, “source unavailable” and retry actions in the UI |
+| Priority | Area           | Current gap                                          | Required change                                                                              |
+| -------- | -------------- | ---------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| P0       | `FiltersPanel` | Inputs use `defaultValue` and do not update the plan | Convert to controlled fields; validate dates, group size and budget; add Apply/Replan        |
+| P0       | `TripSection`  | Expanded view renders raw JSON                       | Render real activity, transport, hotel, dining and guide cards with source/assumption labels |
+| P0       | `TripPanel`    | `Review plan` is a non-functional button             | Focus the next pending HITL action or open the relevant section                              |
+| P0       | `ChatPanel`    | HITL has only basic approve/reject feedback          | Add pending/success/error states and show which plan version was changed                     |
+| P1       | `Header`       | Saved trips, My trips and language are plain text    | Implement single-user Saved Trips first; remove or disable unsupported links                 |
+| P1       | Plan editing   | No add/remove/reorder/replace interaction            | Add item actions and run route/time/budget checks after each edit                            |
+| P1       | Persistence    | Current memory is file-backed development storage    | Move trips, preferences, chat turns and HITL decisions to SQLite/Postgres                    |
+| P1       | Errors         | Provider failures are mostly silent fallbacks        | Show “estimated”, “mock”, “source unavailable” and retry actions in the UI                   |
 
 ### Explicitly out of scope for the current roadmap
 
