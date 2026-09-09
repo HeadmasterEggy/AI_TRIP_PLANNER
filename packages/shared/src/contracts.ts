@@ -2,7 +2,7 @@ import { z } from "zod";
 
 // ---------------------------------------------------------------------------
 // The five specialist agents. `name` is the stable id used as the section id
-// in the trip plan; keep this list and @trip/agents `allAgents` in sync.
+// in the trip plan; keep this list and @trip/agents `allSpecialists` in sync.
 // ---------------------------------------------------------------------------
 export const AGENT_NAMES = [
   "itinerary",

@@ -46,15 +46,19 @@ The explanatory model and relationship notes are in [`docs/class-diagram.md`](cl
 Implemented on `codex/langchain-agent-refactor` (not yet merged into `main`):
 
 - `packages/orchestrator/src/supervisor.ts` provides a named supervisor and typed delegation tools.
-- Destination, itinerary, dining, transport and accommodation model generation use named agents
-  with typed evidence/calculator tools and Zod structured responses.
-- Revision requests use immutable, targeted supervisor delegation tools.
-- Legacy Agent adapters remain as a compatibility seam for tests and offline fallback.
+- `packages/shared/src/agent.ts` defines the framework-neutral `Specialist` contract: one immutable
+  `invoke({ brief, context, revision? })` entry point for both initial plans and revisions.
+- Destination, itinerary and dining generation use named agents with typed evidence tools and Zod
+  structured responses. Transport and accommodation use named agents around typed deterministic
+  calculators so models cannot invent prices, routes or properties.
+- Revision requests are immutable inputs to targeted typed tools selected by a dedicated revision
+  supervisor; LangGraph verifies conflicts again after each round.
+- All production callers and tests now use `Specialist.invoke`; the former `Agent.run()` /
+  `revise()` compatibility type has been removed.
 
 Next before merge:
 
-- Remove the legacy `Agent.run()` dispatch once all specialists and tests use the new path.
-- Add supervisor checkpoint persistence and fine-grained UI tool-loop streaming.
+- Add persistent supervisor checkpoints and stream individual tool-loop events to the UI.
 
 ## Contracts
 

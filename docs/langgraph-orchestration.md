@@ -1,7 +1,7 @@
 # LangGraph orchestration
 
 The orchestrator is a deterministic LangGraph workflow. LangGraph controls the state transitions;
-the five existing specialist modules remain ordinary typed `Agent` implementations. This keeps
+the five existing specialist modules implement the framework-neutral `Specialist` contract. This keeps
 budget policy and human checkpoints predictable while still allowing individual nodes to call an
 LLM later.
 
@@ -24,13 +24,14 @@ internal `StateSchema` uses its local Zod v4 dependency.
 
 ## Execution rules
 
-- `dispatch_specialists` runs all registered agents with `Promise.all`.
+- `dispatch_specialists` runs all registered specialists through `invoke({ brief, context })` with `Promise.all`.
 - `detect_conflicts` combines budget overruns, structured cross-agent schedule overlaps, and
   geography conflicts reported after itinerary route-duration checks.
-- `revise_conflicts` runs only targeted agents that implement `revise`, also with `Promise.all`.
+- `revise_conflicts` runs only targeted specialists with `supportsRevision`, passing an immutable
+  `revision` request through the same `invoke` entry point, also with `Promise.all`.
 - A conditional edge repeats detection/revision up to `maxRounds` (default `3`).
 - `build_plan` preserves the existing cost roll-up and HITL/escalation behavior.
-- Agents, tools, memory, and the round limit are injectable through `OrchestratorOptions` for tests.
+- Specialists, tools, memory, and the round limit are injectable through `OrchestratorOptions` for tests.
 
 This is intentionally a workflow rather than an unconstrained supervisor agent: the control path,
 budget red lines, and stopping condition should not depend on a model improvising the next step.

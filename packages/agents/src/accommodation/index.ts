@@ -1,8 +1,19 @@
 // Owner: C — lodging proposals and price revisions via injected tools and memory.
-import type { Agent, AgentProposal, TripBrief, AgentContext, RevisionRequest } from "@trip/shared";
+import {
+  AgentProposal as AgentProposalSchema,
+  type AgentProposal,
+  type TripBrief,
+  type AgentContext,
+  type RevisionRequest,
+  type Specialist,
+} from "@trip/shared";
+import { createAgent, tool } from "langchain";
+import { z } from "zod/v4";
+import { createRoutedChatModel, readStructuredResponse } from "../models";
 import { chooseInitial, eligibleOptions, readPreferences, splitStay, stayCost } from "./planning";
 
-async function planStays(
+/** Build the grounded lodging proposal that remains correct without an LLM. */
+async function buildStayProposal(
   brief: TripBrief,
   ctx: AgentContext,
   revision?: RevisionRequest,
@@ -16,6 +27,8 @@ async function planStays(
   const budgetRevision =
     revision !== undefined &&
     /budget|cost|cheaper|overrun/i.test([revision.reason, ...revision.constraints].join(" "));
+  // Search and filter each city independently; a multi-city trip is charged
+  // only for the selected stay in each segment.
   const selections = await Promise.all(
     segments.map(async (segment) => {
       const options = eligibleOptions(
@@ -111,14 +124,76 @@ async function planStays(
   };
 }
 
-export const accommodationAgent: Agent = {
+/** Let the specialist narrate the calculator's proposal, with a safe fallback. */
+async function planStays(
+  brief: TripBrief,
+  ctx: AgentContext,
+  revision?: RevisionRequest,
+): Promise<AgentProposal> {
+  const model = createRoutedChatModel("accommodation");
+  if (!model) return buildStayProposal(brief, ctx, revision);
+
+  let evidence: AgentProposal | undefined;
+  // Expose the deterministic calculator as the only tool so the model cannot
+  // invent properties, rates, availability or revision outcomes.
+  const calculate = tool(
+    async () => {
+      evidence = AgentProposalSchema.parse(await buildStayProposal(brief, ctx, revision));
+      return evidence;
+    },
+    {
+      name: "calculate_accommodation_options",
+      description:
+        "Search the injected booking port, apply confirmed preferences and calculate a validated lodging proposal for this trip and revision.",
+      schema: z.object({}),
+    },
+  );
+  const specialist = createAgent({
+    name: "accommodation_specialist",
+    model,
+    tools: [calculate],
+    systemPrompt:
+      "You are the accommodation specialist. Always call calculate_accommodation_options. Return its proposal unchanged: do not invent properties, prices, ratings, availability or policies. The calculator owns preference filtering, room allocation, costing and revision rules. Return the requested structured AgentProposal.",
+    responseFormat: AgentProposalSchema,
+  });
+  try {
+    const result = await specialist.invoke({
+      messages: [
+        {
+          role: "user",
+          content: JSON.stringify({
+            task: "Return the calculated accommodation proposal.",
+            tripId: brief.tripId,
+            revision: revision?.reason,
+          }),
+        },
+      ],
+    });
+    const proposal = readStructuredResponse("accommodation", AgentProposalSchema, result);
+    if (proposal.agent !== "accommodation" || !evidence) {
+      throw new Error(
+        "Accommodation specialist returned the wrong proposal type or skipped its tool.",
+      );
+    }
+    return proposal;
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : "unknown model error";
+    console.warn(`[accommodation] Specialist failed; using a safe local plan: ${reason}`);
+    return evidence ?? buildStayProposal(brief, ctx, revision);
+  }
+}
+
+// Public registry entry used by the orchestrator and revision router.
+export const accommodationAgent: Specialist = {
   name: "accommodation",
   label: "Stay",
-  run: (brief, ctx) => planStays(brief, ctx),
-  async revise(brief, ctx, req) {
-    if (req.tripId !== brief.tripId || req.targetAgent !== "accommodation") {
-      throw new Error("Accommodation revision must target this trip and agent.");
+  supportsRevision: true,
+  async invoke({ brief, context, revision }) {
+    if (revision) {
+      if (revision.tripId !== brief.tripId || revision.targetAgent !== "accommodation") {
+        throw new Error("Accommodation revision must target this trip and agent.");
+      }
     }
-    return planStays(brief, ctx, req);
+    return planStays(brief, context, revision);
   },
 };

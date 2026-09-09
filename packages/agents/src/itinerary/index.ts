@@ -1,16 +1,19 @@
 import {
   TripBrief as TripBriefSchema,
-  type Agent,
   type AgentContext,
   type AgentProposal,
   type Place,
   type RevisionRequest,
+  type Specialist,
   type TripBrief,
   type UserPreference,
 } from "@trip/shared";
 import { z } from "zod/v4";
-import { createRoutedStructuredInvoker } from "../models";
+import { createAgent, tool } from "langchain";
+import { createRoutedChatModel, readStructuredResponse } from "../models";
 
+// The itinerary schema and guardrails constrain model output before it reaches
+// the shared proposal format or the route-conflict checker.
 const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
 const MODEL_ACTIVITY_BUDGET_SHARE = 0.4;
 
@@ -29,8 +32,10 @@ const ItineraryDraft = z.object({
   assumptions: z.array(z.string().trim().min(1)),
 });
 
+/** Structured day-plan content before conversion to AgentProposal items. */
 export type ItineraryDraft = z.infer<typeof ItineraryDraft>;
 
+/** Injectable planning seam used by tests and alternate model providers. */
 export interface ItineraryGenerator {
   generate(input: {
     brief: TripBrief;
@@ -41,11 +46,13 @@ export interface ItineraryGenerator {
   }): Promise<ItineraryDraft>;
 }
 
+/** Configuration for selecting an injected generator or deterministic mode. */
 export interface ItineraryAgentOptions {
   /** Pass false to force the deterministic planner in tests or offline runs. */
   generator?: ItineraryGenerator | false;
 }
 
+/** Validate ISO dates and return the number of overnight intervals. */
 function daySpan([start, end]: [string, string]): number {
   const parse = (value: string) => {
     const timestamp = Date.parse(`${value}T00:00:00.000Z`);
@@ -63,11 +70,13 @@ function daySpan([start, end]: [string, string]): number {
   return days;
 }
 
+/** Convert an HH:mm value to minutes so schedules can be compared numerically. */
 function minutes(time: string): number {
   const [hour, minute] = time.split(":").map(Number);
   return hour! * 60 + minute!;
 }
 
+/** Enforce grounding, complete day coverage, budget and non-overlap invariants. */
 function validateDraft(
   draft: ItineraryDraft,
   brief: TripBrief,
@@ -106,6 +115,7 @@ function validateDraft(
   return parsed;
 }
 
+/** Create one low-risk activity per day when a model is unavailable or invalid. */
 function fallbackDraft(brief: TripBrief, days: number, places: Place[]): ItineraryDraft {
   const candidates = places.length
     ? places
@@ -113,7 +123,7 @@ function fallbackDraft(brief: TripBrief, days: number, places: Place[]): Itinera
   const dailyEstimate =
     Math.floor(((brief.budgetTotal * MODEL_ACTIVITY_BUDGET_SHARE) / days) * 100) / 100;
   return {
-    summary: `${days}-day paced itinerary for ${brief.destination}`,
+    summary: `${days}-day plan for ${brief.destination} with one grounded activity per day`,
     activities: Array.from({ length: days }, (_, index) => {
       const place = candidates[index % candidates.length]!;
       return {
@@ -121,34 +131,59 @@ function fallbackDraft(brief: TripBrief, days: number, places: Place[]): Itinera
         startTime: "13:00",
         endTime: "16:00",
         location: place.name,
-        detail: `Explore ${place.name} (${place.category}) at a relaxed pace.`,
+        detail: `${place.name} (${place.category}) is a suggested stop; confirm timing and suitability before visiting.`,
         estCost: Math.min(30 * brief.groupSize, dailyEstimate),
       };
     }),
     assumptions: [
-      "Deterministic fallback used: opening hours and live availability must be confirmed.",
+      "Opening hours and live availability must be confirmed before plans are finalised.",
       "One anchored activity per day leaves room for meals, transfers and human changes.",
     ],
   };
 }
 
+/** Build a model generator whose evidence tool exposes only validated inputs. */
 function createDeepSeekGenerator(): ItineraryGenerator | undefined {
-  const structured = createRoutedStructuredInvoker(
-    "itinerary",
-    ItineraryDraft,
-    "TripItineraryDraft",
-  );
-  if (!structured) return undefined;
+  const model = createRoutedChatModel("itinerary");
+  if (!model) return undefined;
   return {
     async generate(input) {
-      return structured(
-        `Create a practical trip itinerary using only the supplied facts. Return every trip day from 1 through ${input.days}. Each day needs 1-3 non-overlapping activities with 24-hour HH:mm times. Leave at least 150 minutes between activities at different locations so transport can be feasible. Keep total activity cost at or below ${(input.brief.budgetTotal * MODEL_ACTIVITY_BUDGET_SHARE).toFixed(2)} USD for the whole group. Do not claim live opening hours, availability, safety, visa or weather facts. Treat candidate places as unverified suggestions. If a revision is present, address it exactly.\n\nTrip brief:\n${JSON.stringify(input.brief)}\n\nConfirmed preferences:\n${JSON.stringify(input.preferences)}\n\nCandidate places:\n${JSON.stringify(input.places)}\n\nRevision:\n${JSON.stringify(input.revision ?? null)}`,
-      );
+      // The model must call this tool before drafting so it cannot invent places
+      // or silently ignore a revision request.
+      const evidence = tool(async () => input, {
+        name: "read_itinerary_evidence",
+        description:
+          "Read the validated trip brief, trip length, grounded map candidates, confirmed preferences and any revision request.",
+        schema: z.object({}),
+      });
+      const specialist = createAgent({
+        name: "itinerary_specialist",
+        model,
+        tools: [evidence],
+        systemPrompt:
+          "You are the itinerary specialist. Always call read_itinerary_evidence before drafting. Use only its facts and candidate place names. Cover every trip day with 1-3 non-overlapping activities using 24-hour HH:mm times, leave 150 minutes between different locations, and keep activity cost within 40% of the total trip budget. Never claim live hours, availability, safety, visa or weather facts. Address a supplied revision exactly. Return the requested structured itinerary draft.\n\nEach activity location must be a candidate's name copied character for character. Do not append its category, rating or district, and do not reword it: an activity whose location is not an exact candidate name is discarded and the whole draft is thrown away.",
+        responseFormat: ItineraryDraft,
+      });
+      const result = await specialist.invoke({
+        messages: [
+          {
+            role: "user",
+            content: JSON.stringify({
+              task: "Draft the itinerary from the validated evidence available through your tool.",
+              tripId: input.brief.tripId,
+              revision: input.revision?.reason,
+            }),
+          },
+        ],
+      });
+      return readStructuredResponse("itinerary", ItineraryDraft, result);
     },
   };
 }
 
 async function travelConflicts(draft: ItineraryDraft, ctx: AgentContext): Promise<string[]> {
+  // Check map travel time between consecutive activities on each day. These
+  // conflicts are reported to the orchestrator rather than silently shifting times.
   const conflicts: string[] = [];
   const days = new Set(draft.activities.map((activity) => activity.day));
   for (const day of days) {
@@ -181,6 +216,8 @@ async function planItinerary(
   options: ItineraryAgentOptions,
   revision?: RevisionRequest,
 ): Promise<AgentProposal> {
+  // Validate the brief and gather map/preferences evidence in parallel before
+  // selecting the model or deterministic planner.
   ctx.signal?.throwIfAborted();
   const brief = TripBriefSchema.parse(briefInput);
   const days = daySpan(brief.dates);
@@ -194,7 +231,6 @@ async function planItinerary(
   const generator =
     options.generator === false ? undefined : (options.generator ?? createDeepSeekGenerator());
   let draft: ItineraryDraft;
-  let source: "DeepSeek/LangChain" | "deterministic fallback" = "deterministic fallback";
   if (generator) {
     try {
       draft = validateDraft(
@@ -203,11 +239,10 @@ async function planItinerary(
         days,
         places,
       );
-      source = "DeepSeek/LangChain";
     } catch (error) {
       const reason = error instanceof Error ? error.message : "unknown model error";
       console.warn(
-        `[itinerary] Model draft failed validation; using deterministic fallback: ${reason}`,
+        `[itinerary] Model draft failed validation; using a safe local plan: ${reason}`,
       );
       draft = fallbackDraft(brief, days, places);
     }
@@ -216,16 +251,16 @@ async function planItinerary(
   }
   let conflicts = await travelConflicts(draft, ctx);
   if (revision && conflicts.length) {
+    // A revision must not preserve newly discovered geography conflicts; use a
+    // conservative fallback and re-check it before returning.
     draft = fallbackDraft(brief, days, places);
     conflicts = await travelConflicts(draft, ctx);
-    source = "deterministic fallback";
   }
   return {
     agent: "itinerary",
     summary: draft.summary,
     items: draft.activities.map((activity) => ({ kind: "activity", ...activity })),
     assumptions: [
-      `Planner source: ${source}.`,
       ...draft.assumptions,
       ...(revision ? [`Revision requested: ${revision.reason}.`] : []),
     ],
@@ -233,18 +268,25 @@ async function planItinerary(
   };
 }
 
-export function createItineraryAgent(options: ItineraryAgentOptions = {}): Agent {
+/** Factory keeps the planner injectable while exposing the Specialist API. */
+export function createItineraryAgent(options: ItineraryAgentOptions = {}): Specialist {
   return {
     name: "itinerary",
     label: "Day plan",
-    run: (brief, ctx) => planItinerary(brief, ctx, options),
-    async revise(brief, ctx, request) {
-      if (request.tripId !== brief.tripId || request.targetAgent !== "itinerary") {
-        throw new Error("Itinerary revision must target this trip and agent.");
+    supportsRevision: true,
+    async invoke(request) {
+      if (request.revision) {
+        if (
+          request.revision.tripId !== request.brief.tripId ||
+          request.revision.targetAgent !== "itinerary"
+        ) {
+          throw new Error("Itinerary revision must target this trip and agent.");
+        }
       }
-      return planItinerary(brief, ctx, options, request);
+      return planItinerary(request.brief, request.context, options, request.revision);
     },
   };
 }
 
+// Default instance used by the shared agent registry.
 export const itineraryAgent = createItineraryAgent();

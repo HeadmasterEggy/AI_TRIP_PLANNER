@@ -14,14 +14,31 @@ export interface AgentContext {
   signal?: AbortSignal;
 }
 
-// Every specialist agent (B / C / D) implements this.
-export interface Agent {
+/**
+ * The immutable request passed to a specialist for one planning round.
+ *
+ * A single `invoke` entry point handles both initial planning and targeted
+ * revisions. This keeps the orchestration layer independent from the
+ * specialist's internal model/tool implementation.
+ */
+export interface SpecialistRequest {
+  readonly brief: TripBrief;
+  readonly context: AgentContext;
+  readonly revision?: RevisionRequest;
+}
+
+/**
+ * Framework-neutral specialist contract used by the supervisor and workflow.
+ * `supportsRevision` is explicit because not every specialist can revise its
+ * own proposal (for example, the destination guide is informational only).
+ */
+export interface Specialist {
   /** stable id, also used as the section id in the trip plan */
   name: AgentName;
   /** human label for the "Your trip" panel, e.g. "Getting around" */
   label: string;
-  /** round 1: produce a proposal from the brief */
-  run(brief: TripBrief, ctx: AgentContext): Promise<AgentProposal>;
-  /** rounds 2..K (optional): revise after a conflict */
-  revise?(brief: TripBrief, ctx: AgentContext, req: RevisionRequest): Promise<AgentProposal>;
+  /** whether the specialist accepts targeted revision requests */
+  supportsRevision?: boolean;
+  /** produce or revise one validated proposal */
+  invoke(request: SpecialistRequest): Promise<AgentProposal>;
 }

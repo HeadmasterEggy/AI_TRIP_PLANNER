@@ -1,16 +1,19 @@
 import {
   TripBrief as TripBriefSchema,
-  type Agent,
   type AgentContext,
   type AgentProposal,
   type Place,
   type RevisionRequest,
+  type Specialist,
   type TripBrief,
   type UserPreference,
 } from "@trip/shared";
 import { z } from "zod/v4";
-import { createRoutedStructuredInvoker } from "../models";
+import { createAgent, tool } from "langchain";
+import { createRoutedChatModel, readStructuredResponse } from "../models";
 
+// Dining has an explicit budget envelope: venue candidates are unpriced unless
+// a caller separately confirms them, so only the envelope contributes cost.
 const DAY_MS = 86_400_000;
 const DINING_BUDGET_SHARE = 0.2;
 const MAX_DAILY_PER_PERSON_USD = 75;
@@ -27,8 +30,10 @@ const DiningDraft = z.object({
   assumptions: z.array(z.string().trim().min(1).max(400)).max(6),
 });
 
+/** Structured model output before conversion to the shared AgentProposal. */
 export type DiningDraft = z.infer<typeof DiningDraft>;
 
+/** Injectable model seam used for tests and provider swaps. */
 export interface DiningGenerator {
   generate(input: {
     brief: TripBrief;
@@ -40,15 +45,18 @@ export interface DiningGenerator {
   }): Promise<DiningDraft>;
 }
 
+/** Configuration for selecting an injected generator or deterministic mode. */
 export interface DiningAgentOptions {
   /** Pass false to force deterministic recommendations and budgeting. */
   generator?: DiningGenerator | false;
 }
 
+/** Normalize venue names for grounded comparisons. */
 function normalize(value: string): string {
   return value.trim().replace(/\s+/g, " ").toLocaleLowerCase();
 }
 
+/** Validate dates and return the number of planning days. */
 function tripDays([start, end]: [string, string]): number {
   const parse = (value: string) => {
     const timestamp = Date.parse(`${value}T00:00:00.000Z`);
@@ -66,6 +74,7 @@ function tripDays([start, end]: [string, string]): number {
   return days;
 }
 
+/** Keep only preferences that can affect food choices or allergen handling. */
 function dietaryPreferences(preferences: UserPreference[]): UserPreference[] {
   return preferences.filter((preference) =>
     /diet|food|meal|allerg|halal|kosher|vegetarian|vegan|gluten|lactose/i.test(
@@ -74,6 +83,7 @@ function dietaryPreferences(preferences: UserPreference[]): UserPreference[] {
   );
 }
 
+/** Identify revisions that should tighten the meal-budget ceiling. */
 function isBudgetRevision(revision?: RevisionRequest): boolean {
   return Boolean(
     revision &&
@@ -83,6 +93,7 @@ function isBudgetRevision(revision?: RevisionRequest): boolean {
   );
 }
 
+/** Compute the per-person ceiling shared with the model and validator. */
 function budgetCeiling(brief: TripBrief, days: number, revision?: RevisionRequest): number {
   const normal = Math.min(
     MAX_DAILY_PER_PERSON_USD,
@@ -91,6 +102,7 @@ function budgetCeiling(brief: TripBrief, days: number, revision?: RevisionReques
   return isBudgetRevision(revision) ? normal * 0.7 : normal;
 }
 
+/** Ensure the draft stays within budget and references only grounded venues. */
 function validateDraft(
   draft: DiningDraft,
   places: Place[],
@@ -112,6 +124,7 @@ function validateDraft(
   return parsed;
 }
 
+/** Produce grounded venue suggestions and a conservative budget without a model. */
 function fallbackDraft(
   places: Place[],
   preferences: UserPreference[],
@@ -121,27 +134,55 @@ function fallbackDraft(
     ? ` Ask the venue to confirm these requirements directly: ${preferences.map(({ key, value }) => `${key}=${value}`).join(", ")}.`
     : " Confirm ingredients and dietary suitability directly with the venue.";
   return {
-    summary: "Grounded dining candidates with a whole-trip meal budget envelope",
+    summary: places.length
+      ? `${places.length} grounded dining candidate(s) within a whole-trip meal budget envelope`
+      : "No grounded dining candidates; using a whole-trip meal budget envelope",
     dailyBudgetPerPersonUsd: Math.min(50, maxDailyPerPersonUsd),
     picks: places.slice(0, 5).map((place) => ({
       name: place.name,
       detail: `${place.category} candidate${place.rating ? ` with supplied rating ${place.rating}` : ""}.${constraintText}`,
     })),
     assumptions: [
-      "Deterministic fallback does not infer cuisine, menu, certification or availability.",
+      "Cuisine, menu, certification and availability require direct confirmation.",
     ],
   };
 }
 
+/** Build the LangChain generator around one read-only evidence tool. */
 function createMiniMaxGenerator(): DiningGenerator | undefined {
-  const structured = createRoutedStructuredInvoker("dining", DiningDraft, "DiningDraft");
-  if (!structured) return undefined;
+  const model = createRoutedChatModel("dining");
+  if (!model) return undefined;
 
   return {
     async generate(input) {
-      return structured(
-        `Create concise dining recommendations and a realistic daily per-person meal budget in USD. Hard limits, which the tool schema states but you must also respect literally: summary at most 400 characters; at most 5 picks; each pick name at most 120 characters and each detail at most 500 characters; assumptions at most 6 strings of at most 400 characters each. The budget must be non-negative and no more than ${input.maxDailyPerPersonUsd.toFixed(2)}. Venue names must exactly match supplied candidate names; return no picks if candidates are empty. Never claim live opening hours, availability, menu items, allergen safety, halal/kosher certification or dietary suitability. Tell travellers to confirm important dietary constraints directly with venues. Respect every confirmed dietary preference. If a revision is supplied, address it within the stated budget ceiling.\n\nTrip brief:\n${JSON.stringify(input.brief)}\n\nTrip planning days:\n${input.days}\n\nConfirmed dietary preferences:\n${JSON.stringify(input.dietaryPreferences)}\n\nVenue candidates from MapsPort:\n${JSON.stringify(input.places)}\n\nRevision:\n${JSON.stringify(input.revision ?? null)}`,
-      );
+      // The model receives facts through this tool instead of relying on hidden context.
+      const evidence = tool(async () => input, {
+        name: "read_dining_evidence",
+        description:
+          "Read the validated trip facts, grounded restaurant candidates, confirmed dietary preferences, budget ceiling and revision request.",
+        schema: z.object({}),
+      });
+      const specialist = createAgent({
+        name: "dining_specialist",
+        model,
+        tools: [evidence],
+        systemPrompt:
+          "You are the dining specialist. Always call read_dining_evidence and use only its facts and exact venue names. Stay within its daily per-person USD ceiling and address any revision. Never claim live hours, availability, menu items, allergen safety, certification or dietary suitability; tell travellers to confirm important constraints directly. Return the requested structured dining draft.\n\nEach pick's name must be a candidate's name copied character for character, with no category, rating or district appended. Return no picks rather than inventing a venue that is not in the evidence.",
+        responseFormat: DiningDraft,
+      });
+      const result = await specialist.invoke({
+        messages: [
+          {
+            role: "user",
+            content: JSON.stringify({
+              task: "Draft dining guidance from the validated evidence available through your tool.",
+              tripId: input.brief.tripId,
+              revision: input.revision?.reason,
+            }),
+          },
+        ],
+      });
+      return readStructuredResponse("dining", DiningDraft, result);
     },
   };
 }
@@ -152,6 +193,8 @@ async function planDining(
   options: DiningAgentOptions,
   revision?: RevisionRequest,
 ): Promise<AgentProposal> {
+  // Gather map candidates and persisted preferences before applying the budget
+  // guardrail and choosing either the injected or deterministic generator.
   ctx.signal?.throwIfAborted();
   const brief = TripBriefSchema.parse(briefInput);
   const days = tripDays(brief.dates);
@@ -165,8 +208,6 @@ async function planDining(
   const generator =
     options.generator === false ? undefined : (options.generator ?? createMiniMaxGenerator());
   let draft: DiningDraft;
-  let source: "MiniMax/LangChain" | "deterministic fallback" = "deterministic fallback";
-
   if (generator) {
     try {
       draft = validateDraft(
@@ -181,10 +222,9 @@ async function planDining(
         places,
         ceiling,
       );
-      source = "MiniMax/LangChain";
     } catch (error) {
       const reason = error instanceof Error ? error.message : "unknown model error";
-      console.warn(`[dining] Model draft failed; using deterministic fallback: ${reason}`);
+      console.warn(`[dining] Model draft failed; using a safe local plan: ${reason}`);
       draft = fallbackDraft(places, preferences, ceiling);
     }
   } else {
@@ -192,6 +232,7 @@ async function planDining(
   }
 
   const total = Number((draft.dailyBudgetPerPersonUsd * brief.groupSize * days).toFixed(2));
+  // Keep venue picks informational; only the whole-trip meal envelope is priced.
   return {
     agent: "dining",
     summary: `${draft.summary} · USD ${total.toFixed(2)} meal budget`,
@@ -208,7 +249,6 @@ async function planDining(
       })),
     ],
     assumptions: [
-      `Dining source: ${source}.`,
       "The priced item is a budget envelope, not a reservation or a sum of the unpriced venue candidates.",
       "Venue data comes only from the injected MapsPort; menus, dietary suitability and availability require direct confirmation.",
       ...(preferences.length
@@ -223,18 +263,25 @@ async function planDining(
   };
 }
 
-export function createDiningAgent(options: DiningAgentOptions = {}): Agent {
+/** Factory keeps provider behavior injectable while exposing the Specialist API. */
+export function createDiningAgent(options: DiningAgentOptions = {}): Specialist {
   return {
     name: "dining",
     label: "Food & dining",
-    run: (brief, ctx) => planDining(brief, ctx, options),
-    async revise(brief, ctx, request) {
-      if (request.tripId !== brief.tripId || request.targetAgent !== "dining") {
-        throw new Error("Dining revision must target this trip and agent.");
+    supportsRevision: true,
+    async invoke(request) {
+      if (request.revision) {
+        if (
+          request.revision.tripId !== request.brief.tripId ||
+          request.revision.targetAgent !== "dining"
+        ) {
+          throw new Error("Dining revision must target this trip and agent.");
+        }
       }
-      return planDining(brief, ctx, options, request);
+      return planDining(request.brief, request.context, options, request.revision);
     },
   };
 }
 
+// Default instance used by the shared agent registry.
 export const diningAgent = createDiningAgent();

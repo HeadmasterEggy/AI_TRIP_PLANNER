@@ -11,14 +11,14 @@ Live demo: [elec5620-ai-trip-planner.vercel.app](https://elec5620-ai-trip-planne
 
 ## Current status
 
-The LangChain agent migration is being developed on `codex/langchain-agent-refactor`; `main`
-remains the stable pre-migration baseline.
+The LangChain agent migration has landed on `main`.
 
-- `main` uses the existing LangGraph workflow and legacy specialist boundary.
-- The refactor branch contains the named LangChain JS agents, typed delegation tools and Zod
-  response schemas.
-- Existing memory, HITL, conflict validation, UI and proposal contracts are being preserved during
-  the migration.
+- Every specialist is a named LangChain JS agent with typed evidence or calculator tools and a Zod
+  structured response; LangGraph still owns durable state, conflict checks, retries and HITL.
+- Revision requests are immutable inputs to targeted tools chosen by a dedicated revision
+  supervisor.
+- Memory, HITL, conflict validation, UI and proposal contracts were preserved across the migration;
+  the legacy `Agent.run()` / `revise()` compatibility type is gone.
 
 See [the architecture and migration plan](docs/agent-architecture.md) for details.
 

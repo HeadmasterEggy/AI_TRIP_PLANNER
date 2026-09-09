@@ -6,19 +6,20 @@ import {
   type ConditionalEdgeRouter,
   type GraphNode,
 } from "@langchain/langgraph";
-import { allAgents } from "@trip/agents";
+import { allSpecialists } from "@trip/agents";
 import { memory } from "@trip/services";
 import {
   AgentProposal as AgentProposalSchema,
   TripBrief as TripBriefSchema,
   TripPlan as TripPlanSchema,
-  type Agent,
   type AgentContext,
   type AgentProposal,
+  type AgentProgressEvent,
   type AgentName,
   type HitlCheckpoint,
   type MemoryStore,
   type RevisionRequest,
+  type Specialist,
   type ToolGateway,
   type TripBrief,
   type TripPlan,
@@ -33,15 +34,17 @@ import {
   ESCALATION_OVERRUN_PCT,
   NEGOTIATION_OVERRUN_PCT,
 } from "./budget";
+import { dispatchWithSupervisor, reviseWithSupervisor } from "./supervisor";
 
 const DEFAULT_MAX_ROUNDS = 3;
 
 /** Dependencies are injectable so the graph can be tested without network or singleton state. */
 export interface OrchestratorOptions {
-  agents?: Agent[];
+  specialists?: Specialist[];
   tools?: ToolGateway;
   mem?: MemoryStore;
   maxRounds?: number;
+  onProgress?: (event: AgentProgressEvent) => void;
 }
 
 const OrchestratorState = new StateSchema({
@@ -139,12 +142,12 @@ export function detectConflicts(proposals: AgentProposal[], brief: TripBrief): R
 function toSection(
   proposal: AgentProposal,
   unresolved: RevisionRequest[],
-  agentByName: Map<Agent["name"], Agent>,
+  specialistByName: Map<Specialist["name"], Specialist>,
 ): TripSection {
   const stillConflicting = unresolved.some((request) => request.targetAgent === proposal.agent);
   return {
     id: proposal.agent,
-    label: agentByName.get(proposal.agent)?.label ?? proposal.agent,
+    label: specialistByName.get(proposal.agent)?.label ?? proposal.agent,
     summary: proposal.summary,
     status: stillConflicting ? "needs_you" : "draft",
     estCost: costOf(proposal),
@@ -183,24 +186,27 @@ function buildHitl(
 }
 
 function resolveOptions(options: OrchestratorOptions) {
-  const agents = options.agents ?? allAgents;
+  const injected = options.specialists !== undefined;
+  const specialists = options.specialists ?? allSpecialists;
   const maxRounds = options.maxRounds ?? DEFAULT_MAX_ROUNDS;
   if (!Number.isSafeInteger(maxRounds) || maxRounds < 1) {
     throw new Error("Orchestrator maxRounds must be a positive integer.");
   }
-  if (agents.length === 0) throw new Error("Orchestrator requires at least one agent.");
+  if (specialists.length === 0) throw new Error("Orchestrator requires at least one specialist.");
 
-  const agentByName = new Map(agents.map((agent) => [agent.name, agent]));
-  if (agentByName.size !== agents.length) {
-    throw new Error("Orchestrator agent names must be unique.");
+  const specialistByName = new Map(specialists.map((specialist) => [specialist.name, specialist]));
+  if (specialistByName.size !== specialists.length) {
+    throw new Error("Orchestrator specialist names must be unique.");
   }
 
   return {
-    agents,
-    agentByName,
+    specialists,
+    specialistByName,
+    injected,
     maxRounds,
     tools: options.tools ?? createToolGateway(),
     mem: options.mem ?? memory,
+    onProgress: options.onProgress,
   };
 }
 
@@ -214,7 +220,8 @@ function resolveOptions(options: OrchestratorOptions) {
  *                                 build_plan -> END
  */
 export function createOrchestratorGraph(options: OrchestratorOptions = {}) {
-  const { agents, agentByName, maxRounds, tools, mem } = resolveOptions(options);
+  const { specialists, specialistByName, injected, maxRounds, tools, mem, onProgress } =
+    resolveOptions(options);
 
   const context = (brief: TripBrief, round: number): AgentContext => ({
     tripId: brief.tripId,
@@ -223,11 +230,62 @@ export function createOrchestratorGraph(options: OrchestratorOptions = {}) {
     mem,
   });
 
+  const invokeSpecialist = async (
+    specialist: Specialist,
+    request: Parameters<Specialist["invoke"]>[0],
+  ): Promise<AgentProposal> => {
+    onProgress?.({ type: "agent_started", agent: specialist.name, round: request.context.round });
+    try {
+      const proposal = AgentProposalSchema.parse(await specialist.invoke(request));
+      onProgress?.({
+        type: "agent_completed",
+        agent: specialist.name,
+        round: request.context.round,
+      });
+      return proposal;
+    } catch (error) {
+      onProgress?.({
+        type: "agent_failed",
+        agent: specialist.name,
+        round: request.context.round,
+        error: error instanceof Error ? error.message : "unknown agent error",
+      });
+      throw error;
+    }
+  };
+
   const dispatchSpecialists: WorkflowNode = async (state) => {
     const round = 1;
-    const proposals = await Promise.all(
-      agents.map((agent) => agent.run(state.brief, context(state.brief, round))),
-    );
+    const agentContext = context(state.brief, round);
+    let proposals: AgentProposal[];
+    // Explicit specialist injection is the deterministic seam used by tests.
+    // Production uses the supervisor to select named specialist tools.
+    if (injected) {
+      proposals = await Promise.all(
+        specialists.map((specialist) =>
+          invokeSpecialist(specialist, { brief: state.brief, context: agentContext }),
+        ),
+      );
+    } else {
+      try {
+        proposals = await dispatchWithSupervisor({
+          brief: state.brief,
+          specialists,
+          context: agentContext,
+          onProgress,
+        });
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : "unknown supervisor error";
+        console.warn(
+          `[supervisor] Delegation unavailable; using deterministic dispatch: ${reason}`,
+        );
+        proposals = await Promise.all(
+          specialists.map((specialist) =>
+            invokeSpecialist(specialist, { brief: state.brief, context: agentContext }),
+          ),
+        );
+      }
+    }
     return { round, proposals: proposals.map((proposal) => AgentProposalSchema.parse(proposal)) };
   };
 
@@ -240,22 +298,47 @@ export function createOrchestratorGraph(options: OrchestratorOptions = {}) {
     const requestByAgent = new Map(
       state.conflicts.map((request) => [request.targetAgent, request]),
     );
-    const proposals = await Promise.all(
-      state.proposals.map(async (proposal) => {
-        const request = requestByAgent.get(proposal.agent);
-        const agent = agentByName.get(proposal.agent);
-        if (!request || !agent?.revise) return proposal;
-        const revised = await agent.revise(state.brief, context(state.brief, round), request);
-        return AgentProposalSchema.parse(revised);
-      }),
-    );
+    const deterministicRevision = () =>
+      Promise.all(
+        state.proposals.map(async (proposal) => {
+          const request = requestByAgent.get(proposal.agent);
+          const specialist = specialistByName.get(proposal.agent);
+          if (!request || !specialist?.supportsRevision) return proposal;
+          return invokeSpecialist(specialist, {
+            brief: state.brief,
+            context: context(state.brief, round),
+            revision: request,
+          });
+        }),
+      );
+    let proposals: AgentProposal[];
+    if (injected) {
+      proposals = await deterministicRevision();
+    } else {
+      try {
+        proposals = await reviseWithSupervisor({
+          brief: state.brief,
+          specialists,
+          context: context(state.brief, round),
+          proposals: state.proposals,
+          requests: state.conflicts,
+          onProgress,
+        });
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : "unknown revision supervisor error";
+        console.warn(
+          `[supervisor] Revision delegation unavailable; using deterministic routing: ${reason}`,
+        );
+        proposals = await deterministicRevision();
+      }
+    }
     return { round, proposals };
   };
 
   const buildPlan: WorkflowNode = (state) => {
     const unresolved = state.conflicts.length > 0;
     const sections = state.proposals.map((proposal) =>
-      toSection(proposal, state.conflicts, agentByName),
+      toSection(proposal, state.conflicts, specialistByName),
     );
     const { estTotal, overrunPct } = rollUpCost(sections, state.brief.budgetTotal);
     const plan: TripPlan = {

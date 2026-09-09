@@ -1,6 +1,9 @@
 import { ChatOpenAI } from "@langchain/openai";
 import { z } from "zod/v4";
 
+// Centralize provider selection and structured-output adaptation so every
+// specialist uses the same environment configuration and retry behavior.
+
 /**
  * Keep task-to-provider choices explicit. Every task currently routes to
  * DeepSeek: MiniMax produced comparable drafts but took 15-25s per structured
@@ -13,10 +16,14 @@ export const MODEL_ROUTING = {
   itinerary: "deepseek",
   "destination-guide": "deepseek",
   dining: "deepseek",
+  transport: "deepseek",
+  accommodation: "deepseek",
 } as const;
 
+/** Valid task names accepted by the provider/model routing helpers. */
 export type RoutedModelTask = keyof typeof MODEL_ROUTING;
 
+/** Create the chat model for a task, or return undefined when its credentials are absent. */
 export function createRoutedChatModel(task: RoutedModelTask): ChatOpenAI | undefined {
   const provider = MODEL_ROUTING[task];
   if (provider === "deepseek") {
@@ -59,13 +66,17 @@ export function createRoutedStructuredInvoker<Schema extends z.ZodType>(
   schema: Schema,
   name: string,
 ): ((prompt: string) => Promise<z.infer<Schema>>) | undefined {
+  // Build the model lazily: tests and offline runs can use deterministic paths
+  // simply by omitting the provider key.
   const model = createRoutedChatModel(task);
   if (!model) return undefined;
 
   if (MODEL_ROUTING[task] === "deepseek") {
+    // DeepSeek supports LangChain's native structured-output helper.
     const structured = model.withStructuredOutput(schema, { name, method: "functionCalling" });
     const call = (prompt: string) => structured.invoke(prompt) as Promise<z.infer<Schema>>;
-    return (prompt) => call(prompt).catch((error: unknown) => call(withCorrection(prompt, name, error)));
+    return (prompt) =>
+      call(prompt).catch((error: unknown) => call(withCorrection(prompt, name, error)));
   }
 
   const bound = model.bindTools(
@@ -86,6 +97,7 @@ export function createRoutedStructuredInvoker<Schema extends z.ZodType>(
   // give it one corrective attempt with the validation errors before the caller
   // falls back to deterministic output.
   const attempt = async (prompt: string): Promise<z.infer<Schema>> => {
+    // Extract and validate the named tool call rather than trusting free-form text.
     const response = await bound.invoke(prompt);
     const call = response.tool_calls?.find((toolCall) => toolCall.name === name);
     if (!call) throw new Error(`${name}: model returned no tool call`);
@@ -110,4 +122,24 @@ function withCorrection(prompt: string, name: string, error: unknown): string {
         ? error.message
         : "unknown model error";
   return `${prompt}\n\nA previous attempt failed. Call the ${name} tool and fix exactly these problems, respecting every type, minimum and maximum in the tool schema:\n${detail}`;
+}
+
+/**
+ * Read a specialist agent's structured result.
+ *
+ * `createAgent` retries extraction a few times and then finishes with
+ * `structuredResponse` left undefined. Parsing that directly reports "expected
+ * object, received undefined" against the draft schema, which reads as a schema
+ * bug rather than the agent having given up -- so name the real failure, and
+ * validate in one place for every specialist.
+ */
+export function readStructuredResponse<Schema extends z.ZodType>(
+  agentName: string,
+  schema: Schema,
+  result: { structuredResponse?: unknown },
+): z.infer<Schema> {
+  if (result.structuredResponse === undefined) {
+    throw new Error(`${agentName}: the specialist finished without producing a structured result.`);
+  }
+  return schema.parse(result.structuredResponse);
 }

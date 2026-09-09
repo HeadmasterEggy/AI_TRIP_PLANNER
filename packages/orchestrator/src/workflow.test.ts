@@ -1,10 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 import type {
-  Agent,
-  AgentContext,
   AgentName,
   AgentProposal,
+  AgentProgressEvent,
   MemoryStore,
+  Specialist,
+  SpecialistRequest,
   ToolGateway,
   TripBrief,
 } from "@trip/shared";
@@ -51,20 +52,22 @@ function proposal(agent: AgentName, cost: number): AgentProposal {
 function agent(
   name: AgentName,
   initialCost: number,
-  revise?: Agent["revise"],
-): Agent & { run: ReturnType<typeof vi.fn> } {
+  revise?: (request: SpecialistRequest) => Promise<AgentProposal>,
+): Specialist & { invoke: ReturnType<typeof vi.fn> } {
   return {
     name,
     label: `${name} label`,
-    run: vi.fn(async () => proposal(name, initialCost)),
-    revise,
+    supportsRevision: Boolean(revise),
+    invoke: vi.fn(async (request: SpecialistRequest) =>
+      request.revision && revise ? revise(request) : proposal(name, initialCost),
+    ),
   };
 }
 
 describe("LangGraph orchestrator workflow", () => {
   it("exposes the named workflow nodes and preserves the TripPlan API", async () => {
     const itinerary = agent("itinerary", 400);
-    const graph = createOrchestratorGraph({ agents: [itinerary], tools, mem });
+    const graph = createOrchestratorGraph({ specialists: [itinerary], tools, mem });
     const mermaid = graph.getGraph().drawMermaid();
 
     expect(mermaid).toContain("dispatch_specialists");
@@ -72,13 +75,13 @@ describe("LangGraph orchestrator workflow", () => {
     expect(mermaid).toContain("revise_conflicts");
     expect(mermaid).toContain("build_plan");
 
-    const plan = await runOrchestrator(brief, { agents: [itinerary], tools, mem });
+    const plan = await runOrchestrator(brief, { specialists: [itinerary], tools, mem });
     expect(plan).toMatchObject({ tripId: brief.tripId, round: 1, estTotal: 400 });
     expect(plan.sections[0]).toMatchObject({ id: "itinerary", label: "itinerary label" });
-    expect(itinerary.run).toHaveBeenCalledWith(
+    expect(itinerary.invoke).toHaveBeenCalledWith({
       brief,
-      expect.objectContaining({ tripId: brief.tripId, round: 1, tools, mem }),
-    );
+      context: expect.objectContaining({ tripId: brief.tripId, round: 1, tools, mem }),
+    });
   });
 
   it("runs targeted revision nodes concurrently and converges", async () => {
@@ -87,8 +90,8 @@ describe("LangGraph orchestrator workflow", () => {
     const bothStarted = new Promise<void>((resolve) => {
       release = resolve;
     });
-    const revise = (name: AgentName, cost: number): Agent["revise"] =>
-      vi.fn(async (_brief: TripBrief, ctx: AgentContext) => {
+    const revise = (name: AgentName, cost: number) =>
+      vi.fn(async ({ context: ctx }: SpecialistRequest) => {
         started.push(name);
         if (started.length === 2) release?.();
         await bothStarted;
@@ -99,7 +102,7 @@ describe("LangGraph orchestrator workflow", () => {
     const transport = agent("transport", 500, revise("transport", 300));
 
     const plan = await runOrchestrator(brief, {
-      agents: [accommodation, transport],
+      specialists: [accommodation, transport],
       tools,
       mem,
     });
@@ -107,6 +110,23 @@ describe("LangGraph orchestrator workflow", () => {
     expect(started).toEqual(expect.arrayContaining(["accommodation", "transport"]));
     expect(plan).toMatchObject({ round: 2, estTotal: 700 });
     expect(plan.hitl.some((checkpoint) => checkpoint.type === "escalation")).toBe(false);
+  });
+
+  it("reports specialist lifecycle progress for the UI", async () => {
+    const itinerary = agent("itinerary", 400);
+    const events: AgentProgressEvent[] = [];
+
+    await runOrchestrator(brief, {
+      specialists: [itinerary],
+      tools,
+      mem,
+      onProgress: (event) => events.push(event),
+    });
+
+    expect(events).toEqual([
+      { type: "agent_started", agent: "itinerary", round: 1 },
+      { type: "agent_completed", agent: "itinerary", round: 1 },
+    ]);
   });
 
   it("targets itinerary when activity and transport schedules overlap", () => {
@@ -164,7 +184,7 @@ describe("LangGraph orchestrator workflow", () => {
   it("ends at the configured round limit and marks unresolved sections", async () => {
     const accommodation = agent("accommodation", 1200);
     const plan = await runOrchestrator(brief, {
-      agents: [accommodation],
+      specialists: [accommodation],
       tools,
       mem,
       maxRounds: 2,
@@ -184,12 +204,14 @@ describe("LangGraph orchestrator workflow", () => {
 
   it("rejects invalid graph configuration before running agents", () => {
     const duplicate = agent("itinerary", 100);
-    expect(() => createOrchestratorGraph({ agents: [], tools, mem })).toThrow("at least one agent");
-    expect(() => createOrchestratorGraph({ agents: [duplicate, duplicate], tools, mem })).toThrow(
-      "unique",
+    expect(() => createOrchestratorGraph({ specialists: [], tools, mem })).toThrow(
+      "at least one specialist",
     );
     expect(() =>
-      createOrchestratorGraph({ agents: [duplicate], tools, mem, maxRounds: 0 }),
+      createOrchestratorGraph({ specialists: [duplicate, duplicate], tools, mem }),
+    ).toThrow("unique");
+    expect(() =>
+      createOrchestratorGraph({ specialists: [duplicate], tools, mem, maxRounds: 0 }),
     ).toThrow("positive integer");
   });
 });

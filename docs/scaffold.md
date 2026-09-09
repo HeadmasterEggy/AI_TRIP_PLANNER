@@ -18,8 +18,9 @@ against a real `TripPlan` shape.
 - **Specialist model routing** is explicit in `packages/agents/src/models.ts`: itinerary uses
   DeepSeek; destination guide and dining use MiniMax. Each path accepts an injected generator,
   validates structured output and falls back deterministically when credentials or results fail.
-- **`AgentName`** is a union of the 5 ids; `Agent` now has a `label` (the panel
-  section title) so `SECTION_LABELS` is gone from the orchestrator.
+- **`AgentName`** is a union of the 5 ids; `Specialist` exposes a labelled,
+  framework-neutral `invoke({ brief, context, revision? })` contract so `SECTION_LABELS` is gone
+  from the orchestrator.
 - **Chat contract**: `POST /api/chat` takes `ChatRequest` and returns `ChatResponse`
   (`{ reply, plan }`) — both Zod schemas in `packages/shared/src/chat.ts`. The web
   client includes its latest optional `brief`, then swaps the returned `plan` into state
