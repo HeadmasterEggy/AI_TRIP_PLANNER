@@ -9,8 +9,7 @@ import {
   type UserPreference,
 } from "@trip/shared";
 import { z } from "zod/v4";
-import { createAgent, tool } from "langchain";
-import { createRoutedChatModel } from "../models";
+import { createRoutedStructuredInvoker } from "../models";
 
 const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
 const MODEL_ACTIVITY_BUDGET_SHARE = 0.4;
@@ -134,37 +133,17 @@ function fallbackDraft(brief: TripBrief, days: number, places: Place[]): Itinera
 }
 
 function createDeepSeekGenerator(): ItineraryGenerator | undefined {
-  const model = createRoutedChatModel("itinerary");
-  if (!model) return undefined;
+  const structured = createRoutedStructuredInvoker(
+    "itinerary",
+    ItineraryDraft,
+    "TripItineraryDraft",
+  );
+  if (!structured) return undefined;
   return {
     async generate(input) {
-      const evidence = tool(async () => input, {
-        name: "read_itinerary_evidence",
-        description:
-          "Read the validated trip brief, trip length, grounded map candidates, confirmed preferences and any revision request.",
-        schema: z.object({}),
-      });
-      const specialist = createAgent({
-        name: "itinerary_specialist",
-        model,
-        tools: [evidence],
-        systemPrompt:
-          "You are the itinerary specialist. Always call read_itinerary_evidence before drafting. Use only its facts and candidate place names. Cover every trip day with 1-3 non-overlapping activities using 24-hour HH:mm times, leave 150 minutes between different locations, and keep activity cost within 40% of the total trip budget. Never claim live hours, availability, safety, visa or weather facts. Address a supplied revision exactly. Return the requested structured itinerary draft.",
-        responseFormat: ItineraryDraft,
-      });
-      const result = await specialist.invoke({
-        messages: [
-          {
-            role: "user",
-            content: JSON.stringify({
-              task: "Draft the itinerary from the validated evidence available through your tool.",
-              tripId: input.brief.tripId,
-              revision: input.revision?.reason,
-            }),
-          },
-        ],
-      });
-      return ItineraryDraft.parse(result.structuredResponse);
+      return structured(
+        `Create a practical trip itinerary using only the supplied facts. Return every trip day from 1 through ${input.days}. Each day needs 1-3 non-overlapping activities with 24-hour HH:mm times. Leave at least 150 minutes between activities at different locations so transport can be feasible. Keep total activity cost at or below ${(input.brief.budgetTotal * MODEL_ACTIVITY_BUDGET_SHARE).toFixed(2)} USD for the whole group. Do not claim live opening hours, availability, safety, visa or weather facts. Treat candidate places as unverified suggestions. If a revision is present, address it exactly.\n\nTrip brief:\n${JSON.stringify(input.brief)}\n\nConfirmed preferences:\n${JSON.stringify(input.preferences)}\n\nCandidate places:\n${JSON.stringify(input.places)}\n\nRevision:\n${JSON.stringify(input.revision ?? null)}`,
+      );
     },
   };
 }

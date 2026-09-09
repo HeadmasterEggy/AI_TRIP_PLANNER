@@ -33,7 +33,6 @@ import {
   ESCALATION_OVERRUN_PCT,
   NEGOTIATION_OVERRUN_PCT,
 } from "./budget";
-import { dispatchWithSupervisor } from "./supervisor";
 
 const DEFAULT_MAX_ROUNDS = 3;
 
@@ -226,27 +225,9 @@ export function createOrchestratorGraph(options: OrchestratorOptions = {}) {
 
   const dispatchSpecialists: WorkflowNode = async (state) => {
     const round = 1;
-    const agentContext = context(state.brief, round);
-    let proposals: AgentProposal[];
-    // Explicit agent injection is the compatibility seam used by tests and by
-    // the three specialists not migrated yet. Production uses the supervisor.
-    if (options.agents) {
-      proposals = await Promise.all(agents.map((agent) => agent.run(state.brief, agentContext)));
-    } else {
-      try {
-        proposals = await dispatchWithSupervisor({
-          brief: state.brief,
-          agents,
-          context: agentContext,
-        });
-      } catch (error) {
-        const reason = error instanceof Error ? error.message : "unknown supervisor error";
-        console.warn(
-          `[supervisor] Delegation unavailable; using deterministic dispatch: ${reason}`,
-        );
-        proposals = await Promise.all(agents.map((agent) => agent.run(state.brief, agentContext)));
-      }
-    }
+    const proposals = await Promise.all(
+      agents.map((agent) => agent.run(state.brief, context(state.brief, round))),
+    );
     return { round, proposals: proposals.map((proposal) => AgentProposalSchema.parse(proposal)) };
   };
 

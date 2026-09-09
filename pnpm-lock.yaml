@@ -78,9 +78,6 @@ importers:
       '@trip/tools':
         specifier: workspace:*
         version: link:../tools
-      langchain:
-        specifier: ^1.0.0
-        version: 1.5.10(@langchain/core@1.2.9(openai@7.10.0(zod@4.5.4)))(openai@7.10.0(zod@4.5.4))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       zod:
         specifier: ^4.5.4
         version: 4.5.4
@@ -115,9 +112,6 @@ importers:
       '@trip/tools':
         specifier: workspace:*
         version: link:../tools
-      langchain:
-        specifier: ^1.0.0
-        version: 1.5.10(@langchain/core@1.2.9(openai@7.10.0(zod@4.5.4)))(openai@7.10.0(zod@4.5.4))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       zod:
         specifier: ^4.5.4
         version: 4.5.4
@@ -1573,12 +1567,6 @@ packages:
 
   keyv@4.5.4:
     resolution: {integrity: sha512-oxVHkHR/EJf2CNXnWxRLW6mg7JyCCUcG0DtEGmL2ctUo1PNTin1PUil+r/+4r5MpVgC/fn1kjsx7mjSujKqIpw==}
-
-  langchain@1.5.10:
-    resolution: {integrity: sha512-JaC12C1qyGn985vvjttr4hr8lfFzWhrXp2M1byZJGmNJ2RiIgqnhiYDuLlG/xHDxhKD3onJ5pCuUif/cbdqPhA==}
-    engines: {node: '>=20'}
-    peerDependencies:
-      '@langchain/core': ^1.2.9
 
   langsmith@0.10.2:
     resolution: {integrity: sha512-9iqIcEPBMlRT+vvijcjCo4AeHlJHUZjxwbPtDdvQPpGgvo7nYxhsQ7jVd53zXkPstiPfjRhexfnIe0vLltVFmg==}
@@ -3799,22 +3787,6 @@ snapshots:
   keyv@4.5.4:
     dependencies:
       json-buffer: 3.0.1
-
-  langchain@1.5.10(@langchain/core@1.2.9(openai@7.10.0(zod@4.5.4)))(openai@7.10.0(zod@4.5.4))(react-dom@19.2.8(react@19.2.8))(react@19.2.8):
-    dependencies:
-      '@langchain/core': 1.2.9(openai@7.10.0(zod@4.5.4))
-      '@langchain/langgraph': 1.4.14(@langchain/core@1.2.9(openai@7.10.0(zod@4.5.4)))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(zod@4.5.4)
-      '@langchain/langgraph-checkpoint': 1.1.5(@langchain/core@1.2.9(openai@7.10.0(zod@4.5.4)))
-      langsmith: 0.10.2(openai@7.10.0(zod@4.5.4))
-      zod: 4.5.4
-    transitivePeerDependencies:
-      - '@opentelemetry/api'
-      - '@opentelemetry/exporter-trace-otlp-proto'
-      - '@opentelemetry/sdk-trace-base'
-      - openai
-      - react
-      - react-dom
-      - ws
 
   langsmith@0.10.2(openai@7.10.0(zod@4.5.4)):
     dependencies:

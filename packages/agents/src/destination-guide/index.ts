@@ -8,8 +8,7 @@ import {
   type UserPreference,
 } from "@trip/shared";
 import { z } from "zod/v4";
-import { createAgent, tool } from "langchain";
-import { createRoutedChatModel } from "../models";
+import { createRoutedStructuredInvoker } from "../models";
 
 const GuideAttraction = z.object({
   name: z.string().trim().min(1).max(120),
@@ -99,37 +98,14 @@ function fallbackDraft(brief: TripBrief, month: string, places: Place[]): Destin
 }
 
 function createMiniMaxGenerator(): DestinationGuideGenerator | undefined {
-  const model = createRoutedChatModel("destination-guide");
-  if (!model) return undefined;
+  const structured = createRoutedStructuredInvoker("destination-guide", DestinationGuideDraft, "DestinationGuideDraft");
+  if (!structured) return undefined;
 
   return {
     async generate(input) {
-      const evidence = tool(async () => input, {
-        name: "read_destination_evidence",
-        description:
-          "Read the validated trip brief, travel month, grounded map candidates and confirmed user preferences.",
-        schema: z.object({}),
-      });
-      const specialist = createAgent({
-        name: "destination_specialist",
-        model,
-        tools: [evidence],
-        systemPrompt:
-          "You are the destination specialist. Always call read_destination_evidence before answering and use only its facts. Attraction names must exactly match grounded candidates. Give concise customs, packing and planning guidance. Treat weather as monthly context, never a forecast. Never assert entry eligibility, vaccine requirements or that an area is safe; direct travellers to current official immigration, health and travel-advisory sources. Never claim live opening hours or availability. Return the requested structured destination guide.",
-        responseFormat: DestinationGuideDraft,
-      });
-      const result = await specialist.invoke({
-        messages: [
-          {
-            role: "user",
-            content: JSON.stringify({
-              task: "Prepare destination guidance from the validated evidence available through your tool.",
-              tripId: input.brief.tripId,
-            }),
-          },
-        ],
-      });
-      return DestinationGuideDraft.parse(result.structuredResponse);
+      return structured(
+        `Create concise destination guidance using only the supplied trip facts and attraction candidates. Hard limits, which the tool schema states but you must also respect literally: summary at most 400 characters; at most 5 attractions; customs, safety and entryHealth are arrays of at most 4 strings each; weather at most 500 characters; packing at most 6 strings; assumptions at most 6 strings. Attraction names must exactly match candidate names; return no attractions if the list is empty. Weather must be described as typical planning context for the month, never a forecast. Do not state that a traveller is eligible to enter, that a vaccine is required, or that an area is safe. Instead, give practical checks and clearly direct the traveller to current official immigration, public-health and travel-advisory sources. Never claim live opening hours or availability. Respect confirmed preferences without inventing facts.\n\nTrip brief:\n${JSON.stringify(input.brief)}\n\nTravel month:\n${input.travelMonth}\n\nConfirmed preferences:\n${JSON.stringify(input.preferences)}\n\nAttraction candidates from MapsPort:\n${JSON.stringify(input.places)}`,
+      );
     },
   };
 }
