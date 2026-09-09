@@ -13,8 +13,6 @@ export const MODEL_ROUTING = {
   itinerary: "deepseek",
   "destination-guide": "deepseek",
   dining: "deepseek",
-  transport: "deepseek",
-  accommodation: "deepseek",
 } as const;
 
 export type RoutedModelTask = keyof typeof MODEL_ROUTING;
@@ -67,8 +65,7 @@ export function createRoutedStructuredInvoker<Schema extends z.ZodType>(
   if (MODEL_ROUTING[task] === "deepseek") {
     const structured = model.withStructuredOutput(schema, { name, method: "functionCalling" });
     const call = (prompt: string) => structured.invoke(prompt) as Promise<z.infer<Schema>>;
-    return (prompt) =>
-      call(prompt).catch((error: unknown) => call(withCorrection(prompt, name, error)));
+    return (prompt) => call(prompt).catch((error: unknown) => call(withCorrection(prompt, name, error)));
   }
 
   const bound = model.bindTools(

@@ -1,7 +1,7 @@
 import { FakeToolCallingModel } from "langchain";
 import { describe, expect, it, vi } from "vitest";
 import type { Agent, MemoryStore, ToolGateway, TripBrief } from "@trip/shared";
-import { createSupervisorTools, dispatchWithSupervisor, reviseWithSupervisor } from "./supervisor";
+import { createSupervisorTools, dispatchWithSupervisor } from "./supervisor";
 
 const brief: TripBrief = {
   tripId: "supervisor-test",
@@ -71,51 +71,5 @@ describe("LangChain supervisor", () => {
       model,
     });
     expect(proposals.map((proposal) => proposal.agent)).toEqual(["itinerary"]);
-  });
-
-  it("routes an immutable revision request through its typed specialist tool", async () => {
-    const request = {
-      tripId: brief.tripId,
-      targetAgent: "itinerary" as const,
-      reason: "plan is over budget",
-      constraints: ["cut itinerary cost by ~30%"],
-    };
-    const revisedAgent: Agent = {
-      ...itinerary,
-      revise: vi.fn(async (_brief, _context, received) => ({
-        agent: "itinerary" as const,
-        summary: received.reason,
-        items: [],
-        assumptions: received.constraints,
-        conflictsWith: [],
-      })),
-    };
-    const model = new FakeToolCallingModel({
-      toolCalls: [
-        [
-          {
-            name: "revise_itinerary_specialist",
-            args: { objective: "Reduce itinerary cost" },
-            id: "revision-1",
-          },
-        ],
-        [],
-      ],
-    });
-
-    const [proposal] = await reviseWithSupervisor({
-      brief,
-      agents: [revisedAgent],
-      context: { ...context, round: 2 },
-      proposals: [await itinerary.run(brief, context)],
-      requests: [request],
-      model,
-    });
-    expect(revisedAgent.revise).toHaveBeenCalledWith(
-      brief,
-      expect.objectContaining({ round: 2 }),
-      request,
-    );
-    expect(proposal!.summary).toBe(request.reason);
   });
 });

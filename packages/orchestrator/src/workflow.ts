@@ -33,7 +33,7 @@ import {
   ESCALATION_OVERRUN_PCT,
   NEGOTIATION_OVERRUN_PCT,
 } from "./budget";
-import { dispatchWithSupervisor, reviseWithSupervisor } from "./supervisor";
+import { dispatchWithSupervisor } from "./supervisor";
 
 const DEFAULT_MAX_ROUNDS = 3;
 
@@ -259,36 +259,15 @@ export function createOrchestratorGraph(options: OrchestratorOptions = {}) {
     const requestByAgent = new Map(
       state.conflicts.map((request) => [request.targetAgent, request]),
     );
-    const deterministicRevision = () =>
-      Promise.all(
-        state.proposals.map(async (proposal) => {
-          const request = requestByAgent.get(proposal.agent);
-          const agent = agentByName.get(proposal.agent);
-          if (!request || !agent?.revise) return proposal;
-          const revised = await agent.revise(state.brief, context(state.brief, round), request);
-          return AgentProposalSchema.parse(revised);
-        }),
-      );
-    let proposals: AgentProposal[];
-    if (options.agents) {
-      proposals = await deterministicRevision();
-    } else {
-      try {
-        proposals = await reviseWithSupervisor({
-          brief: state.brief,
-          agents,
-          context: context(state.brief, round),
-          proposals: state.proposals,
-          requests: state.conflicts,
-        });
-      } catch (error) {
-        const reason = error instanceof Error ? error.message : "unknown revision supervisor error";
-        console.warn(
-          `[supervisor] Revision delegation unavailable; using deterministic routing: ${reason}`,
-        );
-        proposals = await deterministicRevision();
-      }
-    }
+    const proposals = await Promise.all(
+      state.proposals.map(async (proposal) => {
+        const request = requestByAgent.get(proposal.agent);
+        const agent = agentByName.get(proposal.agent);
+        if (!request || !agent?.revise) return proposal;
+        const revised = await agent.revise(state.brief, context(state.brief, round), request);
+        return AgentProposalSchema.parse(revised);
+      }),
+    );
     return { round, proposals };
   };
 

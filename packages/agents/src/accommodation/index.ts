@@ -1,18 +1,8 @@
 // Owner: C — lodging proposals and price revisions via injected tools and memory.
-import {
-  AgentProposal as AgentProposalSchema,
-  type Agent,
-  type AgentProposal,
-  type TripBrief,
-  type AgentContext,
-  type RevisionRequest,
-} from "@trip/shared";
-import { createAgent, tool } from "langchain";
-import { z } from "zod/v4";
-import { createRoutedChatModel } from "../models";
+import type { Agent, AgentProposal, TripBrief, AgentContext, RevisionRequest } from "@trip/shared";
 import { chooseInitial, eligibleOptions, readPreferences, splitStay, stayCost } from "./planning";
 
-async function buildStayProposal(
+async function planStays(
   brief: TripBrief,
   ctx: AgentContext,
   revision?: RevisionRequest,
@@ -119,62 +109,6 @@ async function buildStayProposal(
     assumptions,
     conflictsWith: [],
   };
-}
-
-async function planStays(
-  brief: TripBrief,
-  ctx: AgentContext,
-  revision?: RevisionRequest,
-): Promise<AgentProposal> {
-  const model = createRoutedChatModel("accommodation");
-  if (!model) return buildStayProposal(brief, ctx, revision);
-
-  let evidence: AgentProposal | undefined;
-  const calculate = tool(
-    async () => {
-      evidence = AgentProposalSchema.parse(await buildStayProposal(brief, ctx, revision));
-      return evidence;
-    },
-    {
-      name: "calculate_accommodation_options",
-      description:
-        "Search the injected booking port, apply confirmed preferences and calculate a validated lodging proposal for this trip and revision.",
-      schema: z.object({}),
-    },
-  );
-  const specialist = createAgent({
-    name: "accommodation_specialist",
-    model,
-    tools: [calculate],
-    systemPrompt:
-      "You are the accommodation specialist. Always call calculate_accommodation_options. Return its proposal unchanged: do not invent properties, prices, ratings, availability or policies. The calculator owns preference filtering, room allocation, costing and revision rules. Return the requested structured AgentProposal.",
-    responseFormat: AgentProposalSchema,
-  });
-  try {
-    const result = await specialist.invoke({
-      messages: [
-        {
-          role: "user",
-          content: JSON.stringify({
-            task: "Return the calculated accommodation proposal.",
-            tripId: brief.tripId,
-            revision: revision?.reason,
-          }),
-        },
-      ],
-    });
-    const proposal = AgentProposalSchema.parse(result.structuredResponse);
-    if (proposal.agent !== "accommodation" || !evidence) {
-      throw new Error(
-        "Accommodation specialist returned the wrong proposal type or skipped its tool.",
-      );
-    }
-    return proposal;
-  } catch (error) {
-    const reason = error instanceof Error ? error.message : "unknown model error";
-    console.warn(`[accommodation] Agent failed; using deterministic fallback: ${reason}`);
-    return evidence ?? buildStayProposal(brief, ctx, revision);
-  }
 }
 
 export const accommodationAgent: Agent = {
