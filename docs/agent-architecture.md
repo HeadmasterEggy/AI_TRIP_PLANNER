@@ -43,7 +43,7 @@ The explanatory model and relationship notes are in [`docs/class-diagram.md`](cl
 
 ## Migration status
 
-Completed on `codex/langchain-agent-refactor`:
+Implemented on `codex/langchain-agent-refactor` (not yet merged into `main`):
 
 - `packages/orchestrator/src/supervisor.ts` provides a named supervisor and typed delegation tools.
 - Destination, itinerary, dining, transport and accommodation model generation use named agents
@@ -51,7 +51,7 @@ Completed on `codex/langchain-agent-refactor`:
 - Revision requests use immutable, targeted supervisor delegation tools.
 - Legacy Agent adapters remain as a compatibility seam for tests and offline fallback.
 
-Next:
+Next before merge:
 
 - Remove the legacy `Agent.run()` dispatch once all specialists and tests use the new path.
 - Add supervisor checkpoint persistence and fine-grained UI tool-loop streaming.

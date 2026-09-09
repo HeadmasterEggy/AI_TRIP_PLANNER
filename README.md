@@ -11,13 +11,14 @@ Live demo: [elec5620-ai-trip-planner.vercel.app](https://elec5620-ai-trip-planne
 
 ## Current status
 
-The LangChain agent migration is currently in progress.
+The LangChain agent migration is being developed on `codex/langchain-agent-refactor`; `main`
+remains the stable pre-migration baseline.
 
-- Supervisor, destination and itinerary agents now use named LangChain JS agents.
-- Dining, transport and accommodation now use named LangChain JS agents with typed delegation.
-- Typed delegation tools, Zod response schemas and deterministic fallbacks are in place.
-- Existing memory, HITL, conflict validation, UI and proposal contracts remain compatible.
-- The legacy boundary remains only as a compatibility seam for tests and offline fallback.
+- `main` uses the existing LangGraph workflow and legacy specialist boundary.
+- The refactor branch contains the named LangChain JS agents, typed delegation tools and Zod
+  response schemas.
+- Existing memory, HITL, conflict validation, UI and proposal contracts are being preserved during
+  the migration.
 
 See [the architecture and migration plan](docs/agent-architecture.md) for details.
 
@@ -49,8 +50,10 @@ flowchart TB
     AC --> TOOLS
 ```
 
-LangGraph remains responsible for durable state, validation, conflict checks, retries, HITL and
-plan persistence. LangChain agents are responsible for role-specific reasoning and tool selection.
+The target architecture uses LangGraph for durable state, validation, conflict checks, retries,
+HITL and plan persistence, with LangChain agents responsible for role-specific reasoning and tool
+selection. The target is implemented on the refactor branch; `main` remains on the compatibility
+path until that work is merged.
 
 ## Quick start
 
