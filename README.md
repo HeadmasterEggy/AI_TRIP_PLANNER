@@ -77,7 +77,7 @@ docs/                     Architecture, workflow, roadmap and session notes
 - [Team and Git workflow](docs/team-workflow.md)
 - [Product roadmap](docs/roadmap.md)
 - [Scaffold and module ownership](docs/scaffold.md)
-- [UML and design model](docs/class-diagram.md)
+- [UML and design model](docs/class-diagram.md), including the [diagram index](docs/diagrams/)
 - [Session-log template](docs/session-logs/TEMPLATE.md)
 
 ## Scope
