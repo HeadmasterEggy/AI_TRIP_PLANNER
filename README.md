@@ -111,6 +111,42 @@ flowchart TB
 8. Output: mind-map view + timeline view
 ```
 
+### Agent architecture refactor (decision recorded 2026-09-09)
+
+The current implementation is a useful prototype, but its custom `Agent.run(brief, context)`
+interface and hand-built LLM prompts do not yet match the intended LangChain agent model. We will
+keep the existing domain contracts, tool adapters, memory, HITL persistence, UI and business-rule
+tests, while replacing the agent boundary with real TypeScript LangChain agents.
+
+Target shape:
+
+```text
+user message
+    -> supervisor agent (createAgent)
+       -> specialist tools / agents
+          -> destination, itinerary, dining, transport, accommodation
+       -> validated final trip plan
+    -> LangGraph workflow for state, HITL, retries, conflict checks and persistence
+```
+
+Migration rules:
+
+1. Use LangChain JS/TypeScript `createAgent`, not Python and not a home-grown agent runtime.
+2. Define each specialist with a stable `name`, `systemPrompt`, model, tools and output schema.
+3. Expose specialists to the supervisor through typed tools; do not make the supervisor call every
+   specialist unconditionally.
+4. Pass the TripBrief and tool results as messages/context. Keep prompt text limited to each
+   agent's durable role and safety constraints; remove per-call prompt templates that serialize
+   the whole workflow manually.
+5. Keep LangGraph where it adds value: durable state, HITL interrupts, conflict validation,
+   retries, memory and final-plan persistence. An Agent may be a node or a tool inside that graph.
+6. Preserve deterministic fallbacks and Zod validation at every external boundary.
+
+The existing branch remains a reference implementation during migration. The refactor starts with
+one supervisor plus destination and itinerary specialists, proves the end-to-end tool-call loop,
+then migrates dining, transport and accommodation. Do not delete the current workflow until the
+new path passes the existing contract, business-rule, HITL and UI tests.
+
 ---
 
 ## 2. Tech stack
