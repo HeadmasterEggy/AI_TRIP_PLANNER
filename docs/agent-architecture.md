@@ -19,15 +19,15 @@ facts. Tool inputs are typed and specialist outputs are validated with Zod.
 
 The design-time UML set remains under [`docs/diagrams/`](diagrams/):
 
-| Diagram                    | File                                                                      |
-| -------------------------- | ------------------------------------------------------------------------- |
-| Architecture spine         | [`class-1-spine.svg`](diagrams/class-1-spine.svg)                         |
-| Domain model               | [`class-2-domain.svg`](diagrams/class-2-domain.svg)                       |
-| Agents and orchestration   | [`class-3-agents.svg`](diagrams/class-3-agents.svg)                       |
-| Ports and adapters         | [`class-4-ports.svg`](diagrams/class-4-ports.svg)                         |
-| Class model with use cases | [`class-5-with-use-cases.svg`](diagrams/class-5-with-use-cases.svg)       |
-| Combined architecture map  | [`combined-architecture-map.svg`](diagrams/combined-architecture-map.svg) |
-| Use-case diagram           | [`use-case-diagram.svg`](diagrams/use-case-diagram.svg)                   |
+| Diagram | File |
+| --- | --- |
+| Architecture spine | [`class-1-spine.svg`](diagrams/class-1-spine.svg) |
+| Domain model | [`class-2-domain.svg`](diagrams/class-2-domain.svg) |
+| Agents and orchestration | [`class-3-agents.svg`](diagrams/class-3-agents.svg) |
+| Ports and adapters | [`class-4-ports.svg`](diagrams/class-4-ports.svg) |
+| Class model with use cases | [`class-5-with-use-cases.svg`](diagrams/class-5-with-use-cases.svg) |
+| Combined architecture map | [`combined-architecture-map.svg`](diagrams/combined-architecture-map.svg) |
+| Use-case diagram | [`use-case-diagram.svg`](diagrams/use-case-diagram.svg) |
 
 The explanatory model and relationship notes are in [`docs/class-diagram.md`](class-diagram.md).
 
@@ -43,7 +43,7 @@ The explanatory model and relationship notes are in [`docs/class-diagram.md`](cl
 
 ## Migration status
 
-Completed on `codex/langchain-agent-refactor`:
+Implemented on `codex/langchain-agent-refactor` (not yet merged into `main`):
 
 - `packages/orchestrator/src/supervisor.ts` provides a named supervisor and typed delegation tools.
 - `packages/shared/src/agent.ts` defines the framework-neutral `Specialist` contract: one immutable
@@ -56,7 +56,7 @@ Completed on `codex/langchain-agent-refactor`:
 - All production callers and tests now use `Specialist.invoke`; the former `Agent.run()` /
   `revise()` compatibility type has been removed.
 
-Next:
+Next before merge:
 
 - Add persistent supervisor checkpoints and stream individual tool-loop events to the UI.
 
@@ -74,10 +74,10 @@ The workflow should continue to validate proposals before aggregation and persis
 
 ## Specialist responsibilities
 
-| Agent         | Responsibility                                                        |
-| ------------- | --------------------------------------------------------------------- |
-| Itinerary     | Grounded day-by-day schedule, pacing and route feasibility            |
-| Destination   | Attractions, customs, safety, entry/health checks and packing context |
-| Dining        | Grounded venues, dietary preferences and meal budget                  |
-| Transport     | Flights, inter-city/local routes and timing                           |
-| Accommodation | Lodging search, comparison and room allocation                        |
+| Agent | Responsibility |
+| --- | --- |
+| Itinerary | Grounded day-by-day schedule, pacing and route feasibility |
+| Destination | Attractions, customs, safety, entry/health checks and packing context |
+| Dining | Grounded venues, dietary preferences and meal budget |
+| Transport | Flights, inter-city/local routes and timing |
+| Accommodation | Lodging search, comparison and room allocation |
