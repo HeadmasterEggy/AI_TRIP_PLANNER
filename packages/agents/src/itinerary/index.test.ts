@@ -83,7 +83,7 @@ describe("itinerary planner", () => {
     expect(result.items.map((item) => item.day)).toEqual([1, 2]);
     expect(result.items.every((item) => item.startTime === "13:00")).toBe(true);
     expect(result.summary).not.toContain("STUB");
-    expect(result.assumptions.join(" ")).toContain("deterministic fallback");
+    expect(result.assumptions.join(" ")).toContain("Opening hours and live availability");
     expect(ctx.tools.maps.places).toHaveBeenCalledTimes(2);
   });
 
@@ -93,7 +93,7 @@ describe("itinerary planner", () => {
       brief,
       context: context(200),
     });
-    expect(result.assumptions.join(" ")).toContain("DeepSeek/LangChain");
+    expect(result.assumptions.join(" ")).not.toContain("LangChain");
     expect(result.conflictsWith[0]).toContain("geography conflict on day 1");
   });
 
@@ -112,7 +112,7 @@ describe("itinerary planner", () => {
       brief,
       context: context(),
     });
-    expect(result.assumptions.join(" ")).toContain("deterministic fallback");
+    expect(result.assumptions.join(" ")).toContain("Opening hours and live availability");
     expect(result.items).toHaveLength(2);
     warning.mockRestore();
   });
@@ -131,7 +131,7 @@ describe("itinerary planner", () => {
       },
     });
     expect(result.conflictsWith).toEqual([]);
-    expect(result.assumptions.join(" ")).toContain("deterministic fallback");
+    expect(result.assumptions.join(" ")).toContain("Opening hours and live availability");
   });
 
   it("rejects revisions addressed to another agent", async () => {

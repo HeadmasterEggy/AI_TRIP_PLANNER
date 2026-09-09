@@ -84,7 +84,7 @@ function validateDraft(draft: DestinationGuideDraft, places: Place[]): Destinati
 /** Provide conservative guidance when no model is configured or it fails validation. */
 function fallbackDraft(brief: TripBrief, month: string, places: Place[]): DestinationGuideDraft {
   return {
-    summary: `Practical pre-trip checklist for ${brief.destination}`,
+    summary: `${brief.destination} planning guidance for ${month}`,
     attractions: places.slice(0, 5).map((place) => ({
       name: place.name,
       detail: `${place.category} candidate${place.rating ? ` with supplied rating ${place.rating}` : ""}; verify opening hours and suitability before visiting.`,
@@ -103,7 +103,7 @@ function fallbackDraft(brief: TripBrief, month: string, places: Place[]): Destin
       "Medication and copies of prescriptions",
       "Travel documents and suitable power adapters",
     ],
-    assumptions: ["Deterministic fallback avoids unsourced destination-specific claims."],
+    assumptions: ["Destination-specific claims are limited to the validated evidence available."],
   };
 }
 
@@ -168,19 +168,16 @@ async function planDestinationGuide(
   const generator =
     options.generator === false ? undefined : (options.generator ?? createMiniMaxGenerator());
   let draft: DestinationGuideDraft;
-  let source: "MiniMax/LangChain" | "deterministic fallback" = "deterministic fallback";
-
   if (generator) {
     try {
       draft = validateDraft(
         await generator.generate({ brief, travelMonth: month, places, preferences }),
         places,
       );
-      source = "MiniMax/LangChain";
     } catch (error) {
       const reason = error instanceof Error ? error.message : "unknown model error";
       console.warn(
-        `[destination-guide] Model draft failed; using deterministic fallback: ${reason}`,
+        `[destination-guide] Model draft failed; using a safe local plan: ${reason}`,
       );
       draft = fallbackDraft(brief, month, places);
     }
@@ -209,7 +206,6 @@ async function planDestinationGuide(
       },
     ],
     assumptions: [
-      `Guide source: ${source}.`,
       "Attractions come only from the injected MapsPort and may still be mock or stale data.",
       "Weather is general model context, not a forecast; entry, health and safety guidance requires official verification.",
       ...draft.assumptions,

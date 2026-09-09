@@ -3,8 +3,10 @@ import type { MemoryStore, Specialist, ToolGateway, TripBrief } from "@trip/shar
 import {
   applyBriefPatch,
   extractBriefPatchLocally,
+  replyPrompt,
   runTripChat,
   type BriefExtractor,
+  type ReplyGenerator,
 } from "./chat";
 
 const brief: TripBrief = {
@@ -75,6 +77,9 @@ describe("trip chat workflow", () => {
     const extractor: BriefExtractor = {
       extract: vi.fn(async () => ({ destination: "Melbourne", budgetTotal: 5000 })),
     };
+    const replyGenerator: ReplyGenerator = {
+      generate: vi.fn(async () => "Melbourne sounds like a great fit. I’ve updated the plan and kept the current budget in view."),
+    };
     const turns: Array<{ role: string; content: string }> = [];
     const mem: MemoryStore = {
       getShortTerm: vi.fn(async () => []),
@@ -105,12 +110,18 @@ describe("trip chat workflow", () => {
 
     const result = await runTripChat(
       { tripId: brief.tripId, message: "Please change the destination", brief },
-      { extractor, specialists: [itinerary], tools, mem },
+      { extractor, replyGenerator, specialists: [itinerary], tools, mem },
     );
 
     expect(extractor.extract).toHaveBeenCalledWith("Please change the destination", brief);
     expect(result.plan.brief).toMatchObject({ destination: "Melbourne", budgetTotal: 5000 });
-    expect(result.reply).toContain("Updated: destination, budgetTotal");
+    expect(result.reply).toContain("Melbourne sounds like a great fit");
+    expect(replyGenerator.generate).toHaveBeenCalledWith(
+      expect.stringContaining("Detect the language of the traveler's latest message"),
+    );
+    expect(
+      replyPrompt("请改成中文回复", brief, result.plan.brief, ["destination"], result.plan),
+    ).toContain("reply in that exact same language");
     expect(turns.map((turn) => turn.role)).toEqual(["user", "assistant"]);
   });
 });

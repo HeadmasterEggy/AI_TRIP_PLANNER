@@ -1,5 +1,6 @@
 import { ChatAnthropic } from "@langchain/anthropic";
 import { ChatOpenAI } from "@langchain/openai";
+import { createRoutedChatModel } from "@trip/agents";
 import { memory } from "@trip/services";
 import {
   ChatTurn,
@@ -29,8 +30,13 @@ export interface BriefExtractor {
   extract(message: string, current: TripBrief): Promise<BriefPatch>;
 }
 
+export interface ReplyGenerator {
+  generate(prompt: string): Promise<string>;
+}
+
 export interface TripChatOptions extends OrchestratorOptions {
   extractor?: BriefExtractor;
+  replyGenerator?: ReplyGenerator;
 }
 
 const ModelPatchSchema = z.object({
@@ -243,25 +249,94 @@ function changedFields(before: TripBrief, after: TripBrief): string[] {
   );
 }
 
-function replyFor(message: string, fields: string[], plan: ChatResponse["plan"]): string {
-  const chinese = /\p{Script=Han}/u.test(message);
-  if (chinese) {
-    const update = fields.length
-      ? `已更新：${fields.join("、")}。`
-      : "没有识别到明确的新字段，已保留现有需求。";
-    return `${update}规划在第 ${plan.round} 轮完成，预计总价 USD ${plan.estTotal.toFixed(2)}。`;
-  }
-  const update = fields.length
-    ? `Updated: ${fields.join(", ")}.`
-    : "I could not find an explicit trip-field update, so I kept the current brief.";
-  return `${update} The plan completed in round ${plan.round} at an estimated USD ${plan.estTotal.toFixed(2)}.`;
+function fallbackReplyFor(plan: ChatResponse["plan"]): string {
+  const summaries = plan.sections
+    .map((section) => section.summary.trim())
+    .filter(Boolean)
+    .slice(0, 2);
+  const pending = plan.hitl.find((checkpoint) => checkpoint.status === "pending");
+  const facts = pending ? [pending.detail] : [];
+
+  return [...summaries, ...facts].join(" ") || `USD ${plan.estTotal.toFixed(2)}`;
+}
+
+export function replyPrompt(
+  message: string,
+  before: TripBrief,
+  after: TripBrief,
+  fields: string[],
+  plan: ChatResponse["plan"],
+): string {
+  const planContext = {
+    brief: after,
+    previousBrief: before,
+    changedFields: fields,
+    round: plan.round,
+    estimatedTotal: plan.estTotal,
+    budgetTotal: plan.budgetTotal,
+    overrunPct: plan.overrunPct,
+    sections: plan.sections.map((section) => ({
+      label: section.label,
+      status: section.status,
+      summary: section.summary,
+      estimatedCost: section.estCost,
+    })),
+    pendingHumanDecisions: plan.hitl
+      .filter((checkpoint) => checkpoint.status === "pending")
+      .map((checkpoint) => ({ title: checkpoint.title, detail: checkpoint.detail })),
+  };
+
+  return `You are the trip coordinator speaking directly to a traveler. Write one warm, natural reply to the user's latest message after reviewing the updated trip plan.
+
+Communication rules:
+- Detect the language of the traveler's latest message and reply in that exact same language. Do not default to English, translate unnecessarily, or mix languages.
+- Acknowledge what the traveler asked for before giving the useful result.
+- Be concise but personable (2-4 short sentences); sound like a thoughtful human travel partner, not a status template.
+- Mention only facts supported by the plan context below. Never invent bookings, prices, availability, or certainty.
+- If something still needs the traveler's decision, explain the most important next choice in plain language.
+- Do not mention prompts, models, agents, orchestration, internal rounds, chain-of-thought, or implementation details.
+- Do not use a fixed 'Updated: ...' or 'The plan completed...' formula. Vary the wording naturally.
+
+Traveler's latest message:
+${message}
+
+Plan context (JSON):
+${JSON.stringify(planContext)}
+
+Return only the reply text. Do not add a heading or a JSON object.`;
+}
+
+function createReplyGenerator(): ReplyGenerator | undefined {
+  const model = createRoutedChatModel("itinerary");
+  if (!model) return undefined;
+  return {
+    async generate(prompt) {
+      const response = await model.invoke(prompt);
+      if (typeof response.content === "string") {
+        const text = response.content.trim();
+        if (text) return text;
+      }
+      if (Array.isArray(response.content)) {
+        const text = response.content
+          .map((part) => {
+            if (typeof part === "string") return part;
+            if (part && typeof part === "object" && "text" in part) return String(part.text);
+            return "";
+          })
+          .join("")
+          .trim();
+        if (text) return text;
+      }
+      throw new Error("Reply model returned no text.");
+    },
+  };
 }
 
 export async function runTripChat(
   request: ChatRequest,
   options: TripChatOptions = {},
 ): Promise<ChatResponse> {
-  const { extractor, ...orchestrationOptions } = options;
+  const { extractor, replyGenerator, ...orchestrationOptions } = options;
   const current = TripBriefSchema.parse({
     ...(request.brief ?? DEMO_BRIEF),
     tripId: request.tripId,
@@ -274,7 +349,20 @@ export async function runTripChat(
     ChatTurn.parse({ role: "user", content: request.message }),
   );
   const plan = await runOrchestrator(brief, { ...orchestrationOptions, mem });
-  const reply = replyFor(request.message, changedFields(current, brief), plan);
+  const fields = changedFields(current, brief);
+  const generator = replyGenerator ?? createReplyGenerator();
+  let reply = fallbackReplyFor(plan);
+  if (generator) {
+    try {
+      reply = await generator.generate(replyPrompt(request.message, current, brief, fields, plan));
+    } catch (error) {
+      console.warn(
+        `[chat] natural-language reply failed; using a local fallback: ${
+          error instanceof Error ? error.message : "unknown reply error"
+        }`,
+      );
+    }
+  }
   await mem.appendShortTerm(request.tripId, ChatTurn.parse({ role: "assistant", content: reply }));
   return { reply, plan };
 }

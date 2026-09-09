@@ -196,7 +196,7 @@ async function planTransport(
     return proposal;
   } catch (error) {
     const reason = error instanceof Error ? error.message : "unknown model error";
-    console.warn(`[transport] Specialist failed; using deterministic fallback: ${reason}`);
+    console.warn(`[transport] Specialist failed; using a safe local plan: ${reason}`);
     return evidence ?? buildTransportProposal(brief, ctx, revision);
   }
 }

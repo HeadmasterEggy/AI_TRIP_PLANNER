@@ -72,7 +72,7 @@ describe("destination guide", () => {
     expect(result.items.find((item) => item.kind === "entry-health")?.detail).toContain(
       "Australian passport",
     );
-    expect(result.assumptions.join(" ")).toContain("deterministic fallback");
+    expect(result.assumptions.join(" ")).toContain("Destination-specific claims are limited");
     expect(ctx.tools.maps.places).toHaveBeenCalledTimes(2);
     expect(ctx.mem.getLongTerm).toHaveBeenCalledWith("traveller");
   });
@@ -84,7 +84,7 @@ describe("destination guide", () => {
       brief,
       context: context(),
     });
-    expect(result.assumptions.join(" ")).toContain("MiniMax/LangChain");
+    expect(result.assumptions.join(" ")).not.toContain("LangChain");
     expect(result.items[0]).toMatchObject({ kind: "attraction", location: "Temple Walk" });
     expect(generate).toHaveBeenCalledWith(
       expect.objectContaining({ travelMonth: "October", brief }),
@@ -103,7 +103,7 @@ describe("destination guide", () => {
       brief,
       context: context(),
     });
-    expect(result.assumptions.join(" ")).toContain("deterministic fallback");
+    expect(result.assumptions.join(" ")).toContain("Destination-specific claims are limited");
     expect(result.items.map((item) => item.location).filter(Boolean)).not.toContain(
       "Invented Palace",
     );

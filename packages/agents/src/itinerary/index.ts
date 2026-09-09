@@ -123,7 +123,7 @@ function fallbackDraft(brief: TripBrief, days: number, places: Place[]): Itinera
   const dailyEstimate =
     Math.floor(((brief.budgetTotal * MODEL_ACTIVITY_BUDGET_SHARE) / days) * 100) / 100;
   return {
-    summary: `${days}-day paced itinerary for ${brief.destination}`,
+    summary: `${days}-day plan for ${brief.destination} with one grounded activity per day`,
     activities: Array.from({ length: days }, (_, index) => {
       const place = candidates[index % candidates.length]!;
       return {
@@ -131,12 +131,12 @@ function fallbackDraft(brief: TripBrief, days: number, places: Place[]): Itinera
         startTime: "13:00",
         endTime: "16:00",
         location: place.name,
-        detail: `Explore ${place.name} (${place.category}) at a relaxed pace.`,
+        detail: `${place.name} (${place.category}) is a suggested stop; confirm timing and suitability before visiting.`,
         estCost: Math.min(30 * brief.groupSize, dailyEstimate),
       };
     }),
     assumptions: [
-      "Deterministic fallback used: opening hours and live availability must be confirmed.",
+      "Opening hours and live availability must be confirmed before plans are finalised.",
       "One anchored activity per day leaves room for meals, transfers and human changes.",
     ],
   };
@@ -231,7 +231,6 @@ async function planItinerary(
   const generator =
     options.generator === false ? undefined : (options.generator ?? createDeepSeekGenerator());
   let draft: ItineraryDraft;
-  let source: "DeepSeek/LangChain" | "deterministic fallback" = "deterministic fallback";
   if (generator) {
     try {
       draft = validateDraft(
@@ -240,11 +239,10 @@ async function planItinerary(
         days,
         places,
       );
-      source = "DeepSeek/LangChain";
     } catch (error) {
       const reason = error instanceof Error ? error.message : "unknown model error";
       console.warn(
-        `[itinerary] Model draft failed validation; using deterministic fallback: ${reason}`,
+        `[itinerary] Model draft failed validation; using a safe local plan: ${reason}`,
       );
       draft = fallbackDraft(brief, days, places);
     }
@@ -257,14 +255,12 @@ async function planItinerary(
     // conservative fallback and re-check it before returning.
     draft = fallbackDraft(brief, days, places);
     conflicts = await travelConflicts(draft, ctx);
-    source = "deterministic fallback";
   }
   return {
     agent: "itinerary",
     summary: draft.summary,
     items: draft.activities.map((activity) => ({ kind: "activity", ...activity })),
     assumptions: [
-      `Planner source: ${source}.`,
       ...draft.assumptions,
       ...(revision ? [`Revision requested: ${revision.reason}.`] : []),
     ],

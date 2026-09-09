@@ -134,14 +134,16 @@ function fallbackDraft(
     ? ` Ask the venue to confirm these requirements directly: ${preferences.map(({ key, value }) => `${key}=${value}`).join(", ")}.`
     : " Confirm ingredients and dietary suitability directly with the venue.";
   return {
-    summary: "Grounded dining candidates with a whole-trip meal budget envelope",
+    summary: places.length
+      ? `${places.length} grounded dining candidate(s) within a whole-trip meal budget envelope`
+      : "No grounded dining candidates; using a whole-trip meal budget envelope",
     dailyBudgetPerPersonUsd: Math.min(50, maxDailyPerPersonUsd),
     picks: places.slice(0, 5).map((place) => ({
       name: place.name,
       detail: `${place.category} candidate${place.rating ? ` with supplied rating ${place.rating}` : ""}.${constraintText}`,
     })),
     assumptions: [
-      "Deterministic fallback does not infer cuisine, menu, certification or availability.",
+      "Cuisine, menu, certification and availability require direct confirmation.",
     ],
   };
 }
@@ -206,8 +208,6 @@ async function planDining(
   const generator =
     options.generator === false ? undefined : (options.generator ?? createMiniMaxGenerator());
   let draft: DiningDraft;
-  let source: "MiniMax/LangChain" | "deterministic fallback" = "deterministic fallback";
-
   if (generator) {
     try {
       draft = validateDraft(
@@ -222,10 +222,9 @@ async function planDining(
         places,
         ceiling,
       );
-      source = "MiniMax/LangChain";
     } catch (error) {
       const reason = error instanceof Error ? error.message : "unknown model error";
-      console.warn(`[dining] Model draft failed; using deterministic fallback: ${reason}`);
+      console.warn(`[dining] Model draft failed; using a safe local plan: ${reason}`);
       draft = fallbackDraft(places, preferences, ceiling);
     }
   } else {
@@ -250,7 +249,6 @@ async function planDining(
       })),
     ],
     assumptions: [
-      `Dining source: ${source}.`,
       "The priced item is a budget envelope, not a reservation or a sum of the unpriced venue candidates.",
       "Venue data comes only from the injected MapsPort; menus, dietary suitability and availability require direct confirmation.",
       ...(preferences.length

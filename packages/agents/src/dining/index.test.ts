@@ -77,7 +77,7 @@ describe("dining planner", () => {
       }),
     );
     expect(result.assumptions.join(" ")).toContain("dietary.allergy=peanuts");
-    expect(result.assumptions.join(" ")).toContain("MiniMax/LangChain");
+    expect(result.assumptions.join(" ")).not.toContain("LangChain");
   });
 
   it("falls back when model cost exceeds the budget guardrail", async () => {
@@ -90,7 +90,7 @@ describe("dining planner", () => {
       context: context(),
     });
     expect(result.items[0]!.estCost).toBe(200);
-    expect(result.assumptions.join(" ")).toContain("deterministic fallback");
+    expect(result.assumptions.join(" ")).toContain("Cuisine, menu, certification and availability");
     warning.mockRestore();
   });
 
