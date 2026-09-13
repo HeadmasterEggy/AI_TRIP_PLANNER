@@ -53,6 +53,11 @@ function normalize(value: string): string {
   return value.trim().replace(/\s+/g, " ").toLocaleLowerCase();
 }
 
+function canonicalPlaceName(name: string, places: Place[]): string {
+  const match = places.find((place) => normalize(place.name) === normalize(name));
+  return match?.name ?? name.trim();
+}
+
 /** Turn the trip start date into month-only context (not a weather forecast). */
 function travelMonth(date: string): string {
   const timestamp = Date.parse(`${date}T00:00:00.000Z`);
@@ -78,7 +83,13 @@ function validateDraft(draft: DestinationGuideDraft, places: Place[]): Destinati
       throw new Error(`Destination guide returned an ungrounded attraction: ${attraction.name}`);
     }
   }
-  return parsed;
+  return {
+    ...parsed,
+    attractions: parsed.attractions.map((attraction) => ({
+      ...attraction,
+      name: canonicalPlaceName(attraction.name, places),
+    })),
+  };
 }
 
 /** Provide conservative guidance when no model is configured or it fails validation. */

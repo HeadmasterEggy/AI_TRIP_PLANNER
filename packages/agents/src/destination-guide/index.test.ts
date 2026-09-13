@@ -91,6 +91,25 @@ describe("destination guide", () => {
     );
   });
 
+  it("canonicalizes grounded attraction names before returning them", async () => {
+    const generator: DestinationGuideGenerator = {
+      generate: vi.fn(async () => ({
+        ...validDraft,
+        attractions: [{ name: "  temple walk ", detail: "A candidate cultural stop." }],
+      })),
+    };
+
+    const result = await createDestinationGuideAgent({ generator }).invoke({
+      brief,
+      context: context(),
+    });
+
+    expect(result.items[0]).toMatchObject({
+      kind: "attraction",
+      location: "Temple Walk",
+    });
+  });
+
   it("deduplicates the same place returned by multiple map categories", async () => {
     const generate = vi.fn(async ({ places }: { places: Array<{ name: string }> }) => {
       expect(places.map((place) => place.name)).toEqual(["Temple Walk", "City Museum"]);
