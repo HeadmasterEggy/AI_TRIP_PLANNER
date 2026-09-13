@@ -77,7 +77,7 @@ function tripDays([start, end]: [string, string]): number {
 /** Keep only preferences that can affect food choices or allergen handling. */
 function dietaryPreferences(preferences: UserPreference[]): UserPreference[] {
   return preferences.filter((preference) =>
-    /diet|food|meal|allerg|halal|kosher|vegetarian|vegan|gluten|lactose/i.test(
+    /diet|food|meal|allerg|halal|kosher|vegetarian|vegan|plant[- ]based|gluten|lactose|celiac|shellfish|pescatarian/i.test(
       `${preference.key} ${preference.value}`,
     ),
   );

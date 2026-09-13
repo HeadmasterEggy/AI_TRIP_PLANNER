@@ -80,6 +80,23 @@ describe("dining planner", () => {
     expect(result.assumptions.join(" ")).not.toContain("LangChain");
   });
 
+  it("recognizes common dietary terms even when stored under a generic preference key", async () => {
+    const preferences: UserPreference[] = [
+      { key: "preference", value: "plant-based and shellfish allergy", source: "chat_confirmed" },
+      { key: "transport.origin", value: "Sydney", source: "filter" },
+    ];
+    const generate = vi.fn(async () => validDraft);
+
+    await createDiningAgent({ generator: { generate } }).invoke({
+      brief,
+      context: context(preferences),
+    });
+
+    expect(generate).toHaveBeenCalledWith(
+      expect.objectContaining({ dietaryPreferences: [preferences[0]] }),
+    );
+  });
+
   it("falls back when model cost exceeds the budget guardrail", async () => {
     const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
     const generator: DiningGenerator = {
