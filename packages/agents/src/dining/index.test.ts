@@ -112,6 +112,29 @@ describe("dining planner", () => {
     expect(revised.assumptions.join(" ")).toContain("Revision requested");
   });
 
+  it("passes the reduced budget ceiling to a revised generator", async () => {
+    const generate = vi.fn(async () => ({ ...validDraft, dailyBudgetPerPersonUsd: 35 }));
+    const agent = createDiningAgent({ generator: { generate } });
+
+    await agent.invoke({
+      brief,
+      context: context(),
+      revision: {
+        tripId: brief.tripId,
+        targetAgent: "dining",
+        reason: "plan is over budget",
+        constraints: ["cut dining cost by ~30%"],
+      },
+    });
+
+    expect(generate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        maxDailyPerPersonUsd: 35,
+        revision: expect.objectContaining({ targetAgent: "dining" }),
+      }),
+    );
+  });
+
   it("falls back instead of accepting an ungrounded venue", async () => {
     const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
     const generator: DiningGenerator = {

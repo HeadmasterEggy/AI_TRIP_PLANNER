@@ -91,6 +91,26 @@ describe("destination guide", () => {
     );
   });
 
+  it("deduplicates the same place returned by multiple map categories", async () => {
+    const generate = vi.fn(async ({ places }: { places: Array<{ name: string }> }) => {
+      expect(places.map((place) => place.name)).toEqual(["Temple Walk", "City Museum"]);
+      return validDraft;
+    });
+    const ctx = context();
+    ctx.tools.maps.places = vi.fn(async ({ category }) =>
+      category === "museum"
+        ? [{ name: "Temple Walk", category: "museum" }, { name: "City Museum", category }]
+        : [{ name: "Temple Walk", category: "sight" }],
+    );
+
+    await createDestinationGuideAgent({ generator: { generate } }).invoke({
+      brief,
+      context: ctx,
+    });
+
+    expect(generate).toHaveBeenCalledTimes(1);
+  });
+
   it("falls back instead of accepting a hallucinated attraction", async () => {
     const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
     const generator: DestinationGuideGenerator = {
