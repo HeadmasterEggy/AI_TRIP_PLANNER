@@ -77,6 +77,20 @@ describe("destination guide", () => {
     expect(ctx.mem.getLongTerm).toHaveBeenCalledWith("traveller");
   });
 
+  it("labels entry guidance for the traveller nationality and weather as planning context", async () => {
+    const result = await createDestinationGuideAgent({ generator: false }).invoke({
+      brief,
+      context: context(),
+    });
+    const entryHealth = result.items.find((item) => item.kind === "entry-health")?.detail ?? "";
+    const weatherPacking = result.items.find((item) => item.kind === "weather-packing")?.detail ?? "";
+
+    expect(entryHealth).toContain("Australian passport");
+    expect(entryHealth).toContain("official government sources");
+    expect(weatherPacking).toContain("planning context only");
+    expect(result.assumptions.join(" ")).toContain("not a forecast");
+  });
+
   it("uses a schema-valid MiniMax draft grounded in supplied places", async () => {
     const generate = vi.fn(async () => validDraft);
     const generator: DestinationGuideGenerator = { generate };

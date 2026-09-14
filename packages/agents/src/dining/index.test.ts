@@ -98,6 +98,23 @@ describe("dining planner", () => {
     );
   });
 
+  it("does not pass unrelated preferences to the dining generator", async () => {
+    const preferences: UserPreference[] = [
+      { key: "transport.origin", value: "Sydney", source: "filter" },
+      { key: "accommodation.roomAllocation", value: "individual", source: "filter" },
+    ];
+    const generate = vi.fn(async () => validDraft);
+
+    await createDiningAgent({ generator: { generate } }).invoke({
+      brief,
+      context: context(preferences),
+    });
+
+    expect(generate).toHaveBeenCalledWith(
+      expect.objectContaining({ dietaryPreferences: [] }),
+    );
+  });
+
   it("deduplicates and canonicalizes venue names before returning them", async () => {
     const ctx = context();
     ctx.tools.maps.places = vi.fn(async () => [
