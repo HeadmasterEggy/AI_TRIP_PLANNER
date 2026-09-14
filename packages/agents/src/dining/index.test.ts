@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   AgentProposal,
   type AgentContext,
+  type Place,
   type TripBrief,
   type UserPreference,
 } from "@trip/shared";
@@ -80,6 +81,65 @@ describe("dining planner", () => {
     expect(result.assumptions.join(" ")).not.toContain("LangChain");
   });
 
+  it("recognizes common dietary terms even when stored under a generic preference key", async () => {
+    const preferences: UserPreference[] = [
+      { key: "preference", value: "plant-based and shellfish allergy", source: "chat_confirmed" },
+      { key: "transport.origin", value: "Sydney", source: "filter" },
+    ];
+    const generate = vi.fn(async () => validDraft);
+
+    await createDiningAgent({ generator: { generate } }).invoke({
+      brief,
+      context: context(preferences),
+    });
+
+    expect(generate).toHaveBeenCalledWith(
+      expect.objectContaining({ dietaryPreferences: [preferences[0]] }),
+    );
+  });
+
+  it("does not pass unrelated preferences to the dining generator", async () => {
+    const preferences: UserPreference[] = [
+      { key: "transport.origin", value: "Sydney", source: "filter" },
+      { key: "accommodation.roomAllocation", value: "individual", source: "filter" },
+    ];
+    const generate = vi.fn(async () => validDraft);
+
+    await createDiningAgent({ generator: { generate } }).invoke({
+      brief,
+      context: context(preferences),
+    });
+
+    expect(generate).toHaveBeenCalledWith(
+      expect.objectContaining({ dietaryPreferences: [] }),
+    );
+  });
+
+  it("deduplicates and canonicalizes venue names before returning them", async () => {
+    const ctx = context();
+    ctx.tools.maps.places = vi.fn(async () => [
+      { name: "Market Kitchen", category: "restaurant" },
+      { name: " market  kitchen ", category: "restaurant" },
+    ]);
+    const generator: DiningGenerator = {
+      generate: vi.fn(async ({ places }: { places: Place[] }) => ({
+        ...validDraft,
+        picks: places.map((place) => ({ name: place.name, detail: "Confirm the current menu." })),
+      })),
+    };
+
+    const result = await createDiningAgent({ generator }).invoke({
+      brief,
+      context: ctx,
+    });
+
+    expect(generator.generate).toHaveBeenCalledWith(
+      expect.objectContaining({ places: [{ name: "Market Kitchen", category: "restaurant" }] }),
+    );
+    expect(result.items.filter((item) => item.kind === "meal")).toHaveLength(1);
+    expect(result.items.find((item) => item.kind === "meal")?.location).toBe("Market Kitchen");
+  });
+
   it("falls back when model cost exceeds the budget guardrail", async () => {
     const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
     const generator: DiningGenerator = {
@@ -110,6 +170,29 @@ describe("dining planner", () => {
     expect(initial.items[0]!.estCost).toBe(200);
     expect(revised.items[0]!.estCost).toBe(140);
     expect(revised.assumptions.join(" ")).toContain("Revision requested");
+  });
+
+  it("passes the reduced budget ceiling to a revised generator", async () => {
+    const generate = vi.fn(async () => ({ ...validDraft, dailyBudgetPerPersonUsd: 35 }));
+    const agent = createDiningAgent({ generator: { generate } });
+
+    await agent.invoke({
+      brief,
+      context: context(),
+      revision: {
+        tripId: brief.tripId,
+        targetAgent: "dining",
+        reason: "plan is over budget",
+        constraints: ["cut dining cost by ~30%"],
+      },
+    });
+
+    expect(generate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        maxDailyPerPersonUsd: 35,
+        revision: expect.objectContaining({ targetAgent: "dining" }),
+      }),
+    );
   });
 
   it("falls back instead of accepting an ungrounded venue", async () => {

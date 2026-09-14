@@ -77,6 +77,20 @@ describe("destination guide", () => {
     expect(ctx.mem.getLongTerm).toHaveBeenCalledWith("traveller");
   });
 
+  it("labels entry guidance for the traveller nationality and weather as planning context", async () => {
+    const result = await createDestinationGuideAgent({ generator: false }).invoke({
+      brief,
+      context: context(),
+    });
+    const entryHealth = result.items.find((item) => item.kind === "entry-health")?.detail ?? "";
+    const weatherPacking = result.items.find((item) => item.kind === "weather-packing")?.detail ?? "";
+
+    expect(entryHealth).toContain("Australian passport");
+    expect(entryHealth).toContain("official government sources");
+    expect(weatherPacking).toContain("planning context only");
+    expect(result.assumptions.join(" ")).toContain("not a forecast");
+  });
+
   it("uses a schema-valid MiniMax draft grounded in supplied places", async () => {
     const generate = vi.fn(async () => validDraft);
     const generator: DestinationGuideGenerator = { generate };
@@ -89,6 +103,45 @@ describe("destination guide", () => {
     expect(generate).toHaveBeenCalledWith(
       expect.objectContaining({ travelMonth: "October", brief }),
     );
+  });
+
+  it("canonicalizes grounded attraction names before returning them", async () => {
+    const generator: DestinationGuideGenerator = {
+      generate: vi.fn(async () => ({
+        ...validDraft,
+        attractions: [{ name: "  temple walk ", detail: "A candidate cultural stop." }],
+      })),
+    };
+
+    const result = await createDestinationGuideAgent({ generator }).invoke({
+      brief,
+      context: context(),
+    });
+
+    expect(result.items[0]).toMatchObject({
+      kind: "attraction",
+      location: "Temple Walk",
+    });
+  });
+
+  it("deduplicates the same place returned by multiple map categories", async () => {
+    const generate = vi.fn(async ({ places }: { places: Array<{ name: string }> }) => {
+      expect(places.map((place) => place.name)).toEqual(["Temple Walk", "City Museum"]);
+      return validDraft;
+    });
+    const ctx = context();
+    ctx.tools.maps.places = vi.fn(async ({ category }) =>
+      category === "museum"
+        ? [{ name: "Temple Walk", category: "museum" }, { name: "City Museum", category }]
+        : [{ name: "Temple Walk", category: "sight" }],
+    );
+
+    await createDestinationGuideAgent({ generator: { generate } }).invoke({
+      brief,
+      context: ctx,
+    });
+
+    expect(generate).toHaveBeenCalledTimes(1);
   });
 
   it("falls back instead of accepting a hallucinated attraction", async () => {
