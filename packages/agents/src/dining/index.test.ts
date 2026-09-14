@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   AgentProposal,
   type AgentContext,
+  type Place,
   type TripBrief,
   type UserPreference,
 } from "@trip/shared";
@@ -95,6 +96,31 @@ describe("dining planner", () => {
     expect(generate).toHaveBeenCalledWith(
       expect.objectContaining({ dietaryPreferences: [preferences[0]] }),
     );
+  });
+
+  it("deduplicates and canonicalizes venue names before returning them", async () => {
+    const ctx = context();
+    ctx.tools.maps.places = vi.fn(async () => [
+      { name: "Market Kitchen", category: "restaurant" },
+      { name: " market  kitchen ", category: "restaurant" },
+    ]);
+    const generator: DiningGenerator = {
+      generate: vi.fn(async ({ places }: { places: Place[] }) => ({
+        ...validDraft,
+        picks: places.map((place) => ({ name: place.name, detail: "Confirm the current menu." })),
+      })),
+    };
+
+    const result = await createDiningAgent({ generator }).invoke({
+      brief,
+      context: ctx,
+    });
+
+    expect(generator.generate).toHaveBeenCalledWith(
+      expect.objectContaining({ places: [{ name: "Market Kitchen", category: "restaurant" }] }),
+    );
+    expect(result.items.filter((item) => item.kind === "meal")).toHaveLength(1);
+    expect(result.items.find((item) => item.kind === "meal")?.location).toBe("Market Kitchen");
   });
 
   it("falls back when model cost exceeds the budget guardrail", async () => {

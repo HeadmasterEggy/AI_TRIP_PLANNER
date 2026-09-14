@@ -56,6 +56,18 @@ function normalize(value: string): string {
   return value.trim().replace(/\s+/g, " ").toLocaleLowerCase();
 }
 
+function uniquePlaces(places: Place[]): Place[] {
+  return places.filter(
+    (place, index, all) =>
+      all.findIndex((candidate) => normalize(candidate.name) === normalize(place.name)) === index,
+  );
+}
+
+function canonicalPlaceName(name: string, places: Place[]): string {
+  const match = places.find((place) => normalize(place.name) === normalize(name));
+  return match?.name ?? name.trim();
+}
+
 /** Validate dates and return the number of planning days. */
 function tripDays([start, end]: [string, string]): number {
   const parse = (value: string) => {
@@ -121,7 +133,13 @@ function validateDraft(
       throw new Error(`Dining returned an ungrounded venue: ${pick.name}`);
     }
   }
-  return parsed;
+  return {
+    ...parsed,
+    picks: parsed.picks.map((pick) => ({
+      ...pick,
+      name: canonicalPlaceName(pick.name, places),
+    })),
+  };
 }
 
 /** Produce grounded venue suggestions and a conservative budget without a model. */
@@ -198,11 +216,12 @@ async function planDining(
   ctx.signal?.throwIfAborted();
   const brief = TripBriefSchema.parse(briefInput);
   const days = tripDays(brief.dates);
-  const [places, allPreferences] = await Promise.all([
+  const [candidatePlaces, allPreferences] = await Promise.all([
     ctx.tools.maps.places({ near: brief.destination, category: "restaurant" }),
     ctx.mem.getLongTerm(brief.userId),
   ]);
   ctx.signal?.throwIfAborted();
+  const places = uniquePlaces(candidatePlaces);
   const preferences = dietaryPreferences(allPreferences);
   const ceiling = budgetCeiling(brief, days, revision);
   const generator =
