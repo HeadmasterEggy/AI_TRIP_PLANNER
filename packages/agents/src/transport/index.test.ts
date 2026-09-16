@@ -184,7 +184,7 @@ describe("B transport reliability", () => {
         brief: { ...brief, dates: ["2026-02-30", "2026-03-05"] },
         context: ctx,
       }),
-    ).rejects.toThrow("valid YYYY-MM-DD");
+    ).rejects.toThrow("Enter a real date");
     expect(route).not.toHaveBeenCalled();
     expect(searchFlights).not.toHaveBeenCalled();
   });
