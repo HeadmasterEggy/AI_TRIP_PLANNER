@@ -2,9 +2,8 @@
 // per request re-pays ~14s of model latency for a byte-identical result.
 //
 // The promise (not the resolved plan) is memoised, which also collapses
-// concurrent first hits into one negotiation instead of N. Work starts as soon
-// as this module is imported, so a server that has been up for a few seconds
-// answers the first request from the warm value.
+// concurrent first hits into one negotiation instead of N. Work starts only
+// when a request asks for the demo, avoiding model calls during build imports.
 //
 // In `next dev` the module is re-evaluated when its dependencies change, so
 // editing an agent naturally invalidates this — no manual cache busting.
@@ -27,8 +26,3 @@ export function getDemoPlan(): Promise<TripPlan> {
   }
   return inFlight;
 }
-
-// Warm on import so the cost overlaps server start rather than the first view.
-void getDemoPlan().catch(() => {
-  // Swallowed here; getDemoPlan() rethrows to whoever actually awaits it.
-});

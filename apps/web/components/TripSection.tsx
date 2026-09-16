@@ -2,6 +2,8 @@
 
 // Each row represents one specialist agent. The row stays compact, while its
 // expanded body exposes that agent's structured proposal in a readable form.
+import { ProposalDetails } from "./ProposalDetails";
+import { money } from "@/lib/workspace";
 import { useState } from "react";
 import type { TripSection as TripSectionData } from "@trip/shared";
 
@@ -12,7 +14,15 @@ const STATUS_LABEL: Record<string, string> = {
   confirmed: "Confirmed",
 };
 
-export function TripSection({ section }: { section: TripSectionData }) {
+export function TripSection({
+  section,
+  onEdit,
+  onReview,
+}: {
+  section: TripSectionData;
+  onEdit: () => void;
+  onReview: () => void;
+}) {
   const [open, setOpen] = useState(false);
   const bodyId = `section-details-${section.id}`;
 
@@ -31,7 +41,7 @@ export function TripSection({ section }: { section: TripSectionData }) {
         <span className={`chip chip--${section.status}`}>
           {STATUS_LABEL[section.status] ?? section.status}
         </span>
-        <span className="cost">${Math.round(section.estCost).toLocaleString()}</span>
+        <span className="cost">{money(section.estCost)}</span>
         <span className="section__chevron" aria-hidden>
           ▸
         </span>
@@ -41,41 +51,13 @@ export function TripSection({ section }: { section: TripSectionData }) {
         <div className="section__body" id={bodyId}>
           {section.proposal ? (
             <>
-              <div className="proposal-items">
-                {section.proposal.items.length ? (
-                  [...section.proposal.items]
-                    .sort(
-                      (left, right) =>
-                        (left.day ?? 999) - (right.day ?? 999) ||
-                        (left.startTime ?? "").localeCompare(right.startTime ?? ""),
-                    )
-                    .map((item, index) => (
-                      <article
-                        className="proposal-item"
-                        key={`${item.kind}-${item.day ?? "any"}-${index}`}
-                      >
-                        <div className="proposal-item__meta">
-                          <span className="proposal-item__kind">
-                            {item.kind.replaceAll("-", " ")}
-                          </span>
-                          {item.day !== undefined && <span>Day {item.day}</span>}
-                          {item.startTime && item.endTime && (
-                            <span>
-                              {item.startTime}–{item.endTime}
-                            </span>
-                          )}
-                          {item.estCost !== undefined && (
-                            <strong>${item.estCost.toLocaleString()}</strong>
-                          )}
-                        </div>
-                        {item.location && <h4>{item.location}</h4>}
-                        <p>{item.detail}</p>
-                      </article>
-                    ))
-                ) : (
-                  <p className="section__empty">No detailed items were returned.</p>
-                )}
-              </div>
+              <p className="source-note">
+                <strong>{section.proposal.source?.label ?? "Source not recorded"}</strong>
+                <br />
+                {section.proposal.source?.freshness ?? "These estimates are not live verified."}
+              </p>
+              <ProposalDetails section={section} onReview={onReview} />
+              <button onClick={onEdit}>Change trip preferences</button>
               {section.proposal.assumptions.length > 0 && (
                 <details className="assumptions">
                   <summary>Important notes ({section.proposal.assumptions.length})</summary>

@@ -24,3 +24,5 @@ export {
   type SupervisorDispatchOptions,
   type SupervisorRevisionOptions,
 } from "./supervisor";
+
+export { applyHitl } from "./hitl";

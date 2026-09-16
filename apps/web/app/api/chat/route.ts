@@ -5,12 +5,16 @@ import { ChatRequest, ChatResponse, type AgentProgressEvent } from "@trip/shared
 export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}));
   const parsed = ChatRequest.safeParse(body);
-  if (!parsed.success) {
+  if (!parsed.success || (parsed.data.mode === "plan" && !parsed.data.brief)) {
     return NextResponse.json({ error: "invalid ChatRequest" }, { status: 400 });
   }
 
   const encoder = new TextEncoder();
+  let cancelled = false;
   const stream = new ReadableStream({
+    cancel() {
+      cancelled = true;
+    },
     async start(controller) {
       const send = (
         event:
@@ -18,6 +22,7 @@ export async function POST(req: Request) {
           | { type: "complete"; response: ChatResponse }
           | { type: "error"; error: string },
       ) => {
+        if (cancelled) return;
         controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`));
       };
 
@@ -28,10 +33,13 @@ export async function POST(req: Request) {
         console.error("[chat] planning failed", error);
         send({
           type: "error",
-          error: "Unable to update this trip. Check the request and try again.",
+          error:
+            error instanceof Error && error.message.startsWith("No valid stays")
+              ? "No stays match your accommodation preferences. Lower the minimum rating or change cancellation preferences, then retry."
+              : "Unable to update this trip. Check the request and try again.",
         });
       } finally {
-        controller.close();
+        if (!cancelled) controller.close();
       }
     },
   });

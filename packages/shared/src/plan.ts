@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { AgentProposal, TripBrief } from "./contracts";
+import { AgentProposal, TripBrief, RevisionRequest } from "./contracts";
 
 // Status shown on each section of the right-hand "Your trip" panel.
 // Maps 1:1 to where that agent's proposal sits in the Orchestrator loop.
@@ -19,10 +19,12 @@ export type TripSection = z.infer<typeof TripSection>;
 // A point where the flow pauses for the human (HITL) or escalates.
 export const HitlCheckpoint = z.object({
   id: z.string(),
-  type: z.enum(["confirm_brief", "confirm_plan", "escalation"]),
+  type: z.enum(["confirm_brief", "confirm_plan", "escalation", "select_stay"]),
   title: z.string(),
   detail: z.string(),
-  status: z.enum(["pending", "approved", "rejected"]),
+  status: z.enum(["pending", "approved", "rejected", "deferred"]),
+  sectionId: z.string().optional(),
+  stayId: z.string().optional(),
 });
 export type HitlCheckpoint = z.infer<typeof HitlCheckpoint>;
 
@@ -30,11 +32,20 @@ export type HitlCheckpoint = z.infer<typeof HitlCheckpoint>;
 export const TripPlan = z.object({
   tripId: z.string(),
   brief: TripBrief,
-  round: z.number().int(),
-  budgetTotal: z.number(),
-  estTotal: z.number(),
+  round: z.number().int().nonnegative(),
+  budgetTotal: z.number().min(0.01),
+  estTotal: z.number().nonnegative(),
   overrunPct: z.number(), // (estTotal - budgetTotal) / budgetTotal * 100, can be negative
   sections: z.array(TripSection),
   hitl: z.array(HitlCheckpoint),
+  conflicts: z.array(RevisionRequest).optional(),
 });
 export type TripPlan = z.infer<typeof TripPlan>;
+
+export const HitlRequest = z.object({
+  plan: TripPlan,
+  checkpointId: z.string().min(1),
+  action: z.enum(["approve", "reject", "defer", "select_stay"]),
+  candidateId: z.string().optional(),
+});
+export type HitlRequest = z.infer<typeof HitlRequest>;

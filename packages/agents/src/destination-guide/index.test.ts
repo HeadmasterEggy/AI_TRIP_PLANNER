@@ -83,7 +83,8 @@ describe("destination guide", () => {
       context: context(),
     });
     const entryHealth = result.items.find((item) => item.kind === "entry-health")?.detail ?? "";
-    const weatherPacking = result.items.find((item) => item.kind === "weather-packing")?.detail ?? "";
+    const weatherPacking =
+      result.items.find((item) => item.kind === "weather-packing")?.detail ?? "";
 
     expect(entryHealth).toContain("Australian passport");
     expect(entryHealth).toContain("official government sources");
@@ -132,7 +133,10 @@ describe("destination guide", () => {
     const ctx = context();
     ctx.tools.maps.places = vi.fn(async ({ category }) =>
       category === "museum"
-        ? [{ name: "Temple Walk", category: "museum" }, { name: "City Museum", category }]
+        ? [
+            { name: "Temple Walk", category: "museum" },
+            { name: "City Museum", category },
+          ]
         : [{ name: "Temple Walk", category: "sight" }],
     );
 
@@ -179,7 +183,7 @@ describe("destination guide", () => {
         brief: { ...brief, dates: ["2026-02-30", "2026-03-02"] },
         context: ctx,
       }),
-    ).rejects.toThrow("valid YYYY-MM-DD");
+    ).rejects.toThrow("Enter a real date");
     expect(ctx.tools.maps.places).not.toHaveBeenCalled();
   });
 

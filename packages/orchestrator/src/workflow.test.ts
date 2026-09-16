@@ -123,10 +123,24 @@ describe("LangGraph orchestrator workflow", () => {
       onProgress: (event) => events.push(event),
     });
 
-    expect(events).toEqual([
-      { type: "agent_started", agent: "itinerary", round: 1 },
-      { type: "agent_completed", agent: "itinerary", round: 1 },
-    ]);
+    expect(events).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "agent_started",
+          agent: "itinerary",
+          round: 1,
+          summary: expect.any(String),
+        }),
+        expect.objectContaining({
+          type: "agent_completed",
+          agent: "itinerary",
+          round: 1,
+          summary: expect.any(String),
+        }),
+        expect.objectContaining({ type: "coordinator", phase: "conflicts" }),
+        expect.objectContaining({ type: "coordinator", phase: "assembly" }),
+      ]),
+    );
   });
 
   it("targets itinerary when activity and transport schedules overlap", () => {
@@ -196,7 +210,7 @@ describe("LangGraph orchestrator workflow", () => {
       expect.arrayContaining([
         expect.objectContaining({
           type: "escalation",
-          detail: expect.stringContaining("2 rounds"),
+          detail: expect.stringContaining("over budget"),
         }),
       ]),
     );

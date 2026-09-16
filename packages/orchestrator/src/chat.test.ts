@@ -65,10 +65,10 @@ describe("local TripBrief extraction", () => {
     });
     expect(() =>
       applyBriefPatch(brief, { dates: ["2026-02-30", "2026-03-05"] }, brief.tripId),
-    ).toThrow("real dates");
+    ).toThrow("Enter a real date");
     expect(() =>
       applyBriefPatch(brief, { dates: ["2026-10-05", "2026-10-01"] }, brief.tripId),
-    ).toThrow("after");
+    ).toThrow("End date must follow start date");
   });
 });
 
@@ -78,7 +78,10 @@ describe("trip chat workflow", () => {
       extract: vi.fn(async () => ({ destination: "Melbourne", budgetTotal: 5000 })),
     };
     const replyGenerator: ReplyGenerator = {
-      generate: vi.fn(async () => "Melbourne sounds like a great fit. I’ve updated the plan and kept the current budget in view."),
+      generate: vi.fn(
+        async () =>
+          "Melbourne sounds like a great fit. I’ve updated the plan and kept the current budget in view.",
+      ),
     };
     const turns: Array<{ role: string; content: string }> = [];
     const mem: MemoryStore = {

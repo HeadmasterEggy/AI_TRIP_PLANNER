@@ -341,7 +341,9 @@ export async function runTripChat(
     ...(request.brief ?? DEMO_BRIEF),
     tripId: request.tripId,
   });
-  const patch = await extractPatch(request.message, current, extractor);
+  if (request.mode === "plan" && !request.brief) throw new Error("A brief is required to plan.");
+  const patch =
+    request.mode === "plan" ? {} : await extractPatch(request.message, current, extractor);
   const brief = applyBriefPatch(current, patch, request.tripId);
   const mem: MemoryStore = orchestrationOptions.mem ?? memory;
   await mem.appendShortTerm(

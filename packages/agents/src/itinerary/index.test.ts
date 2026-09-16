@@ -157,7 +157,7 @@ describe("itinerary planner", () => {
         brief: { ...brief, dates: ["2026-02-30", "2026-03-02"] },
         context: ctx,
       }),
-    ).rejects.toThrow("valid YYYY-MM-DD");
+    ).rejects.toThrow("Enter a real date");
     expect(ctx.tools.maps.places).not.toHaveBeenCalled();
   });
 });

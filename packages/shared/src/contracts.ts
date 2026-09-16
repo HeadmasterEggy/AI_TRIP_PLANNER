@@ -17,15 +17,48 @@ export type AgentName = (typeof AGENT_NAMES)[number];
 // TripBrief — the structured request the Orchestrator hands to every agent.
 // Every field here is reference data the agents plan against.
 // ---------------------------------------------------------------------------
-export const TripBrief = z.object({
-  tripId: z.string(),
-  userId: z.string().default("demo-user"),
-  destination: z.string(),
-  dates: z.tuple([z.string(), z.string()]), // [start, end] ISO date
-  groupSize: z.number().int().positive(),
-  budgetTotal: z.number().positive(),
-  nationality: z.string().optional(),
+export const AccommodationPreferences = z.object({
+  roomAllocation: z.enum(["shared", "individual"]).default("shared"),
+  minRating: z.number().min(0).max(10).default(0),
+  freeCancellation: z.boolean().default(false),
 });
+export function isTripDate(value: string): boolean {
+  const time = Date.parse(`${value}T00:00:00.000Z`);
+  return (
+    /^\d{4}-\d{2}-\d{2}$/.test(value) &&
+    Number.isFinite(time) &&
+    new Date(time).toISOString().slice(0, 10) === value
+  );
+}
+export const TripBrief = z
+  .object({
+    tripId: z.string(),
+    userId: z.string().default("demo-user"),
+    destination: z.string().trim().min(1),
+    dates: z.tuple([
+      z.string().refine(isTripDate, "Enter a real date"),
+      z.string().refine(isTripDate, "Enter a real date"),
+    ]), // [start, end] ISO date
+    groupSize: z.number().int().positive(),
+    budgetTotal: z.number().min(0.01),
+    nationality: z.string().optional(),
+    accommodation: AccommodationPreferences.optional(),
+  })
+  .check((ctx) => {
+    const [start, end] = ctx.value.dates;
+    if (isTripDate(start) && isTripDate(end)) {
+      const nights = (Date.parse(end) - Date.parse(start)) / 86400000;
+      const cities = ctx.value.destination.split("&").map((city) => city.trim());
+      if (nights <= 0 || cities.some((city) => !city) || nights < cities.length) {
+        ctx.issues.push({
+          code: "custom",
+          input: ctx.value,
+          path: ["dates"],
+          message: "End date must follow start date, with at least one night per destination.",
+        });
+      }
+    }
+  });
 export type TripBrief = z.infer<typeof TripBrief>;
 
 // ---------------------------------------------------------------------------
@@ -76,12 +109,34 @@ export const ProposalItem = z
   });
 export type ProposalItem = z.infer<typeof ProposalItem>;
 
+export const StayCandidate = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  area: z.string(),
+  pricePerNightUsd: z.number().positive(),
+  rating: z.number().min(0).max(10),
+  freeCancellation: z.boolean(),
+});
+export const StaySelection = z.object({
+  id: z.string().min(1),
+  city: z.string().min(1),
+  checkIn: z.string().refine(isTripDate),
+  checkOut: z.string().refine(isTripDate),
+  day: z.number().int().positive(),
+  nights: z.number().int().positive(),
+  rooms: z.number().int().positive(),
+  selectedId: z.string().min(1),
+  candidates: z.array(StayCandidate).min(1),
+});
+export type StaySelection = z.infer<typeof StaySelection>;
 export const AgentProposal = z.object({
   agent: z.enum(AGENT_NAMES),
   summary: z.string(),
   items: z.array(ProposalItem),
   assumptions: z.array(z.string()),
   conflictsWith: z.array(z.string()).default([]),
+  stays: z.array(StaySelection).optional(),
+  source: z.object({ label: z.string(), freshness: z.string() }).optional(),
 });
 export type AgentProposal = z.infer<typeof AgentProposal>;
 
