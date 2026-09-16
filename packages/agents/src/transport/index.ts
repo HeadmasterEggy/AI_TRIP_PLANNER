@@ -179,7 +179,7 @@ async function buildTransportProposal(
       ...(budgetRevision ? ["Budget revision selected the lowest returned flight fare."] : []),
       ...(scheduleRevision ? ["Schedule revision moved routed legs to an early departure."] : []),
     ],
-    conflictsWith: [...new Set(conflicts)],
+    conflictsWith: [...new Set(conflicts)].sort((a, b) => a.localeCompare(b)),
   };
 }
 
