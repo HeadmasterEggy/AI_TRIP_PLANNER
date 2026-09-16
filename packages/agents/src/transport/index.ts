@@ -133,7 +133,8 @@ async function buildTransportProposal(
     }
     return legs.map((leg) => {
       const startTime = clock(cursor);
-      cursor += Math.ceil(leg.durationMin);
+      const durationMin = Math.ceil(leg.durationMin);
+      cursor += durationMin;
       const endTime = clock(cursor);
       const unknownFare = fareUnavailable(leg);
       if (unknownFare) {
@@ -147,7 +148,7 @@ async function buildTransportProposal(
         startTime,
         endTime,
         location: `${query.from} → ${query.to}`,
-        detail: `${leg.mode} from ${query.from} to ${query.to} on ${query.date}; ${leg.durationMin} minutes${leg.note ? `; ${leg.note}` : ""}.`,
+        detail: `${leg.mode} from ${query.from} to ${query.to} on ${query.date}; ${durationMin} minutes${leg.note ? `; ${leg.note}` : ""}.`,
         ...(unknownFare ? {} : { estCost: leg.priceUsd }),
       };
     });
