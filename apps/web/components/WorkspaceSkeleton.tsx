@@ -1,5 +1,5 @@
-// Owner: E — first paint while the orchestrator runs. Mirrors the Workspace
-// grid so the real panels stream in without the layout shifting.
+// First paint while the client restores storage or requests the demo plan.
+// Mirrors the Workspace grid to minimise layout shifts.
 const SECTION_WIDTHS = ["82%", "64%", "74%", "58%", "70%"];
 
 export function WorkspaceSkeleton() {

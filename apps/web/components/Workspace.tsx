@@ -7,6 +7,7 @@ import { TripPanel } from "./TripPanel";
 import { CheckpointCards, type Decision } from "./CheckpointCards";
 import { Header, type Navigation } from "./Header";
 import { Dialog } from "./Dialog";
+import { WorkspaceSkeleton } from "./WorkspaceSkeleton";
 import {
   CURRENT_KEY,
   SAVED_KEY,
@@ -30,6 +31,70 @@ const seed: Message[] = [
 ];
 
 export function Workspace({
+  initialPlan,
+  initialError,
+}: {
+  initialPlan?: TripPlan;
+  initialError?: string;
+}) {
+  const [loadedPlan, setLoadedPlan] = useState(initialPlan);
+  const [loadError, setLoadError] = useState("");
+  const [attempt, setAttempt] = useState(0);
+
+  useEffect(() => {
+    if (initialPlan) return;
+    // Resolve storage before requesting the demo. The content component restores
+    // the complete snapshot, including unfinished drafts and conversation input.
+    try {
+      const raw = localStorage.getItem(CURRENT_KEY);
+      if (raw) {
+        setLoadedPlan(parseSnapshot(JSON.parse(raw)).plan);
+        return;
+      }
+    } catch {
+      // Preserve unreadable storage; the content component reports the problem.
+    }
+    const controller = new AbortController();
+    setLoadError("");
+    async function load() {
+      try {
+        const response = await fetch("/api/demo", {
+          signal: controller.signal,
+          cache: "no-store",
+        });
+        if (!response.ok) throw new Error("Unable to load the initial trip.");
+        const body = await response.json();
+        const next = TripPlan.parse(body.plan);
+        if (!controller.signal.aborted) setLoadedPlan(next);
+      } catch {
+        if (!controller.signal.aborted)
+          setLoadError("The initial trip could not be loaded. Please retry planning.");
+      }
+    }
+    void load();
+    return () => controller.abort();
+  }, [initialPlan, attempt]);
+
+  if (loadedPlan) return <WorkspaceContent initialPlan={loadedPlan} initialError={initialError} />;
+
+  return (
+    <>
+      <Header />
+      {loadError ? (
+        <main className="workspace-notices">
+          <div className="error-banner" role="alert">
+            {loadError}{" "}
+            <button onClick={() => setAttempt((value) => value + 1)}>Retry planning</button>
+          </div>
+        </main>
+      ) : (
+        <WorkspaceSkeleton />
+      )}
+    </>
+  );
+}
+
+function WorkspaceContent({
   initialPlan,
   initialError,
 }: {

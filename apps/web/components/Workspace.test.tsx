@@ -12,6 +12,58 @@ const complete = (destination: string) =>
   );
 
 describe("Workspace interactions", () => {
+  it("renders the shell before the demo resolves without persisting a placeholder", async () => {
+    let finish!: (response: Response) => void;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        () =>
+          new Promise<Response>((resolve) => {
+            finish = resolve;
+          }),
+      ),
+    );
+    render(<Workspace />);
+    expect(screen.getByText(/Drafting your plan/)).toBeTruthy();
+    expect(localStorage.getItem(CURRENT_KEY)).toBeNull();
+    await act(async () => {
+      finish(Response.json({ plan }));
+    });
+    expect(screen.getByLabelText("Destination")).toBeTruthy();
+  });
+  it("restores the complete local workspace without requesting a demo", () => {
+    localStorage.setItem(CURRENT_KEY, JSON.stringify({ ...snapshot, input: "unfinished" }));
+    const fetcher = vi.fn();
+    vi.stubGlobal("fetch", fetcher);
+    render(<Workspace />);
+    expect(fetcher).not.toHaveBeenCalled();
+    expect((screen.getByLabelText("Message AI Trip Planner") as HTMLInputElement).value).toBe(
+      "unfinished",
+    );
+  });
+  it("retries failed demo loading and preserves corrupt storage", async () => {
+    localStorage.setItem(CURRENT_KEY, "broken");
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce(new Response("", { status: 503 }))
+        .mockResolvedValueOnce(Response.json({ plan })),
+    );
+    render(<Workspace />);
+    fireEvent.click(await screen.findByRole("button", { name: "Retry planning" }));
+    await screen.findByLabelText("Destination");
+    expect((await screen.findByRole("alert")).textContent).toContain("could not be restored");
+    expect(localStorage.getItem(CURRENT_KEY)).toBe("broken");
+  });
+  it("aborts the initial demo request on unmount", () => {
+    const fetcher = vi.fn(() => new Promise<Response>(() => {}));
+    vi.stubGlobal("fetch", fetcher);
+    const view = render(<Workspace />);
+    const signal = (fetcher.mock.calls as unknown as [string, RequestInit][])[0]![1].signal!;
+    view.unmount();
+    expect(signal.aborted).toBe(true);
+  });
   it("keeps the plan and draft on failure and retries the same structured request", async () => {
     const fetcher = vi
       .fn()
