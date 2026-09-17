@@ -35,10 +35,17 @@ internal `StateSchema` uses its local Zod v4 dependency.
 
 This is intentionally a workflow rather than an unconstrained supervisor agent: the control path,
 budget red lines, and stopping condition should not depend on a model improvising the next step.
+Inside `dispatch_specialists` and `revise_conflicts`, a LangChain `createAgent` supervisor chooses
+which specialist tools to call; when no model is configured or the supervisor fails, the node falls
+back to invoking the specialists directly.
+
 Before graph execution, `runTripChat` uses LangChain structured output to extract only explicit
-`TripBrief` updates when an Anthropic key is available, with a deterministic local fallback. Inside
-the graph, the itinerary node can use DeepSeek V4 Flash through LangChain's OpenAI-compatible
-adapter; schema, budget, schedule and route checks gate its output before aggregation.
+`TripBrief` updates: GPT (`GPT_API_KEY`) first, an Anthropic model if only that key is configured,
+and a deterministic local parser otherwise. `mode: "plan"` skips extraction and `mode: "start"`
+requires every brief field in the message. All five specialists, the supervisor and the chat reply
+use DeepSeek through LangChain's OpenAI-compatible adapter (`MODEL_ROUTING` in
+`packages/agents/src/models.ts`); schema, budget, schedule and route checks gate their output before
+aggregation.
 
 ## Verification
 

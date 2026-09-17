@@ -3,13 +3,20 @@
 ## Runtime model
 
 ```text
-user message
-  -> supervisor agent (`createAgent`)
-     -> typed specialist tools / agents
-        -> destination, itinerary, dining, transport, accommodation
-     -> validated proposals
-  -> LangGraph state, conflict checks, HITL and persistence
+user message (POST /api/chat)
+  -> runTripChat: extract explicit TripBrief updates (GPT, local parser fallback)
+  -> LangGraph workflow (state, rounds, stopping condition)
+     -> dispatch_specialists / revise_conflicts node
+        -> supervisor agent (`createAgent`), or deterministic dispatch when no model is available
+           -> typed specialist tools / agents
+              -> destination, itinerary, dining, transport, accommodation
+           -> Zod-validated proposals
+     -> detect_conflicts -> (revise_conflicts)* -> build_plan
+  -> TripPlan with HITL checkpoints; decisions applied later through POST /api/hitl
 ```
+
+The LangGraph workflow drives the supervisor, not the other way round: the graph decides when to
+dispatch, revise and stop, and the supervisor only chooses which specialist tools a node needs.
 
 An agent owns a durable role definition: model, `name`, `systemPrompt`, tools and output schema.
 The supervisor chooses which specialist tools to call. It must not rewrite the TripBrief or invent
@@ -43,7 +50,7 @@ The explanatory model and relationship notes are in [`docs/class-diagram.md`](cl
 
 ## Migration status
 
-Implemented on `codex/langchain-agent-refactor` (not yet merged into `main`):
+Merged into `main` through PR #10 (“Land the LangChain agent migration on main”, 2026-09-09):
 
 - `packages/orchestrator/src/supervisor.ts` provides a named supervisor and typed delegation tools.
 - `packages/shared/src/agent.ts` defines the framework-neutral `Specialist` contract: one immutable
@@ -56,9 +63,11 @@ Implemented on `codex/langchain-agent-refactor` (not yet merged into `main`):
 - All production callers and tests now use `Specialist.invoke`; the former `Agent.run()` /
   `revise()` compatibility type has been removed.
 
-Next before merge:
+Remaining work:
 
-- Add persistent supervisor checkpoints and stream individual tool-loop events to the UI.
+- Persist supervisor checkpoints and memory durably; `MemoryStore` is still in process.
+- Coordinator and per-specialist progress events already stream to the UI over NDJSON; individual
+  tool-loop steps inside an agent are not streamed yet.
 
 ## Contracts
 
