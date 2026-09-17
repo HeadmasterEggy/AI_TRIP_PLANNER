@@ -119,7 +119,7 @@ describe("workspace catalog", () => {
     ).toThrow("form is invalid");
   });
 
-  it("restores a blank active conversation without the stored trip", () => {
+  it("continues a blank active conversation without the stored trip", () => {
     const catalog = upsertConversationDraft(createCatalog(snapshot), {
       id: "conversation:blank",
       messages: [],
@@ -131,21 +131,59 @@ describe("workspace catalog", () => {
       [CATALOG_KEY, serializeCatalog(catalog)],
     ]);
     const restored = restoreWorkspace({ getItem: (key) => storage.get(key) ?? null });
-    expect(restored.blank).toBe(true);
     expect(restored.plan).toBeUndefined();
     expect(restored.draft.destination).toBe("Lisbon");
     expect(restored.input).toBe("warm");
     expect(restored.conversationId).toBe("conversation:blank");
   });
 
-  it("reports unreadable history without discarding the readable trip", () => {
+  it("never reopens the last active trip, but keeps it in history", () => {
+    const storage = new Map([[CURRENT_KEY, JSON.stringify({ ...snapshot, input: "left over" })]]);
+    const restored = restoreWorkspace({ getItem: (key) => storage.get(key) ?? null });
+    expect(restored.plan).toBeUndefined();
+    expect(restored.input).toBe("");
+    expect(restored.conversationId).toBeUndefined();
+    expect(restored.catalog.activeTripId).toBeUndefined();
+    expect(restored.catalog.activeConversationId).toBeUndefined();
+    expect(restored.catalog.trips.map((trip) => trip.id)).toEqual(["trip:test-trip"]);
+  });
+
+  it("reuses an untouched blank chat instead of creating another one on refresh", () => {
+    const withBlank = upsertConversationDraft(createCatalog(snapshot), {
+      id: "conversation:empty",
+      messages: [],
+      input: "",
+    });
+    const catalog = updateCatalog(withBlank, { activeConversationId: "conversation:saved-copy" });
+    const storage = new Map([[CATALOG_KEY, serializeCatalog(catalog)]]);
+    const restored = restoreWorkspace({ getItem: (key) => storage.get(key) ?? null });
+    expect(restored.plan).toBeUndefined();
+    expect(restored.conversationId).toBe("conversation:empty");
+    expect(restored.catalog.activeConversationId).toBe("conversation:empty");
+  });
+
+  it("reports unreadable history and starts blank without overwriting it", () => {
     const storage = new Map([
       [CURRENT_KEY, JSON.stringify(snapshot)],
       [CATALOG_KEY, "{broken"],
     ]);
     const restored = restoreWorkspace({ getItem: (key) => storage.get(key) ?? null });
-    expect(restored.plan?.tripId).toBe("test-trip");
+    expect(restored.plan).toBeUndefined();
     expect(restored.storageEnabled).toBe(false);
     expect(restored.storageError).toMatch(/history could not be read/);
+  });
+
+  it("falls back to default layout values instead of rejecting history", () => {
+    const catalog = parseCatalog({
+      version: 3,
+      conversations: [],
+      trips: [],
+      layout: { sidebar: { collapsed: "yes" }, trip: { open: 1 }, view: "nowhere" },
+    });
+    expect(catalog.layout.sidebar.collapsed).toBe(false);
+    expect(catalog.layout.trip).toEqual({ open: true, width: 340 });
+    expect(catalog.layout.view).toBe("chat");
+    const collapsed = updateCatalog(catalog, { layout: { sidebar: { collapsed: true } } });
+    expect(parseCatalog(serializeCatalog(collapsed)).layout.sidebar.collapsed).toBe(true);
   });
 });

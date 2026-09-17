@@ -29,7 +29,7 @@ export function TripEditor({
   /** Routes to draw on the map: the open preview's routes, otherwise the last verified ones. */
   onRoutesChange?(routes: RouteResult[]): void;
 }) {
-  const { activities, places, placeIdFor, rememberPlace } = tripPlaces;
+  const { activities, places, placeIdFor, rememberPlace, locationStatus } = tripPlaces;
   const [day, setDay] = useState(1);
   const [mode, setMode] = useState<"WALK" | "TRANSIT">("WALK");
   const [query, setQuery] = useState(""),
@@ -151,6 +151,22 @@ export function TripEditor({
     }
   }
   const locked = disabled || working || !!preview;
+  const locationLabel = (item: (typeof activities)[number]) => {
+    const placeId = placeIdFor(item);
+    const name = placeId ? places[placeId]?.displayName?.text : undefined;
+    switch (locationStatus(item)) {
+      case "located":
+        return item.placeId
+          ? (name ?? "Google place")
+          : `Map match: ${name ?? "Google place"} · unverified`;
+      case "loading":
+        return "Finding this place…";
+      case "unavailable":
+        return "Place could not be loaded right now — retry from the map";
+      default:
+        return "Location to be confirmed — search for a Google place";
+    }
+  };
   return (
     <section className="trip-editor" aria-label="Trip timeline">
       <div className="editor-toolbar">
@@ -226,13 +242,7 @@ export function TripEditor({
               <button aria-pressed={selected === item.id} onClick={() => onSelect(item.id!)}>
                 {item.startTime ?? "Time missing"}–{item.endTime} · {item.detail}
               </button>
-              <p>
-                {item.placeId
-                  ? (places[item.placeId]?.displayName?.text ?? "Place details not loaded")
-                  : placeIdFor(item) && places[placeIdFor(item)!]
-                    ? `Map match: ${places[placeIdFor(item)!]!.displayName?.text ?? "Google place"} · unverified`
-                    : "Location unverified — select a Google place"}
-              </p>
+              <p>{locationLabel(item)}</p>
               <p>
                 {item.estCost === undefined
                   ? "Activity price unknown"

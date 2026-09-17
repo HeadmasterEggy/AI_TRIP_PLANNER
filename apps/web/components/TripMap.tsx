@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { GooglePlace, RouteResult } from "@/lib/google";
+import { MapViewController, type FramableMap } from "@/lib/map-view";
 
 type Coordinate = { lat: number; lng: number };
 
@@ -11,11 +12,19 @@ type MapsSDK = {
     el: HTMLElement,
     options: object,
   ) => {
-    fitBounds(bounds: unknown): void;
+    fitBounds(bounds: unknown, padding?: number): void;
     panTo(position: Coordinate): void;
+    setCenter(position: Coordinate): void;
+    getCenter(): { lat(): number; lng(): number } | undefined;
     setZoom(zoom: number): void;
+    getZoom(): number | undefined;
+    setOptions(options: object): void;
+    addListener(event: string, fn: () => void): { remove(): void };
   };
   LatLngBounds: new () => { extend(point: object): void; isEmpty(): boolean };
+  event: {
+    addListenerOnce(instance: unknown, event: string, fn: () => void): { remove(): void };
+  };
   marker: {
     AdvancedMarkerElement: new (options: object) => {
       map: unknown;
@@ -33,7 +42,6 @@ type LocationState =
   | { status: "success"; position: Coordinate; message: string }
   | { status: "error"; message: string };
 
-const WORLD_VIEW: Coordinate = { lat: 20, lng: 0 };
 const markerColors = ["#345948", "#9b5d32", "#315d80", "#7b4b91", "#8a6a16"];
 
 let sdk: Promise<MapsSDK> | undefined;
@@ -83,19 +91,37 @@ function coordinate(place: GooglePlace): Coordinate | undefined {
   return { lat: place.location.latitude, lng: place.location.longitude };
 }
 
-function fitPlaces(runtime: MapRuntime, places: GooglePlace[]) {
-  const positions = places.flatMap((place) => coordinate(place) ?? []);
-  if (!positions.length) return false;
-  if (positions.length === 1) {
-    // fitBounds on a single point zooms to the maximum level, where tiles are often blank.
-    runtime.map.panTo(positions[0]!);
-    runtime.map.setZoom(15);
-    return true;
-  }
-  const bounds = new runtime.maps.LatLngBounds();
-  positions.forEach((position) => bounds.extend(position));
-  runtime.map.fitBounds(bounds);
-  return true;
+function positions(places: GooglePlace[]) {
+  return places.flatMap((place) => coordinate(place) ?? []);
+}
+
+/**
+ * Adapt a Google map to the SDK-free framing controller. Programmatic moves are flagged until
+ * the map is idle again, so only real user interaction counts as "the user moved the map".
+ */
+function framable(runtime: MapRuntime, moving: { current: boolean }): FramableMap {
+  const { maps, map } = runtime;
+  const settle = () => {
+    moving.current = true;
+    maps.event.addListenerOnce(map, "idle", () => {
+      moving.current = false;
+    });
+  };
+  return {
+    center(point, zoom) {
+      settle();
+      map.setCenter(point);
+      map.setZoom(zoom);
+    },
+    fit(points, maxZoom) {
+      settle();
+      const bounds = new maps.LatLngBounds();
+      points.forEach((point) => bounds.extend(point));
+      map.setOptions({ maxZoom });
+      map.fitBounds(bounds, 72);
+      maps.event.addListenerOnce(map, "idle", () => map.setOptions({ maxZoom: null }));
+    },
+  };
 }
 
 function geolocationError(error: GeolocationPositionError) {
@@ -118,18 +144,22 @@ export function TripMap({
   routes,
   mode = "WALK",
   viewKey,
+  destinations = [],
 }: {
   places: GooglePlace[];
+  /** Destination city places; the map centres on them before any activity is mapped. */
+  destinations?: GooglePlace[];
   selected?: string;
   onSelect(id: string): void;
   routes: RouteResult[];
   mode?: "WALK" | "TRANSIT";
-  /** Changing this (for example the active trip) fits the map to the new places once. */
+  /** Trip identity and destination: changing it reframes the map once for the new trip. */
   viewKey?: string;
 }) {
   const root = useRef<HTMLDivElement>(null);
   const onSelectRef = useRef(onSelect);
-  const initialFitComplete = useRef(false);
+  const view = useRef<MapViewController | null>(null);
+  const moving = useRef(false);
   const userLocationCentered = useRef(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
@@ -140,19 +170,9 @@ export function TripMap({
     RouteResult | { status: "loading" } | { status: "error"; error: string }
   >();
   const routeRequest = useRef<AbortController | null>(null);
+  const initialFocus = useRef(destinations.length ? destinations : places);
+  initialFocus.current = destinations.length ? destinations : places;
   const mappedPlaces = places.filter((place) => coordinate(place));
-
-  const hasPlaces = mappedPlaces.length > 0;
-  useEffect(() => {
-    initialFitComplete.current = false;
-    // A conversation without places must not keep showing the previous trip's region.
-    if (runtime && !hasPlaces) {
-      runtime.map.panTo(WORLD_VIEW);
-      runtime.map.setZoom(2);
-    }
-    // Only reset when the conversation changes, not whenever places load.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [viewKey, runtime]);
 
   // A route estimate belongs to one selected place; never show it for another.
   useEffect(() => {
@@ -168,21 +188,35 @@ export function TripMap({
 
   useEffect(() => {
     let disposed = false;
-    initialFitComplete.current = false;
+    const listeners: { remove(): void }[] = [];
     setError("");
     setLoading(true);
     void loadMaps()
       .then((maps) => {
         if (disposed || !root.current) return;
+        const start = positions(initialFocus.current)[0];
         const map = new maps.Map(root.current, {
-          center: WORLD_VIEW,
-          zoom: 2,
-          // Our map controls sit top-left; Google's map-type toggle would be hidden beneath them.
+          // Created only once the trip has somewhere to show, never as a tiled world map.
+          center: start ?? { lat: 0, lng: 0 },
+          zoom: start ? 12 : 3,
+          // Our map controls sit top-left; Google's map-type toggle would be hidden beneath
+          // them, and browser fullscreen would cover the workspace top bar.
           mapTypeControl: false,
           streetViewControl: false,
+          fullscreenControl: false,
           mapId: process.env.NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID || "DEMO_MAP_ID",
         });
-        setRuntime({ maps, map });
+        const next = { maps, map };
+        view.current = new MapViewController(framable(next, moving));
+        const userMoved = () => {
+          if (!moving.current) view.current?.markUserMoved();
+        };
+        listeners.push(
+          map.addListener("dragstart", () => view.current?.markUserMoved()),
+          map.addListener("zoom_changed", userMoved),
+          map.addListener("center_changed", userMoved),
+        );
+        setRuntime(next);
         setLoading(false);
       })
       .catch((cause: unknown) => {
@@ -193,9 +227,49 @@ export function TripMap({
       });
     return () => {
       disposed = true;
+      listeners.forEach((listener) => listener.remove());
+      view.current = null;
       setRuntime(undefined);
     };
   }, [retry]);
+
+  // Frame the trip: destination first, then its places once. Never on unrelated re-renders.
+  const destinationKey = destinations.map((place) => place.id).join("|");
+  const placesKey = mappedPlaces.map((place) => place.id).join("|");
+  useEffect(() => {
+    if (!runtime || !view.current) return;
+    view.current.update({
+      key: viewKey ?? "",
+      destinations: positions(destinations),
+      places: positions(mappedPlaces),
+    });
+    // Keyed by identities so new array instances with the same places do not reframe.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [runtime, viewKey, destinationKey, placesKey]);
+
+  // Sidebar and drawer animations resize the container; keep the centre instead of drifting.
+  useEffect(() => {
+    const element = root.current;
+    if (!runtime || !element || typeof ResizeObserver === "undefined") return;
+    let frame = 0;
+    const observer = new ResizeObserver(() => {
+      cancelAnimationFrame(frame);
+      const center = runtime.map.getCenter();
+      if (!center) return;
+      frame = requestAnimationFrame(() => {
+        moving.current = true;
+        runtime.map.setCenter({ lat: center.lat(), lng: center.lng() });
+        runtime.maps.event.addListenerOnce(runtime.map, "idle", () => {
+          moving.current = false;
+        });
+      });
+    });
+    observer.observe(element);
+    return () => {
+      cancelAnimationFrame(frame);
+      observer.disconnect();
+    };
+  }, [runtime]);
 
   useEffect(() => {
     if (!runtime) return;
@@ -243,9 +317,6 @@ export function TripMap({
       });
       cleanup.push(() => line.setMap(null));
     });
-    if (!initialFitComplete.current && fitPlaces(runtime, places)) {
-      initialFitComplete.current = true;
-    }
     return () => cleanup.forEach((fn) => fn());
   }, [runtime, places, selected, routes]);
 
@@ -271,6 +342,8 @@ export function TripMap({
       content,
     });
     if (!userLocationCentered.current) {
+      // The user asked to see their location: that is a manual move the trip framing respects.
+      view.current?.markUserMoved();
       runtime.map.panTo(location.position);
       userLocationCentered.current = true;
     }
@@ -340,8 +413,13 @@ export function TripMap({
       <div className="trip-map-controls">
         <button
           type="button"
-          onClick={() => runtime && fitPlaces(runtime, places)}
-          disabled={!runtime || mappedPlaces.length === 0}
+          onClick={() =>
+            view.current?.viewAll({
+              destinations: positions(destinations),
+              places: positions(mappedPlaces),
+            })
+          }
+          disabled={!runtime || (mappedPlaces.length === 0 && destinations.length === 0)}
         >
           View all places
         </button>

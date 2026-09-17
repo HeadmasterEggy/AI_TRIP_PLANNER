@@ -1,4 +1,16 @@
 "use client";
+import { useEffect, useRef, type ReactNode } from "react";
+import { BrandMark } from "./BrandMark";
+import {
+  BookmarkIcon,
+  ChatIcon,
+  GlobeIcon,
+  PlusIcon,
+  SearchIcon,
+  SidebarIcon,
+  SuitcaseIcon,
+  UserIcon,
+} from "./icons";
 
 export type HistoryItem = {
   id: string;
@@ -9,97 +21,273 @@ export type HistoryItem = {
   active?: boolean;
 };
 
+export type SidebarSection = "chats" | "trips";
+type Tone = "create" | "neutral" | "chats" | "trips" | "saved";
+
+function NavButton({
+  icon,
+  label,
+  tone,
+  collapsed,
+  count,
+  current,
+  onClick,
+}: {
+  icon: ReactNode;
+  label: string;
+  tone: Tone;
+  collapsed: boolean;
+  count?: number;
+  current?: boolean;
+  onClick(): void;
+}) {
+  return (
+    <button
+      type="button"
+      className={`sidebar-nav__item sidebar-nav__item--${tone}${current ? " is-current" : ""}`}
+      aria-label={collapsed ? (count === undefined ? label : `${label}, ${count}`) : undefined}
+      aria-current={current ? "true" : undefined}
+      data-tooltip={collapsed ? label : undefined}
+      onClick={onClick}
+    >
+      <span className="sidebar-nav__icon">{icon}</span>
+      {!collapsed && <span className="sidebar-nav__label">{label}</span>}
+      {!collapsed && count !== undefined && <span className="sidebar-nav__count">{count}</span>}
+    </button>
+  );
+}
+
 export function WorkspaceSidebar({
+  collapsed = false,
+  collapsible = true,
+  onToggleCollapsed,
+  section,
+  onSection,
   query,
   onQuery,
   chats,
   trips,
+  savedCount,
   onNewChat,
   onOpenChat,
   onOpenTrip,
   onRenameChat,
   onDeleteChat,
+  onSavedTrips,
+  onLanguage,
+  onAccount,
   saveState,
 }: {
+  collapsed?: boolean;
+  /** False when the sidebar is shown inside the narrow-screen navigation drawer. */
+  collapsible?: boolean;
+  onToggleCollapsed?(): void;
+  section: SidebarSection;
+  onSection(section: SidebarSection): void;
   query: string;
   onQuery(value: string): void;
   chats: HistoryItem[];
   trips: HistoryItem[];
+  savedCount: number;
   onNewChat(): void;
   onOpenChat(id: string): void;
   onOpenTrip(id: string): void;
   onRenameChat(id: string): void;
   onDeleteChat(id: string): void;
+  onSavedTrips(): void;
+  onLanguage(): void;
+  onAccount(): void;
   saveState: "saving" | "saved" | "failed";
 }) {
-  const list = (items: HistoryItem[], onOpen: (id: string) => void, chatsList = false) => (
-    <div className="history-list">
-      {items.map((item) => (
-        <article
-          className={`history-item${item.active ? " history-item--active" : ""}`}
-          key={item.id}
-        >
-          <button className="history-item__open" onClick={() => onOpen(item.id)}>
-            <strong>{item.title}</strong>
-            <span>{item.subtitle}</span>
-            <small>
-              {item.status ? `${item.status} · ` : ""}
-              {new Date(item.updatedAt).toLocaleString()}
-            </small>
-          </button>
-          {chatsList && (
-            <div className="history-item__actions">
-              <button aria-label={`Rename ${item.title}`} onClick={() => onRenameChat(item.id)}>
-                Rename
-              </button>
-              <button aria-label={`Delete ${item.title}`} onClick={() => onDeleteChat(item.id)}>
-                Delete
-              </button>
-            </div>
-          )}
-        </article>
-      ))}
-      {!items.length && <p className="history-empty">No matching records.</p>}
-    </div>
-  );
+  const isCollapsed = collapsible && collapsed;
+  const search = useRef<HTMLInputElement>(null);
+  const focusSearch = useRef(false);
+
+  useEffect(() => {
+    if (isCollapsed || !focusSearch.current) return;
+    focusSearch.current = false;
+    search.current?.focus();
+  }, [isCollapsed]);
+
+  /** Collapsed icons expand the sidebar so the chosen section's history is visible. */
+  const reveal = (next?: SidebarSection) => {
+    if (next) onSection(next);
+    if (isCollapsed) onToggleCollapsed?.();
+  };
+
+  const items = section === "chats" ? chats : trips;
 
   return (
-    <aside className="workspace-sidebar" aria-label="Chats and trips">
-      <div className="workspace-sidebar__head">
-        <strong>Workspace</strong>
-        <span className={`save-state save-state--${saveState}`} role="status">
-          {saveState === "saving"
-            ? "Saving…"
-            : saveState === "failed"
-              ? "Save failed"
-              : "Saved locally"}
-        </span>
+    <aside
+      className={`workspace-sidebar${isCollapsed ? " is-collapsed" : ""}`}
+      aria-label="Chats and trips"
+    >
+      <div className="sidebar-head">
+        <BrandMark showName={!isCollapsed} />
+        {collapsible && (
+          <button
+            type="button"
+            className="sidebar-toggle"
+            aria-label={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+            aria-expanded={!isCollapsed}
+            data-tooltip={isCollapsed ? "Expand sidebar" : undefined}
+            onClick={onToggleCollapsed}
+          >
+            <SidebarIcon />
+          </button>
+        )}
       </div>
-      <button className="primary workspace-sidebar__new" onClick={onNewChat}>
-        + New chat
-      </button>
-      <label className="workspace-sidebar__search">
-        <span className="sr-only">Search chats and trips</span>
-        <input
-          className="field"
-          type="search"
-          placeholder="Search chats and trips"
-          value={query}
-          onChange={(event) => onQuery(event.target.value)}
+
+      <nav className="sidebar-nav" aria-label="Workspace">
+        <NavButton
+          icon={<PlusIcon />}
+          label="New chat"
+          tone="create"
+          collapsed={isCollapsed}
+          onClick={onNewChat}
         />
-      </label>
-      <details open>
-        <summary>
-          Chats <span>{chats.length}</span>
-        </summary>
-        {list(chats, onOpenChat, true)}
-      </details>
-      <details open>
-        <summary>
-          Trips <span>{trips.length}</span>
-        </summary>
-        {list(trips, onOpenTrip)}
-      </details>
+        {isCollapsed ? (
+          <NavButton
+            icon={<SearchIcon />}
+            label="Search chats and trips"
+            tone="neutral"
+            collapsed
+            onClick={() => {
+              focusSearch.current = true;
+              reveal();
+            }}
+          />
+        ) : (
+          <label className="sidebar-search">
+            <span className="sidebar-nav__icon sidebar-nav__icon--neutral">
+              <SearchIcon />
+            </span>
+            <span className="sr-only">Search chats and trips</span>
+            <input
+              ref={search}
+              className="field"
+              type="search"
+              placeholder="Search chats and trips"
+              value={query}
+              onChange={(event) => onQuery(event.target.value)}
+            />
+          </label>
+        )}
+        <NavButton
+          icon={<ChatIcon />}
+          label="Chats"
+          tone="chats"
+          collapsed={isCollapsed}
+          count={chats.length}
+          current={section === "chats"}
+          onClick={() => reveal("chats")}
+        />
+        <NavButton
+          icon={<SuitcaseIcon />}
+          label="Trips"
+          tone="trips"
+          collapsed={isCollapsed}
+          count={trips.length}
+          current={section === "trips"}
+          onClick={() => reveal("trips")}
+        />
+        <NavButton
+          icon={<BookmarkIcon />}
+          label="Saved trips"
+          tone="saved"
+          collapsed={isCollapsed}
+          count={savedCount}
+          onClick={onSavedTrips}
+        />
+      </nav>
+
+      {!isCollapsed && (
+        <section className="sidebar-history" aria-label={section === "chats" ? "Chats" : "Trips"}>
+          <h2 className="sidebar-history__title">
+            {section === "chats" ? "Recent chats" : "Your trips"}
+          </h2>
+          <div className="history-list">
+            {items.map((item) => (
+              <article
+                className={`history-item${item.active ? " history-item--active" : ""}`}
+                key={item.id}
+              >
+                <button
+                  className="history-item__open"
+                  aria-current={item.active ? "true" : undefined}
+                  onClick={() => (section === "chats" ? onOpenChat : onOpenTrip)(item.id)}
+                >
+                  <strong>{item.title}</strong>
+                  <span>{item.subtitle}</span>
+                  <small>
+                    {item.status ? `${item.status} · ` : ""}
+                    {new Date(item.updatedAt).toLocaleString()}
+                  </small>
+                </button>
+                {section === "chats" && (
+                  <div className="history-item__actions">
+                    <button
+                      aria-label={`Rename ${item.title}`}
+                      onClick={() => onRenameChat(item.id)}
+                    >
+                      Rename
+                    </button>
+                    <button
+                      aria-label={`Delete ${item.title}`}
+                      onClick={() => onDeleteChat(item.id)}
+                    >
+                      Delete
+                    </button>
+                  </div>
+                )}
+              </article>
+            ))}
+            {!items.length && (
+              <p className="history-empty">
+                {query.trim()
+                  ? "No matching records."
+                  : section === "chats"
+                    ? "No chats yet."
+                    : "No trips yet. Plans you create appear here."}
+              </p>
+            )}
+          </div>
+        </section>
+      )}
+
+      <div className="sidebar-footer">
+        {!isCollapsed && (
+          <span className={`save-state save-state--${saveState}`} role="status">
+            {saveState === "saving"
+              ? "Saving…"
+              : saveState === "failed"
+                ? "Save failed"
+                : "Saved locally"}
+          </span>
+        )}
+        <div className="sidebar-footer__actions">
+          <button
+            type="button"
+            className="sidebar-icon-button"
+            aria-label="Language: English"
+            data-tooltip={isCollapsed ? "Language" : undefined}
+            onClick={onLanguage}
+          >
+            <GlobeIcon />
+            {!isCollapsed && <span>EN</span>}
+          </button>
+          <button
+            type="button"
+            className="sidebar-icon-button"
+            aria-label="Local account"
+            data-tooltip={isCollapsed ? "Local account" : undefined}
+            onClick={onAccount}
+          >
+            <UserIcon />
+            {!isCollapsed && <span>Local</span>}
+          </button>
+        </div>
+      </div>
     </aside>
   );
 }

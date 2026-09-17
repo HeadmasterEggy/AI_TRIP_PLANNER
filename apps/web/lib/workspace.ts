@@ -40,7 +40,8 @@ export const blankDraft = (): Draft => ({
   budgetTotal: "",
   nationality: "",
   roomAllocation: "shared",
-  minRating: "",
+  // 0 is the schema default and means "no minimum"; it is a filter, not invented trip data.
+  minRating: "0",
   freeCancellation: false,
 });
 export function isDraft(value: unknown): value is Draft {

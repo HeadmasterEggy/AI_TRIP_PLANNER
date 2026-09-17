@@ -7,11 +7,11 @@ import { TripEditor } from "./TripEditor";
 import { TripMapCanvas } from "./TripMapCanvas";
 import { TripPanel, pendingDecisions, tripStatus, type TripTab } from "./TripPanel";
 import { CheckpointCards, type Decision } from "./CheckpointCards";
-import { Header, type Navigation } from "./Header";
 import { Dialog } from "./Dialog";
 import { Drawer } from "./Drawer";
 import { WorkspaceSkeleton } from "./WorkspaceSkeleton";
-import { WorkspaceSidebar } from "./WorkspaceSidebar";
+import { WorkspaceSidebar, type SidebarSection } from "./WorkspaceSidebar";
+import { MenuIcon, RouteIcon, SlidersIcon } from "./icons";
 import { useTripPlaces } from "./useTripPlaces";
 import type { RouteResult } from "@/lib/google";
 import {
@@ -42,7 +42,34 @@ import {
 
 type Task =
   { kind: "chat"; request: ChatRequest } | { kind: "decision"; plan: TripPlan; decision: Decision };
-type MobileView = "history" | "preferences" | "chat" | "map" | "trip";
+type DialogKind = "review" | "saved" | "language" | "account";
+/** Narrow screens show one of chat or map; preferences, trip and navigation are drawers. */
+type MobileView = "chat" | "map";
+const NARROW_QUERY = "(max-width: 1000px)";
+
+function useIsNarrow() {
+  const [narrow, setNarrow] = useState(false);
+  useEffect(() => {
+    if (typeof window.matchMedia !== "function") return;
+    const media = window.matchMedia(NARROW_QUERY);
+    const update = () => setNarrow(media.matches);
+    update();
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  }, []);
+  return narrow;
+}
+
+/** Topbar facts from the plan only; nothing is shown for values the trip does not have. */
+function tripFacts(plan: TripPlan) {
+  const { dates, groupSize, budgetTotal } = plan.brief;
+  const days = (Date.parse(dates[1]) - Date.parse(dates[0])) / 86400000 + 1;
+  return [
+    Number.isFinite(days) && days > 0 ? `${days} ${days === 1 ? "day" : "days"}` : undefined,
+    `${groupSize} ${groupSize === 1 ? "traveller" : "travellers"}`,
+    `${money(budgetTotal)} budget`,
+  ].filter(Boolean);
+}
 const seed: Message[] = [
   {
     role: "agent",
@@ -60,95 +87,53 @@ function readableStorage(): Pick<Storage, "getItem"> {
   }
 }
 
-export function Workspace({
-  initialPlan,
-  initialError,
-}: {
-  initialPlan?: TripPlan;
-  initialError?: string;
-}) {
+/**
+ * The planning workspace always opens on a blank planning entry. Saved chats and trips are
+ * listed in the sidebar and open only when the user chooses them; no demo plan is loaded.
+ * `initialPlan` lets an embedding page (or a test) open a specific plan explicitly.
+ */
+export function Workspace({ initialPlan }: { initialPlan?: TripPlan }) {
   const [restored, setRestored] = useState<RestoredWorkspace>();
-  const [loadError, setLoadError] = useState("");
-  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
-    // Resolve storage before anything renders so a blank conversation never flashes a
-    // previous trip, and the demo is requested only when nothing is stored.
+    // Storage is read after hydration, so the server and first client render match.
     const state = restoreWorkspace(readableStorage());
-    if (state.plan || state.blank) {
+    if (!initialPlan) {
       setRestored(state);
       return;
     }
-    if (initialPlan) {
-      const plan = identifyActivities(initialPlan);
-      setRestored({ ...state, plan, draft: draftFor(plan.brief) });
-      return;
-    }
-    const controller = new AbortController();
-    setLoadError("");
-    async function load() {
-      try {
-        const response = await fetch("/api/demo", {
-          signal: controller.signal,
-          cache: "no-store",
-        });
-        if (!response.ok) throw new Error("Unable to load the initial trip.");
-        const body = await response.json();
-        const next = identifyActivities(TripPlan.parse(body.plan));
-        if (!controller.signal.aborted)
-          setRestored({ ...state, plan: next, draft: draftFor(next.brief) });
-      } catch {
-        if (!controller.signal.aborted)
-          setLoadError("The initial trip could not be loaded. Please retry planning.");
-      }
-    }
-    void load();
-    return () => controller.abort();
-  }, [initialPlan, attempt]);
+    const plan = identifyActivities(initialPlan);
+    setRestored({
+      ...state,
+      plan,
+      draft: draftFor(plan.brief),
+      messages: undefined,
+      input: "",
+      conversationId: undefined,
+    });
+  }, [initialPlan]);
 
-  if (restored) return <WorkspaceContent restored={restored} initialError={initialError} />;
-
-  return (
-    <div className="workspace-app">
-      <Header />
-      {loadError ? (
-        <main className="workspace-notices">
-          <div className="error-banner" role="alert">
-            {loadError}{" "}
-            <button onClick={() => setAttempt((value) => value + 1)}>Retry planning</button>
-          </div>
-        </main>
-      ) : (
-        <WorkspaceSkeleton />
-      )}
-    </div>
-  );
+  return restored ? <WorkspaceContent restored={restored} /> : <WorkspaceSkeleton />;
 }
 
-function WorkspaceContent({
-  restored,
-  initialError,
-}: {
-  restored: RestoredWorkspace;
-  initialError?: string;
-}) {
+function WorkspaceContent({ restored }: { restored: RestoredWorkspace }) {
   const [plan, setPlan] = useState<TripPlan | undefined>(restored.plan);
   const [draft, setDraft] = useState(restored.draft);
   const [messages, setMessages] = useState<Message[]>(
-    () => restored.messages ?? (restored.blank ? [] : seed),
+    () => restored.messages ?? (restored.plan ? seed : []),
   );
   const [input, setInput] = useState(restored.input);
   const [previousTotal, setPreviousTotal] = useState(restored.previousTotal);
   const [editPending, setEditPending] = useState(false);
   const [busy, setBusy] = useState(false);
   const [activity, setActivity] = useState<AgentProgressEvent[]>([]);
-  const [error, setError] = useState(initialError ?? "");
+  const [error, setError] = useState("");
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [retry, setRetry] = useState<Task>();
-  const [dialog, setDialog] = useState<Navigation | "review">();
+  const [dialog, setDialog] = useState<DialogKind>();
   const [saved, setSaved] = useState<Snapshot[]>(restored.saved);
   const [storageError, setStorageError] = useState(restored.storageError ?? "");
-  const [notice, setNotice] = useState(restored.notice ?? "");
+  const [notice, setNotice] = useState("");
   const [storageEnabled, setStorageEnabled] = useState(restored.storageEnabled);
   const [saveState, setSaveState] = useState<"saving" | "saved" | "failed">("saved");
   const [catalog, setCatalog] = useState<WorkspaceCatalog>(restored.catalog);
@@ -159,7 +144,15 @@ function WorkspaceContent({
   const [tripTab, setTripTab] = useState<TripTab>(
     restored.catalog.layout.editorView === "timeline" ? "timeline" : "overview",
   );
-  const [mobileView, setMobileView] = useState<MobileView>(restored.catalog.layout.view);
+  const [mobileView, setMobileView] = useState<MobileView>(
+    restored.catalog.layout.view === "map" ? "map" : "chat",
+  );
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(
+    restored.catalog.layout.sidebar.collapsed,
+  );
+  const [section, setSection] = useState<SidebarSection>("chats");
+  const [navOpen, setNavOpen] = useState(false);
+  const narrow = useIsNarrow();
   const [selectedActivity, setSelectedActivity] = useState<string>();
   const [mapRoutes, setMapRoutes] = useState<RouteResult[]>([]);
   const activeConversation = useRef(
@@ -173,6 +166,7 @@ function WorkspaceContent({
   const left = useRef<HTMLDivElement>(null);
   const preferencesToggle = useRef<HTMLButtonElement>(null);
   const tripToggle = useRef<HTMLButtonElement>(null);
+  const navToggle = useRef<HTMLButtonElement>(null);
   const tripPlaces = useTripPlaces(plan);
   const blank = !plan;
 
@@ -251,14 +245,20 @@ function WorkspaceContent({
     setCatalog((current) =>
       updateCatalog(current, {
         layout: {
+          sidebar: { collapsed: sidebarCollapsed },
           preferences: { ...current.layout.preferences, open: preferencesOpen },
           trip: { ...current.layout.trip, open: tripOpen },
-          view: mobileView === "history" || mobileView === "preferences" ? "chat" : mobileView,
+          view: mobileView,
           editorView: tripTab,
         },
       }),
     );
-  }, [preferencesOpen, tripOpen, mobileView, tripTab]);
+  }, [preferencesOpen, tripOpen, mobileView, tripTab, sidebarCollapsed]);
+
+  // Leaving the narrow layout closes its navigation drawer.
+  useEffect(() => {
+    if (!narrow) setNavOpen(false);
+  }, [narrow]);
 
   /** Stop in-flight work and clear state that belongs to the previous chat or trip. */
   function resetTransient() {
@@ -285,21 +285,24 @@ function WorkspaceContent({
   function openPreferences() {
     setDialog(undefined);
     setTripOpen(false);
+    setNavOpen(false);
     setPreferencesOpen(true);
-    setMobileView("preferences");
   }
   function closePreferences() {
     setPreferencesOpen(false);
-    setMobileView((view) => (view === "preferences" ? "chat" : view));
   }
   function openTrip() {
     setPreferencesOpen(false);
+    setNavOpen(false);
     setTripOpen(true);
-    setMobileView("trip");
   }
   function closeTrip() {
     setTripOpen(false);
-    setMobileView((view) => (view === "trip" ? "chat" : view));
+  }
+  function openDialog(kind: DialogKind) {
+    if (kind === "saved") loadSaved();
+    setNavOpen(false);
+    setDialog(kind);
   }
   function edit() {
     openPreferences();
@@ -501,6 +504,7 @@ function WorkspaceContent({
       if (!conversation.tripId) delete next.activeTripId;
       return next;
     });
+    setNavOpen(false);
     setMobileView("chat");
   }
   function selectTrip(id: string) {
@@ -522,7 +526,7 @@ function WorkspaceContent({
         ...(conversation ? { activeConversationId: conversation.id } : {}),
       }),
     );
-    setMobileView("trip");
+    setNavOpen(false);
   }
   function newChat() {
     resetTransient();
@@ -537,6 +541,7 @@ function WorkspaceContent({
     setNotice("");
     setPreferencesOpen(false);
     setTripOpen(false);
+    setNavOpen(false);
     setCatalog((current) =>
       upsertConversationDraft(current, { id, messages: [], input: "", draft: blankDraft() }),
     );
@@ -583,138 +588,103 @@ function WorkspaceContent({
       ? "Review plan"
       : dialog === "saved"
         ? "Saved trips"
-        : dialog === "trips"
-          ? "My trips"
-          : dialog === "language"
-            ? "Language"
-            : "Local account";
+        : dialog === "language"
+          ? "Language"
+          : "Local account";
+  const facts = plan ? tripFacts(plan) : [];
+  const drawerOpen = preferencesOpen || tripOpen || navOpen;
   return (
-    <div className="workspace-app">
-      <Header
-        onNavigate={(page) => {
-          if (page === "saved") loadSaved();
-          setDialog(page);
-        }}
-      />
-      <div className="workspace-notices">
-        {error && (
-          <div className="error-banner" role="alert">
-            {error}{" "}
-            {retry ? (
-              <button disabled={busy} onClick={() => void run(retry)}>
-                Retry update
-              </button>
-            ) : initialError && plan && !plan.sections.length ? (
-              <button disabled={busy} onClick={submit}>
-                Retry planning
-              </button>
-            ) : null}
-          </div>
-        )}
-        {storageError && (
-          <div className="error-banner" role="alert">
-            {storageError}{" "}
-            <button
-              onClick={() => {
-                setStorageError("");
-                setStorageEnabled(true);
-              }}
-            >
-              Retry / replace workspace storage
-            </button>
-          </div>
-        )}
-        {notice && (
-          <p role="status" className="notice">
-            {notice}{" "}
-            <button onClick={() => setNotice("")} aria-label="Dismiss notification">
-              Dismiss
-            </button>
-          </p>
-        )}
-      </div>
-      <main
-        className="workspace-shell"
-        aria-busy={busy}
-        data-preferences-open={preferencesOpen}
-        data-trip-open={tripOpen}
-        data-mobile-view={mobileView}
-      >
-        <nav className="workspace-mobile-nav" aria-label="Workspace views">
-          {(["history", "preferences", "chat", "map", "trip"] as const).map((view) => (
-            <button
-              key={view}
-              aria-pressed={mobileView === view}
-              onClick={() => {
-                setMobileView(view);
-                setPreferencesOpen(view === "preferences");
-                setTripOpen(view === "trip");
-              }}
-            >
-              {view[0]!.toUpperCase() + view.slice(1)}
-            </button>
-          ))}
-        </nav>
+    <div
+      className="workspace-app"
+      data-sidebar-collapsed={!narrow && sidebarCollapsed}
+      data-narrow={narrow}
+    >
+      {!narrow && (
         <WorkspaceSidebar
+          onToggleCollapsed={() => setSidebarCollapsed((value) => !value)}
+          collapsed={sidebarCollapsed}
+          section={section}
+          onSection={setSection}
           query={historyQuery}
           onQuery={setHistoryQuery}
           chats={historyChats}
           trips={historyTrips}
+          savedCount={saved.length}
           onNewChat={newChat}
           onOpenChat={selectConversation}
           onOpenTrip={selectTrip}
           onRenameChat={renameChat}
           onDeleteChat={deleteChat}
+          onSavedTrips={() => openDialog("saved")}
+          onLanguage={() => openDialog("language")}
+          onAccount={() => openDialog("account")}
           saveState={saveState}
         />
-        <div className="workspace-panel workspace-panel--chat">
-          <ChatPanel
-            plan={plan}
-            messages={messages}
-            input={input}
-            onInput={setInput}
-            busy={busy || editPending}
-            activity={activity}
-            onSend={send}
-            onDecision={onDecision}
-            onEdit={edit}
-            onStart={edit}
-          />
-        </div>
-        <div className="workspace-panel workspace-panel--map">
-          <TripMapCanvas
-            blank={blank}
-            viewKey={plan?.tripId ?? activeConversation.current}
-            tripPlaces={tripPlaces}
-            selectedActivity={selectedActivity}
-            onSelectActivity={setSelectedActivity}
-            routes={mapRoutes}
-          />
-          <div className="workspace-map-actions">
+      )}
+      <div className="workspace-main">
+        <header className="workspace-topbar">
+          {narrow && (
+            <button
+              ref={navToggle}
+              type="button"
+              className="topbar-icon-button"
+              aria-label="Open navigation"
+              aria-expanded={navOpen}
+              aria-haspopup="dialog"
+              onClick={() => {
+                setPreferencesOpen(false);
+                setTripOpen(false);
+                setNavOpen(true);
+              }}
+            >
+              <MenuIcon />
+            </button>
+          )}
+          <div className="topbar-summary">
+            <h1 className="topbar-title">{plan ? plan.brief.destination : "New trip"}</h1>
+            <p className="topbar-facts">
+              {plan ? facts.join(" · ") : "Not planned yet — add a destination and dates"}
+            </p>
+          </div>
+          {narrow && (
+            <div className="topbar-views" role="group" aria-label="Workspace view">
+              {(["chat", "map"] as const).map((view) => (
+                <button
+                  key={view}
+                  type="button"
+                  aria-pressed={mobileView === view}
+                  onClick={() => setMobileView(view)}
+                >
+                  {view === "chat" ? "Chat" : "Map"}
+                </button>
+              ))}
+            </div>
+          )}
+          <div className="topbar-actions">
             <button
               ref={preferencesToggle}
               type="button"
+              className="topbar-button"
               aria-label="Open trip preferences"
               aria-expanded={preferencesOpen}
               aria-haspopup="dialog"
               onClick={openPreferences}
             >
-              Preferences
+              <SlidersIcon />
+              <span className="topbar-button__label">Preferences</span>
             </button>
             <button
               ref={tripToggle}
               type="button"
-              className="trip-trigger"
+              className="topbar-button trip-trigger"
               aria-label="Open your trip"
               aria-describedby={pending ? "trip-trigger-count" : undefined}
               aria-expanded={tripOpen}
               aria-haspopup="dialog"
               onClick={openTrip}
             >
-              <span aria-hidden="true" className="trip-trigger__icon">
-                ▤
-              </span>
-              Trip
+              <RouteIcon />
+              <span className="topbar-button__label">Trip</span>
               {pending > 0 && (
                 <span className="trip-trigger__count" id="trip-trigger-count">
                   {pending}
@@ -723,89 +693,191 @@ function WorkspaceContent({
               )}
             </button>
           </div>
-        </div>
-        {(preferencesOpen || tripOpen) && (
-          <button
-            type="button"
-            tabIndex={-1}
-            className="workspace-drawer-backdrop"
-            aria-label="Close open panel"
-            onClick={() => {
-              const trigger = tripOpen ? tripToggle : preferencesToggle;
-              closePreferences();
-              closeTrip();
-              trigger.current?.focus({ preventScroll: true });
-            }}
-          />
-        )}
-        <Drawer
-          side="left"
-          open={preferencesOpen}
-          title="Trip preferences"
-          closeLabel="Close trip preferences"
-          onClose={closePreferences}
-          returnFocus={preferencesToggle}
-          className="workspace-drawer workspace-drawer--preferences"
-        >
-          <div ref={left} className="filter-container">
-            <FiltersPanel
-              draft={draft}
-              onChange={setDraft}
-              onSubmit={submit}
-              busy={busy || editPending}
-              errors={errors}
-            />
-          </div>
-        </Drawer>
-        <Drawer
-          side="right"
-          open={tripOpen}
-          title="Your trip"
-          closeLabel="Close your trip"
-          onClose={closeTrip}
-          returnFocus={tripToggle}
-          className="workspace-drawer workspace-drawer--trip"
-          meta={plan && <span className="trip__meta">{tripStatus(plan)}</span>}
-        >
-          {plan ? (
-            <TripPanel
-              plan={plan}
-              busy={busy || editPending}
-              tab={tripTab}
-              onTab={setTripTab}
-              onReview={() => setDialog("review")}
-              onDecision={onDecision}
-              onEdit={edit}
-              onSave={save}
-              timeline={
-                <TripEditor
-                  plan={plan}
-                  disabled={busy}
-                  onPending={setEditPending}
-                  tripPlaces={tripPlaces}
-                  selected={selectedActivity}
-                  onSelect={setSelectedActivity}
-                  onRoutesChange={setMapRoutes}
-                  onApply={(next) => {
-                    setPreviousTotal(plan.estTotal);
-                    setPlan(next);
-                  }}
-                />
-              }
-            />
-          ) : (
-            <div className="trip-drawer-empty">
-              <p>
-                No trip yet. Describe where you want to go in the chat, or add your trip details.
-                Your itinerary, budget and decisions will appear here.
-              </p>
-              <button type="button" onClick={edit}>
-                Add trip details
+        </header>
+        <div className="workspace-notices">
+          {error && (
+            <div className="error-banner" role="alert">
+              {error}{" "}
+              {retry && (
+                <button disabled={busy} onClick={() => void run(retry)}>
+                  Retry update
+                </button>
+              )}
+            </div>
+          )}
+          {storageError && (
+            <div className="error-banner" role="alert">
+              {storageError}{" "}
+              <button
+                onClick={() => {
+                  setStorageError("");
+                  setStorageEnabled(true);
+                }}
+              >
+                Retry / replace workspace storage
               </button>
             </div>
           )}
-        </Drawer>
-      </main>
+          {notice && (
+            <p role="status" className="notice">
+              {notice}{" "}
+              <button onClick={() => setNotice("")} aria-label="Dismiss notification">
+                Dismiss
+              </button>
+            </p>
+          )}
+        </div>
+        <main
+          className="workspace-shell"
+          aria-busy={busy}
+          data-preferences-open={preferencesOpen}
+          data-trip-open={tripOpen}
+          data-mobile-view={mobileView}
+        >
+          <div className="workspace-panel workspace-panel--chat">
+            <ChatPanel
+              plan={plan}
+              messages={messages}
+              input={input}
+              onInput={setInput}
+              busy={busy || editPending}
+              activity={activity}
+              onSend={send}
+              onDecision={onDecision}
+              onEdit={edit}
+              onStart={edit}
+            />
+          </div>
+          <div className="workspace-panel workspace-panel--map">
+            <TripMapCanvas
+              destination={plan?.brief.destination}
+              viewKey={plan ? `${plan.tripId}|${plan.brief.destination}` : undefined}
+              tripPlaces={tripPlaces}
+              selectedActivity={selectedActivity}
+              onSelectActivity={setSelectedActivity}
+              routes={mapRoutes}
+            />
+          </div>
+          {drawerOpen && (
+            <button
+              type="button"
+              tabIndex={-1}
+              className="workspace-drawer-backdrop"
+              aria-label="Close open panel"
+              onClick={() => {
+                const trigger = tripOpen
+                  ? tripToggle
+                  : preferencesOpen
+                    ? preferencesToggle
+                    : navToggle;
+                closePreferences();
+                closeTrip();
+                setNavOpen(false);
+                trigger.current?.focus({ preventScroll: true });
+              }}
+            />
+          )}
+          {narrow && (
+            <Drawer
+              side="left"
+              open={navOpen}
+              title="Chats and trips"
+              closeLabel="Close navigation"
+              onClose={() => setNavOpen(false)}
+              returnFocus={navToggle}
+              className="workspace-drawer workspace-drawer--nav"
+            >
+              <WorkspaceSidebar
+                collapsible={false}
+                collapsed={sidebarCollapsed}
+                section={section}
+                onSection={setSection}
+                query={historyQuery}
+                onQuery={setHistoryQuery}
+                chats={historyChats}
+                trips={historyTrips}
+                savedCount={saved.length}
+                onNewChat={newChat}
+                onOpenChat={selectConversation}
+                onOpenTrip={selectTrip}
+                onRenameChat={renameChat}
+                onDeleteChat={deleteChat}
+                onSavedTrips={() => openDialog("saved")}
+                onLanguage={() => openDialog("language")}
+                onAccount={() => openDialog("account")}
+                saveState={saveState}
+              />
+            </Drawer>
+          )}
+          <Drawer
+            side="left"
+            open={preferencesOpen}
+            title="Trip preferences"
+            closeLabel="Close trip preferences"
+            onClose={closePreferences}
+            returnFocus={preferencesToggle}
+            className="workspace-drawer workspace-drawer--preferences"
+          >
+            <div ref={left} className="filter-container">
+              <FiltersPanel
+                draft={draft}
+                onChange={setDraft}
+                onSubmit={submit}
+                busy={busy || editPending}
+                errors={errors}
+              />
+            </div>
+          </Drawer>
+          <Drawer
+            side="right"
+            open={tripOpen}
+            title="Your trip"
+            closeLabel="Close your trip"
+            onClose={closeTrip}
+            returnFocus={tripToggle}
+            className="workspace-drawer workspace-drawer--trip"
+            meta={plan && <span className="trip__meta">{tripStatus(plan)}</span>}
+          >
+            {plan ? (
+              <TripPanel
+                plan={plan}
+                busy={busy || editPending}
+                tab={tripTab}
+                onTab={setTripTab}
+                onReview={() => setDialog("review")}
+                onDecision={onDecision}
+                onEdit={edit}
+                onSave={save}
+                timeline={
+                  <TripEditor
+                    plan={plan}
+                    disabled={busy}
+                    onPending={setEditPending}
+                    tripPlaces={tripPlaces}
+                    selected={selectedActivity}
+                    onSelect={setSelectedActivity}
+                    onRoutesChange={setMapRoutes}
+                    onApply={(next) => {
+                      setPreviousTotal(plan.estTotal);
+                      setPlan(next);
+                    }}
+                  />
+                }
+              />
+            ) : (
+              <div className="trip-drawer-empty">
+                <p>
+                  No trip yet. Describe where you want to go in the chat, or add your trip details.
+                  Your itinerary, budget and decisions will appear here.
+                </p>
+                <button type="button" onClick={edit}>
+                  Add trip details
+                </button>
+              </div>
+            )}
+          </Drawer>
+        </main>
+      </div>
       {dialog && (
         <Dialog title={dialogTitle} onClose={() => setDialog(undefined)}>
           {dialog === "review" && plan && (
@@ -858,7 +930,23 @@ function WorkspaceContent({
                   Save current trip
                 </button>
                 <button onClick={loadSaved}>Reload saved trips</button>
+                <button
+                  onClick={() => {
+                    try {
+                      const raw = localStorage.getItem(CURRENT_KEY);
+                      if (!raw) throw new Error();
+                      restore(parseSnapshot(JSON.parse(raw)));
+                    } catch {
+                      setStorageError("No readable workspace is available to restore.");
+                    }
+                  }}
+                >
+                  Restore last workspace
+                </button>
               </div>
+              <p className="muted">
+                Chats and trips in the sidebar are also saved automatically in this browser.
+              </p>
               {storageError && (
                 <p role="alert" className="error-text">
                   {storageError}
@@ -879,39 +967,6 @@ function WorkspaceContent({
               ) : (
                 <p>No saved trips yet. Save your current trip to keep a copy.</p>
               )}
-            </>
-          )}
-          {dialog === "trips" && (
-            <>
-              <p>Current workspace: {plan ? plan.brief.destination : "New chat"}</p>
-              <p>
-                Your plan, conversation and unfinished form are automatically saved in this browser.
-              </p>
-              <div className="actions">
-                <button onClick={() => setDialog(undefined)}>Return to current trip</button>
-                <button
-                  onClick={() => {
-                    try {
-                      const raw = localStorage.getItem(CURRENT_KEY);
-                      if (!raw) throw new Error();
-                      restore(parseSnapshot(JSON.parse(raw)));
-                    } catch {
-                      setStorageError("No readable workspace is available to restore.");
-                    }
-                  }}
-                >
-                  Restore browser workspace
-                </button>
-                <button
-                  onClick={() => {
-                    loadSaved();
-                    setDialog("saved");
-                  }}
-                >
-                  Browse saved trips
-                </button>
-              </div>
-              {storageError && <p role="alert">{storageError}</p>}
             </>
           )}
           {dialog === "language" && (

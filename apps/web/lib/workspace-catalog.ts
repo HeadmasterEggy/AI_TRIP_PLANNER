@@ -40,6 +40,8 @@ export type TripRecord = {
 };
 
 export type PanelLayout = {
+  /** Desktop sidebar preference. Older catalogs have no value and start expanded. */
+  sidebar: { collapsed: boolean };
   preferences: { open: boolean; width: number };
   trip: { open: boolean; width: number };
   view: WorkspaceView;
@@ -57,6 +59,7 @@ export type WorkspaceCatalog = {
 };
 
 const DEFAULT_LAYOUT: PanelLayout = {
+  sidebar: { collapsed: false },
   preferences: { open: true, width: 280 },
   trip: { open: true, width: 340 },
   view: "chat",
@@ -85,34 +88,37 @@ function statusFor(snapshot: Snapshot): TripStatus {
   return "draft";
 }
 
+/**
+ * Layout is a preference, not user data: invalid or legacy values fall back to defaults per
+ * field instead of making the whole catalog (and its chats and trips) unreadable.
+ */
 function normalizeLayout(value: unknown): PanelLayout {
-  if (value === undefined) return clone(DEFAULT_LAYOUT);
-  if (!isObject(value)) throw new Error("Workspace catalog layout is invalid.");
+  const layout = isObject(value) ? value : {};
   const panel = (key: "preferences" | "trip") => {
-    const item = value[key];
-    if (
-      !isObject(item) ||
-      typeof item.open !== "boolean" ||
-      typeof item.width !== "number" ||
-      !Number.isFinite(item.width)
-    )
-      throw new Error("Workspace catalog panel layout is invalid.");
-    return { open: item.open, width: Math.min(720, Math.max(180, item.width)) };
+    const item = layout[key];
+    const fallback = DEFAULT_LAYOUT[key];
+    if (!isObject(item)) return { ...fallback };
+    return {
+      open: typeof item.open === "boolean" ? item.open : fallback.open,
+      width:
+        typeof item.width === "number" && Number.isFinite(item.width)
+          ? Math.min(720, Math.max(180, item.width))
+          : fallback.width,
+    };
   };
-  const view = value.view === undefined ? "chat" : value.view;
-  if (view !== "chat" && view !== "map" && view !== "trip")
-    throw new Error("Workspace catalog view is invalid.");
-  if (value.day !== undefined && !text(value.day))
-    throw new Error("Workspace catalog day is invalid.");
-  const editorView = value.editorView ?? "map";
-  if (editorView !== "overview" && editorView !== "timeline" && editorView !== "map")
-    throw new Error("Workspace catalog editor view is invalid.");
+  const sidebar = isObject(layout.sidebar) ? layout.sidebar : {};
+  const view = layout.view === "map" || layout.view === "trip" ? layout.view : "chat";
+  const editorView =
+    layout.editorView === "overview" || layout.editorView === "timeline"
+      ? layout.editorView
+      : "map";
   return {
+    sidebar: { collapsed: sidebar.collapsed === true },
     preferences: panel("preferences"),
     trip: panel("trip"),
     view,
     editorView,
-    ...(value.day === undefined ? {} : { day: value.day }),
+    ...(text(layout.day) ? { day: layout.day } : {}),
   };
 }
 
@@ -380,6 +386,7 @@ export function updateCatalog(
     next.layout = normalizeLayout({
       ...next.layout,
       ...patch.layout,
+      sidebar: { ...next.layout.sidebar, ...patch.layout.sidebar },
       preferences: { ...next.layout.preferences, ...patch.layout.preferences },
       trip: { ...next.layout.trip, ...patch.layout.trip },
     });
@@ -388,7 +395,7 @@ export function updateCatalog(
 
 /** Everything the workspace needs for its first render, read from one storage pass. */
 export type RestoredWorkspace = {
-  /** Undefined for a blank conversation, or when nothing is stored yet. */
+  /** Only set when a caller explicitly opens a plan; storage never opens a trip by itself. */
   plan?: TripPlan;
   draft: Draft;
   messages?: Message[];
@@ -396,17 +403,17 @@ export type RestoredWorkspace = {
   previousTotal?: number;
   saved: Snapshot[];
   catalog: WorkspaceCatalog;
+  /** The blank conversation to continue, when the last active conversation had no trip yet. */
   conversationId?: string;
-  /** True when the active conversation has not produced a trip. */
-  blank: boolean;
   storageEnabled: boolean;
   storageError?: string;
-  notice?: string;
 };
 
 /**
- * Restore the active conversation and trip. Reading never writes: unreadable data stays
- * in storage and is reported so the user can decide whether to replace it.
+ * Read history for a fresh start. The workspace always opens on a blank planning entry: a
+ * previously active trip stays in Chats/Trips until the user chooses it, while an unfinished
+ * blank conversation (form and input, no trip yet) is continued. Reading never writes, and
+ * unreadable data stays in storage and is reported.
  */
 export function restoreWorkspace(storage: Pick<Storage, "getItem">): RestoredWorkspace {
   const result: RestoredWorkspace = {
@@ -414,28 +421,17 @@ export function restoreWorkspace(storage: Pick<Storage, "getItem">): RestoredWor
     input: "",
     saved: [],
     catalog: createCatalog(),
-    blank: false,
     storageEnabled: true,
   };
   let current: Snapshot | undefined;
   try {
     const raw = storage.getItem(CURRENT_KEY);
-    if (raw) {
-      current = parseSnapshot(JSON.parse(raw));
-      Object.assign(result, {
-        plan: current.plan,
-        draft: current.draft,
-        messages: current.messages,
-        input: current.input,
-        previousTotal: current.previousTotal,
-        conversationId: `conversation:${current.id}`,
-        notice: "Restored your workspace from this browser.",
-      });
-    }
+    // The legacy snapshot is only migration input for history; it is not reopened.
+    if (raw) current = parseSnapshot(JSON.parse(raw));
   } catch {
     result.storageEnabled = false;
     result.storageError =
-      "Your last workspace could not be restored. Current edits are kept in this tab. Retry storage or explicitly replace the unreadable workspace.";
+      "Your last workspace could not be read. It was kept unchanged; your history may be incomplete. Retry storage or explicitly replace the unreadable workspace.";
   }
   try {
     result.saved = parseSaved(storage.getItem(SAVED_KEY));
@@ -445,43 +441,39 @@ export function restoreWorkspace(storage: Pick<Storage, "getItem">): RestoredWor
   }
   try {
     const catalog = parseCatalog(storage.getItem(CATALOG_KEY), current, result.saved);
-    result.catalog = catalog;
-    const trip = catalog.trips.find((item) => item.id === catalog.activeTripId);
-    const conversation = catalog.conversations.find(
-      (item) => item.id === catalog.activeConversationId,
-    );
-    if (trip) {
-      Object.assign(result, {
-        plan: trip.snapshot.plan,
-        draft: trip.snapshot.draft,
-        previousTotal: trip.snapshot.previousTotal,
-      });
-    }
+    const isBlank = (item: ConversationRecord) => !item.tripId && !item.snapshot;
+    // Untouched means the user entered nothing about a trip; filter defaults do not count.
+    const untouched = (item: ConversationRecord) =>
+      isBlank(item) &&
+      !item.messages.length &&
+      !item.input.trim() &&
+      (["destination", "start", "end", "groupSize", "budgetTotal", "nationality"] as const).every(
+        (key) => !item.draft?.[key]?.trim(),
+      );
+    const active = catalog.conversations.find((item) => item.id === catalog.activeConversationId);
+    // Continue the active blank chat; otherwise reuse an untouched one instead of adding
+    // another empty "New chat" on every refresh.
+    const conversation =
+      active && isBlank(active)
+        ? active
+        : [...catalog.conversations]
+            .filter(untouched)
+            .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
     if (conversation) {
+      catalog.activeConversationId = conversation.id;
       result.conversationId = conversation.id;
       result.messages = conversation.messages;
       result.input = conversation.input;
-      if (!conversation.tripId && !conversation.snapshot) {
-        // A blank conversation owns no trip: nothing from CURRENT_KEY or the demo may leak in.
-        Object.assign(result, {
-          plan: undefined,
-          previousTotal: undefined,
-          draft: conversation.draft ?? blankDraft(),
-          blank: true,
-          notice: undefined,
-        });
-      } else if (conversation.snapshot && !trip) {
-        Object.assign(result, {
-          plan: conversation.snapshot.plan,
-          draft: conversation.snapshot.draft,
-          previousTotal: conversation.snapshot.previousTotal,
-        });
-      }
+      result.draft = conversation.draft ?? blankDraft();
+    } else {
+      delete catalog.activeConversationId;
     }
+    delete catalog.activeTripId;
+    result.catalog = catalog;
   } catch {
     result.storageEnabled = false;
     result.storageError =
-      "Workspace history could not be read. Existing stored data was kept and the current trip remains available.";
+      "Workspace history could not be read. Existing stored data was kept; you can still plan a new trip.";
   }
   return result;
 }

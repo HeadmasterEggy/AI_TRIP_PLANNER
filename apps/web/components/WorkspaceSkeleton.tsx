@@ -1,29 +1,40 @@
-// First paint while the client restores storage or requests the demo plan.
-// Mirrors the workspace shell (history, chat, map) to minimise layout shifts.
+import { BrandMark } from "./BrandMark";
+
+// First paint while the client reads local history. Mirrors the workspace layout (sidebar,
+// top bar, chat and map) so nothing shifts; there is no initial plan to wait for.
 const HISTORY_WIDTHS = ["82%", "64%", "74%"];
 
 export function WorkspaceSkeleton() {
   return (
-    <main className="workspace-shell" aria-busy="true">
+    <div className="workspace-app" aria-busy="true">
       <aside className="workspace-sidebar" aria-hidden="true">
+        <div className="sidebar-head">
+          <BrandMark />
+        </div>
         {HISTORY_WIDTHS.map((width) => (
           <div className="skeleton__section" key={width}>
             <div className="skeleton skeleton--line" style={{ width }} />
-            <div className="skeleton skeleton--line" style={{ width: "45%" }} />
           </div>
         ))}
       </aside>
-      <section className="workspace-panel workspace-panel--chat">
-        <div className="panel chat">
-          <h2>Plan together</h2>
-          <p className="skeleton__status" role="status">
-            Drafting your plan — the agents are negotiating transport, stay, activities and dining.
-          </p>
+      <div className="workspace-main">
+        <div className="workspace-topbar" aria-hidden="true">
+          <div className="skeleton skeleton--line" style={{ width: 180 }} />
         </div>
-      </section>
-      <section className="workspace-panel workspace-panel--map" aria-hidden="true">
-        <div className="skeleton skeleton--map" />
-      </section>
-    </main>
+        <main className="workspace-shell">
+          <section className="workspace-panel workspace-panel--chat">
+            <div className="panel chat">
+              <h2>Plan together</h2>
+              <p className="skeleton__status" role="status">
+                Opening your workspace…
+              </p>
+            </div>
+          </section>
+          <section className="workspace-panel workspace-panel--map" aria-hidden="true">
+            <div className="skeleton skeleton--map" />
+          </section>
+        </main>
+      </div>
+    </div>
   );
 }

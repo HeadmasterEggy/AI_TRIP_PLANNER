@@ -20,6 +20,13 @@ function key() {
     throw new Error("Google Maps is not configured. Add the server MAPS_API_KEY.");
   return process.env.MAPS_API_KEY;
 }
+/** An upstream Google failure; `status` lets routes tell rate limits from other errors. */
+export class GoogleRequestError extends Error {
+  constructor(readonly status: number) {
+    super(`Google request failed (${status}). Please retry.`);
+    this.name = "GoogleRequestError";
+  }
+}
 async function request(url: string, mask?: string, body?: unknown) {
   const response = await fetch(url, {
     method: body ? "POST" : "GET",
@@ -32,17 +39,18 @@ async function request(url: string, mask?: string, body?: unknown) {
     signal: AbortSignal.timeout(8000),
     cache: "no-store",
   });
-  if (!response.ok) throw new Error(`Google request failed (${response.status}). Please retry.`);
+  if (!response.ok) throw new GoogleRequestError(response.status);
   return response.json();
 }
-export async function searchPlaces(text: string, destination: string) {
+/** Search by a place name, optionally narrowed to a destination ("To-ji Temple" + "Kyoto"). */
+export async function searchPlaces(text: string, destination?: string) {
   const data = await request(
     "https://places.googleapis.com/v1/places:searchText",
     fields
       .split(",")
       .map((f) => `places.${f}`)
       .join(","),
-    { textQuery: `${text} ${destination}`, pageSize: 5 },
+    { textQuery: destination ? `${text} ${destination}` : text, pageSize: 5 },
   );
   return z.array(PlaceDetails).parse(data.places ?? []);
 }
