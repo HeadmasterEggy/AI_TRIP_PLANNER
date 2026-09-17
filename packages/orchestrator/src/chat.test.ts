@@ -52,6 +52,83 @@ describe("local TripBrief extraction", () => {
     ).toMatchObject({ destination: "Sydney", groupSize: 2, budgetTotal: 3000 });
   });
 
+  it("normalises the date shapes people actually type", () => {
+    const ranges = [
+      "Sydney, 2026-10-01 to 2026-10-05",
+      "Sydney, 2026/10/01 to 2026/10/05",
+      "Sydney, 2026.10.01 - 2026.10.05",
+      "Sydney, Oct 1 to Oct 5 2026",
+      "Sydney, October 1, 2026 to October 5, 2026",
+      "Sydney, 1 Oct 2026 to 5 Oct 2026",
+      "Sydney, 2026-10-01 ~ 2026-10-05",
+      "Sydney, 2026-10-01 through 2026-10-05",
+      "悉尼，2026年10月1日到10月5日",
+      "悉尼，2026-10-01 至 2026-10-05",
+      "Sydney, 2026年10月1日 到 2026年10月5日",
+    ];
+    for (const message of ranges)
+      expect(extractBriefPatchLocally(message).dates, message).toEqual([
+        "2026-10-01",
+        "2026-10-05",
+      ]);
+  });
+
+  it("borrows the year from the other side of the range, and only from there", () => {
+    // One stated year is enough for “10月1日到10月5日”.
+    expect(extractBriefPatchLocally("悉尼，2026年10月1日到10月5日").dates).toEqual([
+      "2026-10-01",
+      "2026-10-05",
+    ]);
+    // With no year anywhere there is nothing to normalise to, so the dates stay unset rather
+    // than borrowing a budget figure or today's date.
+    expect(extractBriefPatchLocally("悉尼，10月1日到10月5日，预算3000")).toEqual({
+      destination: "悉尼",
+      budgetTotal: 3000,
+    });
+  });
+
+  it("reads a numeric date only when a component settles the order", () => {
+    // 13 cannot be a month, so this is a day.
+    expect(extractBriefPatchLocally("Sydney, 13/10/2026 to 15/10/2026").dates).toEqual([
+      "2026-10-13",
+      "2026-10-15",
+    ]);
+    // 13 in second position can only be a day, so the first is the month.
+    expect(extractBriefPatchLocally("Sydney, 10/13/2026 to 10/15/2026").dates).toEqual([
+      "2026-10-13",
+      "2026-10-15",
+    ]);
+    // Fully ambiguous, so the offline parser asks rather than picking a month. The routed model is
+    // told to read it day first and shows the dates it chose in the plan.
+    expect(extractBriefPatchLocally("Sydney, 05/10/2026 to 08/10/2026").dates).toBeUndefined();
+  });
+
+  it("reads traveller counts written as 人, 个人, 位 or a number word", () => {
+    const counts = [
+      "Sydney, 2026-10-01 to 2026-10-05, 2 people",
+      "Sydney, 2026-10-01 to 2026-10-05, two travellers",
+      "悉尼，2026-10-01 到 2026-10-05，2人",
+      "悉尼，2026-10-01 到 2026-10-05，2个人",
+      "悉尼，2026-10-01 到 2026-10-05，2 位",
+      "悉尼，2026-10-01 到 2026-10-05，2名",
+    ];
+    for (const message of counts)
+      expect(extractBriefPatchLocally(message).groupSize, message).toBe(2);
+    // A duration is not a traveller count.
+    expect(extractBriefPatchLocally("悉尼，2026-10-01 到 2026-10-05，3个月，2人").groupSize).toBe(
+      2,
+    );
+  });
+
+  it("finds a destination named without a lead-in word", () => {
+    expect(extractBriefPatchLocally("悉尼，2026-10-01 到 2026-10-05，2人").destination).toBe(
+      "悉尼",
+    );
+    expect(extractBriefPatchLocally("Tokyo, Oct 1 to Oct 5 2026, 2 people").destination).toBe(
+      "Tokyo",
+    );
+  });
+
   it("recognises a destination introduced with visit", () => {
     expect(extractBriefPatchLocally("I want to visit Lisbon")).toEqual({ destination: "Lisbon" });
   });
@@ -168,7 +245,7 @@ describe("blank conversation start", () => {
       { extractor, specialists: [itinerary], tools, mem },
     );
     await expect(run).rejects.toThrow(
-      "include the start and end dates (YYYY-MM-DD), number of travellers, total budget",
+      "include the start and end dates, number of travellers, total budget",
     );
     expect(extractor.extract).toHaveBeenCalledWith("I want to visit Lisbon", undefined);
   });

@@ -9,7 +9,7 @@ workflow owns the planning control flow; LangChain agents do role-specific reaso
 flowchart TB
     U[User] --> UI[Next.js workspace]
     UI -->|POST /api/chat, NDJSON progress| CHAT[runTripChat]
-    CHAT -->|explicit brief updates| EX[GPT structured extraction]
+    CHAT -->|explicit brief updates| EX[Model structured extraction]
     EX -.->|no key or invalid output| LP[Local rule parser]
     CHAT --> WF[LangGraph workflow]
     WF --> DISPATCH[dispatch_specialists / revise_conflicts]
@@ -95,12 +95,18 @@ Transport and accommodation wrap calculators so models cannot invent prices, rou
 
 Model routing (`MODEL_ROUTING` in `packages/agents/src/models.ts` and `chat.ts`):
 
-- **GPT** (`GPT_API_KEY`, or `OPENAI_API_KEY`): structured extraction of brief updates. Without a
-  key, or when extraction fails, a conservative English/Chinese rule parser is used.
-- **DeepSeek** (`DEEPSEEK_API_KEY`): all five specialists, the supervisor and the natural-language
-  chat reply, through LangChain's OpenAI-compatible adapter.
+- **DeepSeek** (`DEEPSEEK_API_KEY`): everything that runs a model — brief extraction from chat, all
+  five specialists, the supervisor, the revision supervisor and the natural-language chat reply —
+  through LangChain's OpenAI-compatible adapter.
 - **MiniMax**: configured but not routed; it was too slow for page-level planning. See
   `.env.example` for its account caveats.
+
+Extraction is told to normalise whatever date shape the traveller writes into `YYYY-MM-DD`, and that
+normalising a stated date is a format conversion rather than an inference. Without a key, or when a
+model call fails, a conservative English/Chinese rule parser handles extraction instead, and it
+accepts `2026-10-01`, `2026/10/01`, `2026年10月1日`, `Oct 1 2026` and `1 October 2026`. A numeric
+`01/10/2026` is only read when a component above 12 settles the order; a fully ambiguous one is left
+for the traveller to restate rather than guessed at.
 
 When a key is missing, a model call fails or output is off-schema, the step falls back to validated
 deterministic output, so planning requests still complete. Schema, budget, schedule and route checks

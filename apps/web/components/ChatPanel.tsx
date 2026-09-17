@@ -47,8 +47,8 @@ export function ChatPanel({
           <div className="chat-empty">
             <h3>Where to next?</h3>
             <p>
-              Describe your destination, dates (YYYY-MM-DD), number of travellers and total budget,
-              or fill in the preferences form.
+              Describe your destination, travel dates, number of travellers and total budget, or
+              fill in the preferences form.
             </p>
             {onStart && (
               <button type="button" onClick={onStart}>

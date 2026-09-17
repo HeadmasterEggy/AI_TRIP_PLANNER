@@ -26,7 +26,7 @@ flowchart LR
 ```
 
 The LangGraph graph owns control flow, conflict checks and revision rounds; the supervisor only
-chooses which specialists to call. GPT extracts brief updates from chat, DeepSeek runs the specialists,
+chooses which specialists to call. DeepSeek handles chat extraction, the specialists and the reply,
 and any missing key or failed model call falls back to validated deterministic output, so requests
 still complete. The LangChain migration was merged in PR #10. Details:
 [architecture](docs/architecture.md).

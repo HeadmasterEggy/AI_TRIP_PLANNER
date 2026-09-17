@@ -107,6 +107,34 @@
 - `TripBrief` 契约、`packages/shared`、其余包零改动
 - `pnpm typecheck && pnpm test && pnpm build` 全过
 
+### 已落地的做法与计划的差异
+
+原计划是“在 `extractBriefPatchLocally` 里加一个支持 12 种格式的 `parseNaturalDate()`”。实际做法不同，原因值得记下：
+
+**真正的 bug 在 prompt，不在解析器。** 旧 prompt 里这两句互相矛盾：
+
+```
+Do not infer dates, nationality, group size, destination, or budget.
+Dates must be YYYY-MM-DD.
+```
+
+模型看到 `Oct 1 2026` 会判为“用户给了日期、但格式不合要求、而我又被禁止推断”→ 返回 `null`。所以模型路径需要的是
+**改 prompt**。
+
+**本地根本没走模型。** 当时 `.env.local` 里没有 `GPT_API_KEY`/`OPENAI_API_KEY`，
+`createOpenAIExtractor()` 直接返回 `undefined`，提取实际由规则解析器承担。两个环境要修的不是同一件事。
+
+**决定：只用 DeepSeek。** 提取改走 `createRoutedStructuredInvoker("itinerary", ...)`（与 specialist、supervisor
+同一套），删掉 GPT 提取器、`@langchain/openai` 直接依赖和 `GPT_*` 环境变量。实测 DeepSeek 对
+`Oct 1 to Oct 5 2026`、`2026年10月1日到10月5日`、`01/10/2026`、`~`、`two people` 全部处理正确（5/5，约 1.0–1.2s/次）。
+
+**解析器降为兵底，并去掉了猜。** 保留无 key 时可用的常见无歧义格式；
+`01/10/2026` 这种完全歧义的**不再静默猜月份**（只在有分量 >12 能定序时才解析），避免产出错误月份——
+模型路径仍按天优先解读，且在计划里展示它选的日期供用户纠正。
+
+**顺带修掉两个真 bug**（与日期格式无关）：`2个人`/`2 位`/`two people` 丢人数；中文地名没有
+`去`/`前往` 前缀就丢目的地。
+
 ---
 
 ## 2. 货币与地区格式化
