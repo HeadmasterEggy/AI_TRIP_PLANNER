@@ -1253,6 +1253,8 @@ button:not(.section__row):not(.stay-option):not(.primary):not(.trip__cta) {
 }
 .history-list {
   display: grid;
+  /* An auto track grows to a long nowrap title and pushes rows past the sidebar edge. */
+  grid-template-columns: minmax(0, 1fr);
   gap: 7px;
   margin-top: 8px;
 }
@@ -1269,8 +1271,8 @@ button:not(.section__row):not(.stay-option):not(.primary):not(.trip__cta) {
   width: 100%;
   min-height: 0 !important;
   padding: 9px !important;
-  /* Keep the title clear of the overflow trigger. */
-  padding-right: 36px !important;
+  /* Keep the title clear of the overflow trigger, which occupies the last 32px. */
+  padding-right: 46px !important;
   border: 0 !important;
   background: transparent !important;
   text-align: left;
@@ -1291,6 +1293,7 @@ button:not(.section__row):not(.stay-option):not(.primary):not(.trip__cta) {
   position: absolute;
   top: 6px;
   right: 6px;
+  /* No z-index: it would trap the open menu below the next row's trigger. */
 }
 .history-item__more {
   display: inline-grid;
