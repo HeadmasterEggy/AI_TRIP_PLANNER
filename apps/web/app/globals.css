@@ -1257,9 +1257,9 @@ button:not(.section__row):not(.stay-option):not(.primary):not(.trip__cta) {
   margin-top: 8px;
 }
 .history-item {
+  position: relative;
   border: 1px solid transparent;
   border-radius: var(--radius);
-  overflow: hidden;
 }
 .history-item--active {
   border-color: var(--accent);
@@ -1269,6 +1269,8 @@ button:not(.section__row):not(.stay-option):not(.primary):not(.trip__cta) {
   width: 100%;
   min-height: 0 !important;
   padding: 9px !important;
+  /* Keep the title clear of the overflow trigger. */
+  padding-right: 36px !important;
   border: 0 !important;
   background: transparent !important;
   text-align: left;
@@ -1285,15 +1287,64 @@ button:not(.section__row):not(.stay-option):not(.primary):not(.trip__cta) {
   color: var(--text-dim);
   font-size: 11px;
 }
-.history-item__actions {
-  display: flex;
-  gap: 4px;
-  padding: 0 8px 8px;
+.history-item__menu-wrap {
+  position: absolute;
+  top: 6px;
+  right: 6px;
 }
-.history-item__actions button {
-  min-height: 28px !important;
-  padding: 3px 6px !important;
-  font-size: 11px;
+.history-item__more {
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0 !important;
+  border-color: transparent !important;
+  border-radius: var(--radius-sm);
+  background: transparent !important;
+  color: var(--text-dim);
+  /* Revealed on hover and keyboard focus, like the chat lists this follows. */
+  opacity: 0;
+}
+.history-item:hover .history-item__more,
+.history-item__more:focus-visible,
+.history-item__more[aria-expanded="true"] {
+  opacity: 1;
+}
+.history-item__more:hover {
+  background: var(--surface) !important;
+  color: var(--text);
+}
+/* Without hover there is nothing to reveal it, so touch devices always show it. */
+@media (hover: none) {
+  .history-item__more {
+    opacity: 1;
+  }
+}
+.history-item__menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 5;
+  display: grid;
+  min-width: 132px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  box-shadow: var(--shadow-md);
+}
+.history-item__menu button {
+  min-height: 30px !important;
+  padding: 4px 8px !important;
+  border: 0 !important;
+  border-radius: var(--radius-sm);
+  background: transparent !important;
+  color: var(--text);
+  font-size: 12px;
+  text-align: left;
+}
+.history-item__menu button:hover {
+  background: var(--accent-bg) !important;
 }
 .save-state {
   color: var(--text-dim);

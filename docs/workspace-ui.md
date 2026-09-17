@@ -21,7 +21,13 @@ now. Implementation history and browser acceptance for each phase are in the
   - Collapsed icons keep `aria-label`, a tooltip and focus styles. Search, Chats and Trips expand the
     sidebar.
   - The current section is shown by background, bold text, a filled icon and a bar, plus
-    `aria-current`. History supports search, select, rename and delete.
+    `aria-current`. History supports search and select.
+  - Each conversation has an overflow trigger at its top right that opens Rename and Delete, so those
+    actions stay off the row until they are wanted. It is revealed on hover and on keyboard focus,
+    and always shown where there is no hover to reveal it. The menu is a `role="menu"` of
+    `role="menuitem"` buttons with `aria-haspopup` and `aria-expanded` on the trigger; Escape closes
+    it and returns focus to the trigger without closing an enclosing drawer, and clicking outside or
+    tabbing away closes it. Trips have no overflow menu because they have neither action.
   - The logo is `apps/web/public/brand/ai-trip-planner-logo.svg`, referenced by URL. Its alt text is
     empty next to the product name and “AI Trip Planner” when shown alone.
 - **Drawers.**

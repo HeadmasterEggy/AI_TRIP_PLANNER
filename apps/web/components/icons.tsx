@@ -93,6 +93,15 @@ export const MenuIcon = () => (
   </Icon>
 );
 
+/** The per-row overflow trigger. Named after the menu it opens, not the hamburger icon. */
+export const MoreIcon = () => (
+  <Icon>
+    <circle cx="12" cy="5.5" r="1.4" fill="currentColor" stroke="none" />
+    <circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none" />
+    <circle cx="12" cy="18.5" r="1.4" fill="currentColor" stroke="none" />
+  </Icon>
+);
+
 export const CloseIcon = () => (
   <Icon>
     <path d="M6 6l12 12M18 6 6 18" />
