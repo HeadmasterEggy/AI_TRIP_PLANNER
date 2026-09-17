@@ -1,4 +1,3 @@
-import { ChatAnthropic } from "@langchain/anthropic";
 import { ChatOpenAI } from "@langchain/openai";
 import { createRoutedChatModel } from "@trip/agents";
 import { memory } from "@trip/services";
@@ -56,14 +55,6 @@ export interface TripChatOptions extends OrchestratorOptions {
   extractor?: BriefExtractor;
   replyGenerator?: ReplyGenerator;
 }
-
-const ModelPatchSchema = z.object({
-  destination: z.string().trim().min(1).nullable(),
-  dates: z.tuple([z.string().regex(ISO_DATE), z.string().regex(ISO_DATE)]).nullable(),
-  groupSize: z.number().int().positive().nullable(),
-  budgetTotal: z.number().positive().nullable(),
-  nationality: z.string().trim().min(1).nullable(),
-});
 
 // OpenAI strict JSON Schema does not accept a tuple whose array items are
 // primitive values. Keep the public TripBrief contract unchanged and use two
@@ -217,32 +208,9 @@ function createOpenAIExtractor(): BriefExtractor | undefined {
   };
 }
 
-function createAnthropicExtractor(): BriefExtractor | undefined {
-  if (!process.env.ANTHROPIC_API_KEY) return undefined;
-  const model = new ChatAnthropic({
-    apiKey: process.env.ANTHROPIC_API_KEY,
-    model: process.env.AI_MODEL || "claude-haiku-4-5-20251001",
-    temperature: 0,
-  });
-  const structured = model.withStructuredOutput(ModelPatchSchema, {
-    name: "TripBriefPatch",
-    method: "functionCalling",
-    strict: true,
-  });
-  return {
-    async extract(message, current) {
-      const result = await structured.invoke(extractionPrompt(message, current));
-      return BriefPatchSchema.parse(
-        Object.fromEntries(Object.entries(result).filter(([, value]) => value !== null)),
-      );
-    },
-  };
-}
-
 function createLangChainExtractor(): BriefExtractor | undefined {
-  // Prefer the GPT profile for chat/intent extraction, then preserve the
-  // existing Anthropic profile for teams that still configure that provider.
-  return createOpenAIExtractor() ?? createAnthropicExtractor();
+  // GPT handles chat/intent extraction; without a key the local parser is used.
+  return createOpenAIExtractor();
 }
 
 async function extractPatch(
