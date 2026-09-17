@@ -13,6 +13,7 @@ type MapsSDK = {
   ) => {
     fitBounds(bounds: unknown): void;
     panTo(position: Coordinate): void;
+    setZoom(zoom: number): void;
   };
   LatLngBounds: new () => { extend(point: object): void; isEmpty(): boolean };
   marker: {
@@ -32,6 +33,7 @@ type LocationState =
   | { status: "success"; position: Coordinate; message: string }
   | { status: "error"; message: string };
 
+const WORLD_VIEW: Coordinate = { lat: 20, lng: 0 };
 const markerColors = ["#345948", "#9b5d32", "#315d80", "#7b4b91", "#8a6a16"];
 
 let sdk: Promise<MapsSDK> | undefined;
@@ -82,12 +84,16 @@ function coordinate(place: GooglePlace): Coordinate | undefined {
 }
 
 function fitPlaces(runtime: MapRuntime, places: GooglePlace[]) {
-  const bounds = new runtime.maps.LatLngBounds();
-  for (const place of places) {
-    const position = coordinate(place);
-    if (position) bounds.extend(position);
+  const positions = places.flatMap((place) => coordinate(place) ?? []);
+  if (!positions.length) return false;
+  if (positions.length === 1) {
+    // fitBounds on a single point zooms to the maximum level, where tiles are often blank.
+    runtime.map.panTo(positions[0]!);
+    runtime.map.setZoom(15);
+    return true;
   }
-  if (bounds.isEmpty()) return false;
+  const bounds = new runtime.maps.LatLngBounds();
+  positions.forEach((position) => bounds.extend(position));
   runtime.map.fitBounds(bounds);
   return true;
 }
@@ -111,12 +117,15 @@ export function TripMap({
   onSelect,
   routes,
   mode = "WALK",
+  viewKey,
 }: {
   places: GooglePlace[];
   selected?: string;
   onSelect(id: string): void;
   routes: RouteResult[];
   mode?: "WALK" | "TRANSIT";
+  /** Changing this (for example the active trip) fits the map to the new places once. */
+  viewKey?: string;
 }) {
   const root = useRef<HTMLDivElement>(null);
   const onSelectRef = useRef(onSelect);
@@ -130,7 +139,28 @@ export function TripMap({
   const [nearbyRoute, setNearbyRoute] = useState<
     RouteResult | { status: "loading" } | { status: "error"; error: string }
   >();
+  const routeRequest = useRef<AbortController | null>(null);
   const mappedPlaces = places.filter((place) => coordinate(place));
+
+  const hasPlaces = mappedPlaces.length > 0;
+  useEffect(() => {
+    initialFitComplete.current = false;
+    // A conversation without places must not keep showing the previous trip's region.
+    if (runtime && !hasPlaces) {
+      runtime.map.panTo(WORLD_VIEW);
+      runtime.map.setZoom(2);
+    }
+    // Only reset when the conversation changes, not whenever places load.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewKey, runtime]);
+
+  // A route estimate belongs to one selected place; never show it for another.
+  useEffect(() => {
+    routeRequest.current?.abort();
+    routeRequest.current = null;
+    setNearbyRoute(undefined);
+  }, [selected, viewKey]);
+  useEffect(() => () => routeRequest.current?.abort(), []);
 
   useEffect(() => {
     onSelectRef.current = onSelect;
@@ -145,8 +175,11 @@ export function TripMap({
       .then((maps) => {
         if (disposed || !root.current) return;
         const map = new maps.Map(root.current, {
-          center: { lat: 0, lng: 0 },
+          center: WORLD_VIEW,
           zoom: 2,
+          // Our map controls sit top-left; Google's map-type toggle would be hidden beneath them.
+          mapTypeControl: false,
+          streetViewControl: false,
           mapId: process.env.NEXT_PUBLIC_GOOGLE_MAPS_MAP_ID || "DEMO_MAP_ID",
         });
         setRuntime({ maps, map });
@@ -274,9 +307,13 @@ export function TripMap({
 
   const routeFromLocation = useCallback(async () => {
     if (location.status !== "success" || !selected) return;
+    routeRequest.current?.abort();
+    const controller = new AbortController();
+    routeRequest.current = controller;
     setNearbyRoute({ status: "loading" });
     try {
       const response = await fetch("/api/routes/from-location", {
+        signal: controller.signal,
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -288,8 +325,9 @@ export function TripMap({
       });
       const body = await response.json();
       if (!response.ok) throw new Error(body.error ?? "Route lookup failed.");
-      setNearbyRoute(body as RouteResult);
+      if (!controller.signal.aborted) setNearbyRoute(body as RouteResult);
     } catch (cause) {
+      if (controller.signal.aborted) return;
       setNearbyRoute({
         status: "error",
         error: cause instanceof Error ? cause.message : "Route lookup failed.",
@@ -384,9 +422,6 @@ export function TripMap({
             </div>
           )}
         </div>
-      )}
-      {!error && mappedPlaces.length === 0 && (
-        <p className="trip-map-empty">Add or verify an activity place to show it on the map.</p>
       )}
     </section>
   );

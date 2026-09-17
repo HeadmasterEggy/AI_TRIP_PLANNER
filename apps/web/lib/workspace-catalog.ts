@@ -1,4 +1,15 @@
-import { parseSnapshot, type Message, type Snapshot } from "./workspace";
+import type { TripPlan } from "@trip/shared";
+import {
+  CURRENT_KEY,
+  SAVED_KEY,
+  blankDraft,
+  isDraft,
+  parseSaved,
+  parseSnapshot,
+  type Draft,
+  type Message,
+  type Snapshot,
+} from "./workspace";
 
 /** Storage key for the multi-chat/multi-trip workspace catalog. */
 export const CATALOG_KEY = "trip-workspace-catalog-v3";
@@ -15,6 +26,8 @@ export type ConversationRecord = {
   input: string;
   renamed?: boolean;
   snapshot?: Snapshot;
+  /** Unfinished preferences of a conversation that has not produced a trip yet. */
+  draft?: Draft;
 };
 
 export type TripRecord = {
@@ -235,6 +248,8 @@ function parseConversation(value: unknown): ConversationRecord {
   if (value.renamed !== undefined && typeof value.renamed !== "boolean")
     throw new Error("Workspace conversation title state is invalid.");
   const snapshot = value.snapshot === undefined ? undefined : parseSnapshot(value.snapshot);
+  if (value.draft !== undefined && !isDraft(value.draft))
+    throw new Error("Workspace conversation form is invalid.");
   return {
     id: value.id,
     title: value.title,
@@ -244,6 +259,7 @@ function parseConversation(value: unknown): ConversationRecord {
     input: value.input,
     ...(value.renamed ? { renamed: true } : {}),
     ...(snapshot ? { snapshot } : {}),
+    ...(value.draft === undefined ? {} : { draft: clone(value.draft) as Draft }),
   };
 }
 
@@ -305,6 +321,7 @@ export function upsertConversationDraft(
   catalog: WorkspaceCatalog,
   conversation: Pick<ConversationRecord, "id" | "messages" | "input"> & {
     title?: string;
+    draft?: Draft;
   },
 ): WorkspaceCatalog {
   const next = parseCatalog(catalog);
@@ -316,6 +333,7 @@ export function upsertConversationDraft(
     updatedAt: now,
     messages: clone(conversation.messages),
     input: conversation.input,
+    draft: clone(conversation.draft ?? blankDraft()),
   };
   if (existing >= 0) {
     const previous = next.conversations[existing];
@@ -366,4 +384,104 @@ export function updateCatalog(
       trip: { ...next.layout.trip, ...patch.layout.trip },
     });
   return next;
+}
+
+/** Everything the workspace needs for its first render, read from one storage pass. */
+export type RestoredWorkspace = {
+  /** Undefined for a blank conversation, or when nothing is stored yet. */
+  plan?: TripPlan;
+  draft: Draft;
+  messages?: Message[];
+  input: string;
+  previousTotal?: number;
+  saved: Snapshot[];
+  catalog: WorkspaceCatalog;
+  conversationId?: string;
+  /** True when the active conversation has not produced a trip. */
+  blank: boolean;
+  storageEnabled: boolean;
+  storageError?: string;
+  notice?: string;
+};
+
+/**
+ * Restore the active conversation and trip. Reading never writes: unreadable data stays
+ * in storage and is reported so the user can decide whether to replace it.
+ */
+export function restoreWorkspace(storage: Pick<Storage, "getItem">): RestoredWorkspace {
+  const result: RestoredWorkspace = {
+    draft: blankDraft(),
+    input: "",
+    saved: [],
+    catalog: createCatalog(),
+    blank: false,
+    storageEnabled: true,
+  };
+  let current: Snapshot | undefined;
+  try {
+    const raw = storage.getItem(CURRENT_KEY);
+    if (raw) {
+      current = parseSnapshot(JSON.parse(raw));
+      Object.assign(result, {
+        plan: current.plan,
+        draft: current.draft,
+        messages: current.messages,
+        input: current.input,
+        previousTotal: current.previousTotal,
+        conversationId: `conversation:${current.id}`,
+        notice: "Restored your workspace from this browser.",
+      });
+    }
+  } catch {
+    result.storageEnabled = false;
+    result.storageError =
+      "Your last workspace could not be restored. Current edits are kept in this tab. Retry storage or explicitly replace the unreadable workspace.";
+  }
+  try {
+    result.saved = parseSaved(storage.getItem(SAVED_KEY));
+  } catch {
+    result.storageError ??=
+      "Saved trips could not be read. Existing stored data has been kept; you can retry from Saved trips.";
+  }
+  try {
+    const catalog = parseCatalog(storage.getItem(CATALOG_KEY), current, result.saved);
+    result.catalog = catalog;
+    const trip = catalog.trips.find((item) => item.id === catalog.activeTripId);
+    const conversation = catalog.conversations.find(
+      (item) => item.id === catalog.activeConversationId,
+    );
+    if (trip) {
+      Object.assign(result, {
+        plan: trip.snapshot.plan,
+        draft: trip.snapshot.draft,
+        previousTotal: trip.snapshot.previousTotal,
+      });
+    }
+    if (conversation) {
+      result.conversationId = conversation.id;
+      result.messages = conversation.messages;
+      result.input = conversation.input;
+      if (!conversation.tripId && !conversation.snapshot) {
+        // A blank conversation owns no trip: nothing from CURRENT_KEY or the demo may leak in.
+        Object.assign(result, {
+          plan: undefined,
+          previousTotal: undefined,
+          draft: conversation.draft ?? blankDraft(),
+          blank: true,
+          notice: undefined,
+        });
+      } else if (conversation.snapshot && !trip) {
+        Object.assign(result, {
+          plan: conversation.snapshot.plan,
+          draft: conversation.snapshot.draft,
+          previousTotal: conversation.snapshot.previousTotal,
+        });
+      }
+    }
+  } catch {
+    result.storageEnabled = false;
+    result.storageError =
+      "Workspace history could not be read. Existing stored data was kept and the current trip remains available.";
+  }
+  return result;
 }

@@ -4,17 +4,21 @@ import { TripPlan, type AgentProgressEvent, type ChatRequest } from "@trip/share
 import { FiltersPanel } from "./FiltersPanel";
 import { ChatPanel } from "./ChatPanel";
 import { TripEditor } from "./TripEditor";
-import { TripMap } from "./TripMap";
-import { TripPanel } from "./TripPanel";
+import { TripMapCanvas } from "./TripMapCanvas";
+import { TripPanel, pendingDecisions, tripStatus, type TripTab } from "./TripPanel";
 import { CheckpointCards, type Decision } from "./CheckpointCards";
 import { Header, type Navigation } from "./Header";
 import { Dialog } from "./Dialog";
+import { Drawer } from "./Drawer";
 import { WorkspaceSkeleton } from "./WorkspaceSkeleton";
 import { WorkspaceSidebar } from "./WorkspaceSidebar";
+import { useTripPlaces } from "./useTripPlaces";
+import type { RouteResult } from "@/lib/google";
 import {
   identifyActivities,
   CURRENT_KEY,
   SAVED_KEY,
+  blankDraft,
   draftFor,
   money,
   parseDraft,
@@ -26,35 +30,35 @@ import {
 } from "@/lib/workspace";
 import {
   CATALOG_KEY,
-  createCatalog,
-  parseCatalog,
+  restoreWorkspace,
   searchCatalog,
   serializeCatalog,
   updateCatalog,
   upsertConversationDraft,
   upsertCurrent,
+  type RestoredWorkspace,
   type WorkspaceCatalog,
 } from "@/lib/workspace-catalog";
 
 type Task =
   { kind: "chat"; request: ChatRequest } | { kind: "decision"; plan: TripPlan; decision: Decision };
+type MobileView = "history" | "preferences" | "chat" | "map" | "trip";
 const seed: Message[] = [
   {
     role: "agent",
     text: "Edit your trip preferences or tell me what to change. Review the decisions when your plan is ready.",
   },
 ];
-const blankDraft = (): ReturnType<typeof draftFor> => ({
-  destination: "",
-  start: "",
-  end: "",
-  groupSize: "",
-  budgetTotal: "",
-  nationality: "",
-  roomAllocation: "shared",
-  minRating: "",
-  freeCancellation: false,
-});
+const STORAGE_FULL =
+  "Browser storage is unavailable or full. Your current plan is still in this tab. Retry after freeing space.";
+
+function readableStorage(): Pick<Storage, "getItem"> {
+  try {
+    return window.localStorage;
+  } catch {
+    return { getItem: () => null };
+  }
+}
 
 export function Workspace({
   initialPlan,
@@ -63,24 +67,22 @@ export function Workspace({
   initialPlan?: TripPlan;
   initialError?: string;
 }) {
-  const [loadedPlan, setLoadedPlan] = useState(() =>
-    initialPlan ? identifyActivities(initialPlan) : undefined,
-  );
+  const [restored, setRestored] = useState<RestoredWorkspace>();
   const [loadError, setLoadError] = useState("");
   const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
-    if (initialPlan) return;
-    // Resolve storage before requesting the demo. The content component restores
-    // the complete snapshot, including unfinished drafts and conversation input.
-    try {
-      const raw = localStorage.getItem(CURRENT_KEY);
-      if (raw) {
-        setLoadedPlan(parseSnapshot(JSON.parse(raw)).plan);
-        return;
-      }
-    } catch {
-      // Preserve unreadable storage; the content component reports the problem.
+    // Resolve storage before anything renders so a blank conversation never flashes a
+    // previous trip, and the demo is requested only when nothing is stored.
+    const state = restoreWorkspace(readableStorage());
+    if (state.plan || state.blank) {
+      setRestored(state);
+      return;
+    }
+    if (initialPlan) {
+      const plan = identifyActivities(initialPlan);
+      setRestored({ ...state, plan, draft: draftFor(plan.brief) });
+      return;
     }
     const controller = new AbortController();
     setLoadError("");
@@ -92,8 +94,9 @@ export function Workspace({
         });
         if (!response.ok) throw new Error("Unable to load the initial trip.");
         const body = await response.json();
-        const next = TripPlan.parse(body.plan);
-        if (!controller.signal.aborted) setLoadedPlan(next);
+        const next = identifyActivities(TripPlan.parse(body.plan));
+        if (!controller.signal.aborted)
+          setRestored({ ...state, plan: next, draft: draftFor(next.brief) });
       } catch {
         if (!controller.signal.aborted)
           setLoadError("The initial trip could not be loaded. Please retry planning.");
@@ -103,10 +106,10 @@ export function Workspace({
     return () => controller.abort();
   }, [initialPlan, attempt]);
 
-  if (loadedPlan) return <WorkspaceContent initialPlan={loadedPlan} initialError={initialError} />;
+  if (restored) return <WorkspaceContent restored={restored} initialError={initialError} />;
 
   return (
-    <>
+    <div className="workspace-app">
       <Header />
       {loadError ? (
         <main className="workspace-notices">
@@ -118,23 +121,24 @@ export function Workspace({
       ) : (
         <WorkspaceSkeleton />
       )}
-    </>
+    </div>
   );
 }
 
 function WorkspaceContent({
-  initialPlan,
+  restored,
   initialError,
 }: {
-  initialPlan: TripPlan;
+  restored: RestoredWorkspace;
   initialError?: string;
 }) {
-  const [plan, setPlan] = useState(() => identifyActivities(initialPlan));
-  const [draft, setDraft] = useState(() => draftFor(initialPlan.brief));
-  const [messages, setMessages] = useState<Message[]>(seed);
-  const [input, setInput] = useState("");
-  const [previousTotal, setPreviousTotal] = useState<number>();
-  const [editorView, setEditorView] = useState<"overview" | "timeline" | "map">("map");
+  const [plan, setPlan] = useState<TripPlan | undefined>(restored.plan);
+  const [draft, setDraft] = useState(restored.draft);
+  const [messages, setMessages] = useState<Message[]>(
+    () => restored.messages ?? (restored.blank ? [] : seed),
+  );
+  const [input, setInput] = useState(restored.input);
+  const [previousTotal, setPreviousTotal] = useState(restored.previousTotal);
   const [editPending, setEditPending] = useState(false);
   const [busy, setBusy] = useState(false);
   const [activity, setActivity] = useState<AgentProgressEvent[]>([]);
@@ -142,245 +146,179 @@ function WorkspaceContent({
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [retry, setRetry] = useState<Task>();
   const [dialog, setDialog] = useState<Navigation | "review">();
-  const [saved, setSaved] = useState<Snapshot[]>([]);
-  const [storageError, setStorageError] = useState("");
-  const [notice, setNotice] = useState("");
-  const [ready, setReady] = useState(false);
-  const [storageEnabled, setStorageEnabled] = useState(true);
+  const [saved, setSaved] = useState<Snapshot[]>(restored.saved);
+  const [storageError, setStorageError] = useState(restored.storageError ?? "");
+  const [notice, setNotice] = useState(restored.notice ?? "");
+  const [storageEnabled, setStorageEnabled] = useState(restored.storageEnabled);
   const [saveState, setSaveState] = useState<"saving" | "saved" | "failed">("saved");
-  const [catalog, setCatalog] = useState<WorkspaceCatalog>(() => createCatalog());
+  const [catalog, setCatalog] = useState<WorkspaceCatalog>(restored.catalog);
   const catalogRef = useRef(catalog);
   const [historyQuery, setHistoryQuery] = useState("");
   const [preferencesOpen, setPreferencesOpen] = useState(false);
   const [tripOpen, setTripOpen] = useState(false);
-  const [preferencesWidth, setPreferencesWidth] = useState(280);
-  const [tripWidth, setTripWidth] = useState(390);
-  const [freshChat, setFreshChat] = useState(false);
-  const [mobileView, setMobileView] = useState<"history" | "preferences" | "chat" | "map" | "trip">(
-    "chat",
+  const [tripTab, setTripTab] = useState<TripTab>(
+    restored.catalog.layout.editorView === "timeline" ? "timeline" : "overview",
   );
-  const activeConversation = useRef(`conversation:${crypto.randomUUID()}`);
+  const [mobileView, setMobileView] = useState<MobileView>(restored.catalog.layout.view);
+  const [selectedActivity, setSelectedActivity] = useState<string>();
+  const [mapRoutes, setMapRoutes] = useState<RouteResult[]>([]);
+  const activeConversation = useRef(
+    restored.conversationId ?? `conversation:${crypto.randomUUID()}`,
+  );
+  // The trip ID a blank conversation will use once it produces its first plan.
   const freshTripId = useRef(crypto.randomUUID());
-
-  useEffect(() => {
-    catalogRef.current = catalog;
-  }, [catalog]);
+  const planRef = useRef(plan);
+  planRef.current = plan;
   const active = useRef<AbortController | null>(null);
   const left = useRef<HTMLDivElement>(null);
   const preferencesToggle = useRef<HTMLButtonElement>(null);
   const tripToggle = useRef<HTMLButtonElement>(null);
+  const tripPlaces = useTripPlaces(plan);
+  const blank = !plan;
 
-  // Restore after hydration; never overwrite unreadable data automatically.
   useEffect(() => {
-    let restoredCurrent: Snapshot | undefined;
-    let restoredSaved: Snapshot[] = [];
-    try {
-      const raw = localStorage.getItem(CURRENT_KEY);
-      if (raw) {
-        const restored = parseSnapshot(JSON.parse(raw));
-        restoredCurrent = restored;
-        setPlan(restored.plan);
-        setDraft(restored.draft);
-        setMessages(restored.messages);
-        setInput(restored.input);
-        setPreviousTotal(restored.previousTotal);
-        setError("");
-        setNotice("Restored your workspace from this browser.");
-      }
-    } catch {
-      setStorageError(
-        "Your last workspace could not be restored. Current edits are kept in this tab. Retry storage or explicitly replace the unreadable workspace.",
-      );
-      setStorageEnabled(false);
-    }
-    try {
-      restoredSaved = parseSaved(localStorage.getItem(SAVED_KEY));
-      setSaved(restoredSaved);
-    } catch {
-      setStorageError(
-        "Saved trips could not be read. Existing stored data has been kept; you can retry from Saved trips.",
-      );
-    }
-    try {
-      const nextCatalog = parseCatalog(
-        localStorage.getItem(CATALOG_KEY),
-        restoredCurrent,
-        restoredSaved,
-      );
-      setCatalog(nextCatalog);
-      if (nextCatalog.activeConversationId)
-        activeConversation.current = nextCatalog.activeConversationId;
-      setPreferencesOpen(false);
-      setTripOpen(false);
-      setPreferencesWidth(nextCatalog.layout.preferences.width);
-      setTripWidth(nextCatalog.layout.trip.width);
-      setMobileView(nextCatalog.layout.view);
-      setEditorView(nextCatalog.layout.editorView);
-      const activeTrip = nextCatalog.trips.find((item) => item.id === nextCatalog.activeTripId);
-      const activeChat = nextCatalog.conversations.find(
-        (item) => item.id === nextCatalog.activeConversationId,
-      );
-      if (activeTrip) {
-        const restored = activeTrip.snapshot;
-        setPlan(restored.plan);
-        setDraft(restored.draft);
-        setPreviousTotal(restored.previousTotal);
-      }
-      if (activeChat) {
-        setMessages(activeChat.messages);
-        setInput(activeChat.input);
-        if (!activeChat.tripId && !activeChat.snapshot) {
-          setFreshChat(true);
-          setDraft(blankDraft());
-          freshTripId.current = crypto.randomUUID();
-        }
-      }
-    } catch {
-      setStorageError(
-        "Workspace history could not be read. Existing stored data was kept and the current trip remains available.",
-      );
-      setStorageEnabled(false);
-    }
-    setReady(true);
-    return () => {
+    catalogRef.current = catalog;
+  }, [catalog]);
+  useEffect(
+    () => () => {
       active.current?.abort();
       active.current = null;
-    };
-  }, []);
+    },
+    [],
+  );
 
+  // Debounced autosave of the active conversation (and its trip, once one exists).
+  const pendingSave = useRef<(() => void) | null>(null);
   useEffect(() => {
-    if (!ready || !storageEnabled) return;
+    if (!storageEnabled) return;
+    const conversationId = activeConversation.current;
     setSaveState("saving");
-    const timer = window.setTimeout(() => {
+    const persist = () => {
+      pendingSave.current = null;
       try {
-        if (freshChat) {
-          const nextCatalog = upsertConversationDraft(catalogRef.current, {
-            id: activeConversation.current,
+        let nextCatalog: WorkspaceCatalog;
+        if (!plan) {
+          nextCatalog = upsertConversationDraft(catalogRef.current, {
+            id: conversationId,
             messages,
             input,
+            draft,
           });
-          localStorage.setItem(CATALOG_KEY, serializeCatalog(nextCatalog));
-          setCatalog(nextCatalog);
-          setSaveState("saved");
-          return;
+        } else {
+          const current = {
+            version: 2,
+            id: conversationId.replace(/^conversation:/, ""),
+            savedAt: new Date().toISOString(),
+            plan,
+            draft,
+            messages,
+            input,
+            previousTotal,
+          } satisfies Snapshot;
+          nextCatalog = upsertCurrent(catalogRef.current, current, messages);
+          localStorage.setItem(CURRENT_KEY, JSON.stringify(current));
         }
-        const id = activeConversation.current.replace(/^conversation:/, "");
-        const current = {
-          version: 2,
-          id,
-          savedAt: new Date().toISOString(),
-          plan,
-          draft,
-          messages,
-          input,
-          previousTotal,
-        } satisfies Snapshot;
-        const nextCatalog = upsertCurrent(catalogRef.current, current, messages);
-        localStorage.setItem(CURRENT_KEY, JSON.stringify(current));
         localStorage.setItem(CATALOG_KEY, serializeCatalog(nextCatalog));
+        catalogRef.current = nextCatalog;
         setCatalog(nextCatalog);
         setSaveState("saved");
       } catch {
         setStorageEnabled(false);
         setSaveState("failed");
-        setStorageError(
-          "Browser storage is unavailable or full. Your current plan is still in this tab. Retry after freeing space.",
-        );
+        setStorageError(STORAGE_FULL);
       }
-    }, 350);
-    return () => window.clearTimeout(timer);
-  }, [
-    ready,
-    storageEnabled,
-    plan,
-    draft,
-    messages,
-    input,
-    previousTotal,
-    preferencesOpen,
-    tripOpen,
-    preferencesWidth,
-    tripWidth,
-    mobileView,
-    editorView,
-    freshChat,
-  ]);
+    };
+    pendingSave.current = persist;
+    const timer = window.setTimeout(persist, 350);
+    return () => {
+      window.clearTimeout(timer);
+      if (pendingSave.current === persist) pendingSave.current = null;
+    };
+  }, [storageEnabled, plan, draft, messages, input, previousTotal]);
 
   useEffect(() => {
-    if (!ready || !storageEnabled) return;
+    if (!storageEnabled) return;
     try {
       localStorage.setItem(CATALOG_KEY, serializeCatalog(catalog));
     } catch {
       setSaveState("failed");
       setStorageEnabled(false);
-      setStorageError(
-        "Browser storage is unavailable or full. Your current plan is still in this tab. Retry after freeing space.",
-      );
+      setStorageError(STORAGE_FULL);
     }
-  }, [catalog, ready, storageEnabled]);
+  }, [catalog, storageEnabled]);
 
   useEffect(() => {
     setCatalog((current) =>
       updateCatalog(current, {
         layout: {
-          preferences: { open: preferencesOpen, width: preferencesWidth },
-          trip: { open: tripOpen, width: tripWidth },
+          preferences: { ...current.layout.preferences, open: preferencesOpen },
+          trip: { ...current.layout.trip, open: tripOpen },
           view: mobileView === "history" || mobileView === "preferences" ? "chat" : mobileView,
-          editorView,
+          editorView: tripTab,
         },
       }),
     );
-  }, [preferencesOpen, tripOpen, preferencesWidth, tripWidth, mobileView, editorView]);
+  }, [preferencesOpen, tripOpen, mobileView, tripTab]);
 
-  useEffect(() => {
-    const closePanel = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
-      if (tripOpen) {
-        setTripOpen(false);
-        tripToggle.current?.focus();
-      } else if (preferencesOpen) {
-        setPreferencesOpen(false);
-        preferencesToggle.current?.focus();
-      }
-    };
-    window.addEventListener("keydown", closePanel);
-    return () => window.removeEventListener("keydown", closePanel);
-  }, [preferencesOpen, tripOpen]);
-
-  function edit() {
-    setEditorView("overview");
-    setDialog(undefined);
-    setTripOpen(false);
-    setPreferencesOpen(true);
-    requestAnimationFrame(() => {
-      left.current?.scrollIntoView({ block: "start" });
-      left.current?.querySelector<HTMLInputElement>("input")?.focus();
-    });
-  }
-  function restore(snapshot: Snapshot) {
+  /** Stop in-flight work and clear state that belongs to the previous chat or trip. */
+  function resetTransient() {
+    // Persist the outgoing conversation now; its debounced save would otherwise be dropped.
+    pendingSave.current?.();
     active.current?.abort();
     active.current = null;
     setBusy(false);
-    setPlan(snapshot.plan);
-    setDraft(snapshot.draft);
-    setMessages(snapshot.messages);
-    setInput(snapshot.input);
-    setPreviousTotal(snapshot.previousTotal);
     setActivity([]);
     setError("");
     setErrors({});
     setRetry(undefined);
     setDialog(undefined);
+    setSelectedActivity(undefined);
+    setMapRoutes([]);
+  }
+  function applySnapshot(snapshot: Snapshot) {
+    setPlan(snapshot.plan);
+    setDraft(snapshot.draft);
+    setMessages(snapshot.messages);
+    setInput(snapshot.input);
+    setPreviousTotal(snapshot.previousTotal);
+  }
+  function openPreferences() {
+    setDialog(undefined);
+    setTripOpen(false);
+    setPreferencesOpen(true);
+    setMobileView("preferences");
+  }
+  function closePreferences() {
+    setPreferencesOpen(false);
+    setMobileView((view) => (view === "preferences" ? "chat" : view));
+  }
+  function openTrip() {
+    setPreferencesOpen(false);
+    setTripOpen(true);
+    setMobileView("trip");
+  }
+  function closeTrip() {
+    setTripOpen(false);
+    setMobileView((view) => (view === "trip" ? "chat" : view));
+  }
+  function edit() {
+    openPreferences();
+    requestAnimationFrame(() => {
+      left.current?.querySelector<HTMLInputElement>("input")?.focus({ preventScroll: true });
+    });
+  }
+  function restore(snapshot: Snapshot) {
+    resetTransient();
+    applySnapshot(snapshot);
     activeConversation.current = `conversation:${snapshot.id}`;
     setNotice("Trip restored. Future edits are saved to your current workspace.");
-    setFreshChat(false);
   }
-  function snapshot(): Snapshot {
+  function snapshot(current: TripPlan): Snapshot {
     return {
       version: 2,
       id: activeConversation.current.replace(/^conversation:/, ""),
       savedAt: new Date().toISOString(),
-      plan,
+      plan: current,
       draft,
       messages,
       input,
@@ -388,13 +326,13 @@ function WorkspaceContent({
     };
   }
   function save() {
-    if (freshChat) {
+    if (!plan) {
       setNotice("Add trip details before saving a trip.");
       return;
     }
     try {
       const current = parseSaved(localStorage.getItem(SAVED_KEY));
-      const next = [{ ...snapshot(), id: crypto.randomUUID() }, ...current];
+      const next = [{ ...snapshot(plan), id: crypto.randomUUID() }, ...current];
       localStorage.setItem(SAVED_KEY, JSON.stringify(next));
       setSaved(next);
       setNotice("Saved a copy of this trip in this browser.");
@@ -437,6 +375,7 @@ function WorkspaceContent({
           if (active.current === controller) setActivity((events) => [...events, event]);
         });
         next = result.plan;
+        // A New chat or history switch replaced this request; its answer belongs nowhere.
         if (active.current !== controller) return;
         setMessages((current) => [...current, { role: "agent", text: result.reply }]);
         setInput("");
@@ -452,11 +391,14 @@ function WorkspaceContent({
         next = TripPlan.parse(body.plan);
         if (active.current !== controller) return;
       }
-      if (task.kind === "chat" || next.estTotal !== plan.estTotal) setPreviousTotal(plan.estTotal);
+      const before = planRef.current;
+      if (task.kind === "chat" || next.estTotal !== before?.estTotal)
+        setPreviousTotal(before?.estTotal);
       setPlan(identifyActivities(next));
       if (task.kind === "chat") {
         setDraft(draftFor(next.brief));
-        setFreshChat(false);
+        setSelectedActivity(undefined);
+        setMapRoutes([]);
       }
       setErrors({});
       if (task.kind === "decision" && task.decision.action === "reject") edit();
@@ -475,7 +417,7 @@ function WorkspaceContent({
   }
   function submit() {
     if (active.current) return;
-    const parsed = parseDraft(draft, plan.brief);
+    const parsed = parseDraft(draft, plan?.brief ?? { tripId: freshTripId.current });
     if (!parsed.success) {
       const fields: Record<string, string> = {};
       for (const issue of parsed.error.issues) fields[String(issue.path[0])] ??= issue.message;
@@ -485,7 +427,7 @@ function WorkspaceContent({
       return;
     }
     setErrors({});
-    const brief = freshChat ? { ...parsed.data, tripId: freshTripId.current } : parsed.data;
+    const brief = parsed.data;
     const message = `Plan ${brief.destination}, ${brief.dates.join(" to ")}, ${brief.groupSize} travellers, ${money(brief.budgetTotal)} total, with the submitted accommodation preferences.`;
     setMessages((current) => [...current, { role: "user", text: message }]);
     void run({
@@ -494,17 +436,18 @@ function WorkspaceContent({
     });
   }
   function send() {
-    if (!input.trim() || active.current) return;
-    setMessages((current) => [...current, { role: "user", text: input.trim() }]);
+    const message = input.trim();
+    if (!message || active.current) return;
+    setMessages((current) => [...current, { role: "user", text: message }]);
     void run({
       kind: "chat",
-      request: freshChat
-        ? { tripId: freshTripId.current, message: input.trim() }
-        : { tripId: plan.tripId, message: input.trim(), brief: plan.brief },
+      request: plan
+        ? { tripId: plan.tripId, message, brief: plan.brief }
+        : { tripId: freshTripId.current, mode: "start", message },
     });
   }
   const onDecision = (decision: Decision) => {
-    void run({ kind: "decision", plan, decision });
+    if (plan) void run({ kind: "decision", plan, decision });
   };
   const filteredHistory = useMemo(
     () => searchCatalog(catalog, historyQuery),
@@ -515,7 +458,7 @@ function WorkspaceContent({
     title: item.title,
     subtitle: item.tripId
       ? (catalog.trips.find((trip) => trip.id === item.tripId)?.title ?? "Linked trip")
-      : "No linked trip",
+      : "No trip yet",
     updatedAt: item.updatedAt,
     active: item.id === catalog.activeConversationId,
   }));
@@ -530,67 +473,79 @@ function WorkspaceContent({
         : item.status === "confirmed"
           ? ("Confirmed" as const)
           : ("Draft" as const),
-    active: item.id === catalog.activeTripId,
+    active: !blank && item.id === catalog.activeTripId,
   }));
   function selectConversation(id: string) {
     const conversation = catalog.conversations.find((item) => item.id === id);
     if (!conversation) return;
-    active.current?.abort();
-    active.current = null;
-    const linkedTrip = catalog.trips.find((item) => item.id === conversation.tripId);
-    if (conversation.snapshot) restore(conversation.snapshot);
-    else if (linkedTrip) restore(linkedTrip.snapshot);
+    resetTransient();
+    const source =
+      conversation.snapshot ??
+      catalog.trips.find((item) => item.id === conversation.tripId)?.snapshot;
+    if (source) applySnapshot(source);
     else {
-      setFreshChat(true);
-      setDraft(blankDraft());
-      setActivity([]);
-      setError("");
+      setPlan(undefined);
+      setDraft(conversation.draft ?? blankDraft());
+      setPreviousTotal(undefined);
       freshTripId.current = crypto.randomUUID();
     }
     activeConversation.current = id;
     setMessages(conversation.messages);
     setInput(conversation.input);
-    setCatalog((current) =>
-      updateCatalog(current, {
+    setNotice("");
+    setCatalog((current) => {
+      const next = updateCatalog(current, {
         activeConversationId: id,
         ...(conversation.tripId ? { activeTripId: conversation.tripId } : {}),
-      }),
-    );
+      });
+      if (!conversation.tripId) delete next.activeTripId;
+      return next;
+    });
     setMobileView("chat");
   }
   function selectTrip(id: string) {
     const trip = catalog.trips.find((item) => item.id === id);
     if (!trip) return;
-    restore(trip.snapshot);
+    resetTransient();
+    applySnapshot(trip.snapshot);
     const conversationId = trip.conversationIds.at(-1);
     const conversation = catalog.conversations.find((item) => item.id === conversationId);
+    activeConversation.current = conversation?.id ?? `conversation:${trip.snapshot.id}`;
     if (conversation) {
-      activeConversation.current = conversation.id;
       setMessages(conversation.messages);
       setInput(conversation.input);
     }
+    setNotice("");
     setCatalog((current) =>
       updateCatalog(current, {
         activeTripId: id,
-        ...(conversationId ? { activeConversationId: conversationId } : {}),
+        ...(conversation ? { activeConversationId: conversation.id } : {}),
       }),
     );
     setMobileView("trip");
   }
   function newChat() {
-    active.current?.abort();
-    active.current = null;
+    resetTransient();
     const id = `conversation:${crypto.randomUUID()}`;
     activeConversation.current = id;
     freshTripId.current = crypto.randomUUID();
-    setFreshChat(true);
+    setPlan(undefined);
     setDraft(blankDraft());
     setMessages([]);
     setInput("");
-    setActivity([]);
-    setError("");
-    setCatalog((current) => upsertConversationDraft(current, { id, messages: [], input: "" }));
+    setPreviousTotal(undefined);
+    setNotice("");
+    setPreferencesOpen(false);
+    setTripOpen(false);
+    setCatalog((current) =>
+      upsertConversationDraft(current, { id, messages: [], input: "", draft: blankDraft() }),
+    );
     setMobileView("chat");
+    requestAnimationFrame(() =>
+      document
+        .querySelector<HTMLInputElement>('[aria-label="Message AI Trip Planner"]')
+        ?.focus({ preventScroll: true }),
+    );
   }
   function renameChat(id: string) {
     const existing = catalog.conversations.find((item) => item.id === id);
@@ -622,6 +577,7 @@ function WorkspaceContent({
     }));
     if (activeConversation.current === id) newChat();
   }
+  const pending = pendingDecisions(plan);
   const dialogTitle =
     dialog === "review"
       ? "Review plan"
@@ -633,7 +589,7 @@ function WorkspaceContent({
             ? "Language"
             : "Local account";
   return (
-    <>
+    <div className="workspace-app">
       <Header
         onNavigate={(page) => {
           if (page === "saved") loadSaved();
@@ -648,7 +604,7 @@ function WorkspaceContent({
               <button disabled={busy} onClick={() => void run(retry)}>
                 Retry update
               </button>
-            ) : initialError && !plan.sections.length ? (
+            ) : initialError && plan && !plan.sections.length ? (
               <button disabled={busy} onClick={submit}>
                 Retry planning
               </button>
@@ -711,148 +667,148 @@ function WorkspaceContent({
           onDeleteChat={deleteChat}
           saveState={saveState}
         />
-        <div className="workspace-floating-actions">
-          <button
-            ref={preferencesToggle}
-            aria-label="Open trip preferences"
-            aria-expanded={preferencesOpen}
-            onClick={() => {
-              setTripOpen(false);
-              setPreferencesOpen(true);
-            }}
-          >
-            Preferences
-          </button>
-          <button
-            ref={tripToggle}
-            className="trip-trigger"
-            aria-label="Open your trip"
-            aria-expanded={tripOpen}
-            onClick={() => {
-              setPreferencesOpen(false);
-              setTripOpen(true);
-            }}
-          >
-            <span aria-hidden="true">▣</span> Trip
-            {!freshChat && plan.hitl.filter((item) => item.status !== "approved").length > 0 && (
-              <span className="trip-trigger__count">
-                {plan.hitl.filter((item) => item.status !== "approved").length}
-              </span>
-            )}
-          </button>
-        </div>
-        {(preferencesOpen || tripOpen) && (
-          <button
-            className="workspace-drawer-backdrop"
-            aria-label="Close open panel"
-            onClick={() => {
-              setPreferencesOpen(false);
-              setTripOpen(false);
-            }}
-          />
-        )}
-        <section
-          className={`workspace-panel workspace-panel--preferences${preferencesOpen ? " is-open" : ""}`}
-          aria-label="Trip preferences panel"
-          role="dialog"
-          aria-modal={preferencesOpen}
-          aria-hidden={!preferencesOpen}
-          inert={!preferencesOpen}
-        >
-          <button
-            className="workspace-panel__toggle"
-            aria-label="Close trip preferences"
-            onClick={() => {
-              setPreferencesOpen(false);
-              preferencesToggle.current?.focus();
-            }}
-          >
-            ×
-          </button>
-          <div ref={left} className="filter-container">
-            <FiltersPanel
-              draft={draft}
-              onChange={setDraft}
-              onSubmit={submit}
-              busy={busy || !ready || editPending}
-              errors={errors}
-            />
-          </div>
-        </section>
         <div className="workspace-panel workspace-panel--chat">
           <ChatPanel
             plan={plan}
             messages={messages}
             input={input}
             onInput={setInput}
-            busy={busy || !ready || editPending}
+            busy={busy || editPending}
             activity={activity}
             onSend={send}
             onDecision={onDecision}
             onEdit={edit}
-            showPlan={!freshChat}
+            onStart={edit}
           />
         </div>
         <div className="workspace-panel workspace-panel--map">
-          {freshChat ? (
-            <TripMap places={[]} routes={[]} onSelect={() => {}} />
-          ) : (
-            <TripEditor
-              plan={plan}
-              disabled={busy || !ready}
-              onPending={setEditPending}
-              currentView="map"
-              mapOnly
-              onApply={(next) => setPlan(next)}
-            />
-          )}
+          <TripMapCanvas
+            blank={blank}
+            viewKey={plan?.tripId ?? activeConversation.current}
+            tripPlaces={tripPlaces}
+            selectedActivity={selectedActivity}
+            onSelectActivity={setSelectedActivity}
+            routes={mapRoutes}
+          />
+          <div className="workspace-map-actions">
+            <button
+              ref={preferencesToggle}
+              type="button"
+              aria-label="Open trip preferences"
+              aria-expanded={preferencesOpen}
+              aria-haspopup="dialog"
+              onClick={openPreferences}
+            >
+              Preferences
+            </button>
+            <button
+              ref={tripToggle}
+              type="button"
+              className="trip-trigger"
+              aria-label="Open your trip"
+              aria-describedby={pending ? "trip-trigger-count" : undefined}
+              aria-expanded={tripOpen}
+              aria-haspopup="dialog"
+              onClick={openTrip}
+            >
+              <span aria-hidden="true" className="trip-trigger__icon">
+                ▤
+              </span>
+              Trip
+              {pending > 0 && (
+                <span className="trip-trigger__count" id="trip-trigger-count">
+                  {pending}
+                  <span className="sr-only"> decisions pending</span>
+                </span>
+              )}
+            </button>
+          </div>
         </div>
-        <section
-          className={`workspace-panel workspace-panel--trip${tripOpen ? " is-open" : ""}`}
-          aria-label="Your trip panel"
-          role="dialog"
-          aria-modal={tripOpen}
-          aria-hidden={!tripOpen}
-          inert={!tripOpen}
-        >
+        {(preferencesOpen || tripOpen) && (
           <button
-            className="workspace-panel__toggle"
-            aria-label="Close your trip"
+            type="button"
+            tabIndex={-1}
+            className="workspace-drawer-backdrop"
+            aria-label="Close open panel"
             onClick={() => {
-              setTripOpen(false);
-              tripToggle.current?.focus();
+              const trigger = tripOpen ? tripToggle : preferencesToggle;
+              closePreferences();
+              closeTrip();
+              trigger.current?.focus({ preventScroll: true });
             }}
-          >
-            ×
-          </button>
-          {freshChat ? (
-            <div className="trip-drawer-empty">
-              <h2>Your trip</h2>
-              <p>Tell us where you want to go. Your itinerary will appear here.</p>
-              <button
-                onClick={() => {
-                  setTripOpen(false);
-                  setPreferencesOpen(true);
-                }}
-              >
-                Add trip details
-              </button>
-            </div>
-          ) : (
+          />
+        )}
+        <Drawer
+          side="left"
+          open={preferencesOpen}
+          title="Trip preferences"
+          closeLabel="Close trip preferences"
+          onClose={closePreferences}
+          returnFocus={preferencesToggle}
+          className="workspace-drawer workspace-drawer--preferences"
+        >
+          <div ref={left} className="filter-container">
+            <FiltersPanel
+              draft={draft}
+              onChange={setDraft}
+              onSubmit={submit}
+              busy={busy || editPending}
+              errors={errors}
+            />
+          </div>
+        </Drawer>
+        <Drawer
+          side="right"
+          open={tripOpen}
+          title="Your trip"
+          closeLabel="Close your trip"
+          onClose={closeTrip}
+          returnFocus={tripToggle}
+          className="workspace-drawer workspace-drawer--trip"
+          meta={plan && <span className="trip__meta">{tripStatus(plan)}</span>}
+        >
+          {plan ? (
             <TripPanel
               plan={plan}
-              busy={busy || !ready || editPending}
+              busy={busy || editPending}
+              tab={tripTab}
+              onTab={setTripTab}
               onReview={() => setDialog("review")}
               onDecision={onDecision}
               onEdit={edit}
               onSave={save}
+              timeline={
+                <TripEditor
+                  plan={plan}
+                  disabled={busy}
+                  onPending={setEditPending}
+                  tripPlaces={tripPlaces}
+                  selected={selectedActivity}
+                  onSelect={setSelectedActivity}
+                  onRoutesChange={setMapRoutes}
+                  onApply={(next) => {
+                    setPreviousTotal(plan.estTotal);
+                    setPlan(next);
+                  }}
+                />
+              }
             />
+          ) : (
+            <div className="trip-drawer-empty">
+              <p>
+                No trip yet. Describe where you want to go in the chat, or add your trip details.
+                Your itinerary, budget and decisions will appear here.
+              </p>
+              <button type="button" onClick={edit}>
+                Add trip details
+              </button>
+            </div>
           )}
-        </section>
+        </Drawer>
       </main>
       {dialog && (
         <Dialog title={dialogTitle} onClose={() => setDialog(undefined)}>
-          {dialog === "review" && (
+          {dialog === "review" && plan && (
             <>
               <p>
                 {plan.brief.destination} · {money(plan.estTotal)} estimated /{" "}
@@ -898,10 +854,7 @@ function WorkspaceContent({
             <>
               <p>Saved on this browser only. Restoring a copy replaces your current workspace.</p>
               <div className="actions">
-                <button
-                  disabled={freshChat || busy || !ready || !plan.sections.length}
-                  onClick={save}
-                >
+                <button disabled={!plan || busy || !plan.sections.length} onClick={save}>
                   Save current trip
                 </button>
                 <button onClick={loadSaved}>Reload saved trips</button>
@@ -930,7 +883,7 @@ function WorkspaceContent({
           )}
           {dialog === "trips" && (
             <>
-              <p>Current workspace: {freshChat ? "New chat" : plan.brief.destination}</p>
+              <p>Current workspace: {plan ? plan.brief.destination : "New chat"}</p>
               <p>
                 Your plan, conversation and unfinished form are automatically saved in this browser.
               </p>
@@ -975,6 +928,6 @@ function WorkspaceContent({
           )}
         </Dialog>
       )}
-    </>
+    </div>
   );
 }

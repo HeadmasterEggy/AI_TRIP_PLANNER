@@ -52,6 +52,10 @@ describe("local TripBrief extraction", () => {
     ).toMatchObject({ destination: "Sydney", groupSize: 2, budgetTotal: 3000 });
   });
 
+  it("recognises a destination introduced with visit", () => {
+    expect(extractBriefPatchLocally("I want to visit Lisbon")).toEqual({ destination: "Lisbon" });
+  });
+
   it("supports incremental destination and budget wording", () => {
     expect(
       extractBriefPatchLocally("Change the destination to Sydney and budget to $3000"),
@@ -126,5 +130,71 @@ describe("trip chat workflow", () => {
       replyPrompt("请改成中文回复", brief, result.plan.brief, ["destination"], result.plan),
     ).toContain("reply in that exact same language");
     expect(turns.map((turn) => turn.role)).toEqual(["user", "assistant"]);
+  });
+});
+
+describe("blank conversation start", () => {
+  const mem: MemoryStore = {
+    getShortTerm: vi.fn(async () => []),
+    appendShortTerm: vi.fn(async () => {}),
+    getLongTerm: vi.fn(async () => []),
+    setLongTerm: vi.fn(async () => {}),
+    promote: vi.fn(async () => {}),
+  };
+  const tools: ToolGateway = {
+    maps: { route: vi.fn(async () => []), places: vi.fn(async () => []) },
+    booking: { searchStays: vi.fn(async () => []), searchFlights: vi.fn(async () => []) },
+  };
+  const itinerary: Specialist = {
+    name: "itinerary",
+    label: "Day plan",
+    async invoke({ brief: updated }) {
+      return {
+        agent: "itinerary",
+        summary: `Plan for ${updated.destination}`,
+        items: [{ kind: "activity", detail: "Walk", estCost: 100 }],
+        assumptions: [],
+        conflictsWith: [],
+      };
+    },
+  };
+
+  it("reports missing fields instead of borrowing them from the demo brief", async () => {
+    const extractor: BriefExtractor = {
+      extract: vi.fn(async () => ({ destination: "Lisbon" })),
+    };
+    const run = runTripChat(
+      { tripId: "blank", mode: "start", message: "I want to visit Lisbon" },
+      { extractor, specialists: [itinerary], tools, mem },
+    );
+    await expect(run).rejects.toThrow(
+      "include the start and end dates (YYYY-MM-DD), number of travellers, total budget",
+    );
+    expect(extractor.extract).toHaveBeenCalledWith("I want to visit Lisbon", undefined);
+  });
+
+  it("plans only from the fields stated in the first message", async () => {
+    const result = await runTripChat(
+      {
+        tripId: "blank",
+        mode: "start",
+        message: "Lisbon, 2026-11-02 to 2026-11-06, 3 people, budget $2400",
+      },
+      {
+        extractor: { extract: async (message) => extractBriefPatchLocally(message) },
+        replyGenerator: { generate: async () => "Lisbon is ready to review." },
+        specialists: [itinerary],
+        tools,
+        mem,
+      },
+    );
+    expect(result.plan.brief).toMatchObject({
+      tripId: "blank",
+      destination: "Lisbon",
+      dates: ["2026-11-02", "2026-11-06"],
+      groupSize: 3,
+      budgetTotal: 2400,
+    });
+    expect(JSON.stringify(result.plan)).not.toMatch(/Tokyo|Kyoto|demo-trip/);
   });
 });

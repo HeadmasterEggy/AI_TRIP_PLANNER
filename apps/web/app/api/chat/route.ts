@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { runTripChat } from "@trip/orchestrator";
+import { IncompleteBriefError, runTripChat } from "@trip/orchestrator";
 import { ChatRequest, ChatResponse, type AgentProgressEvent } from "@trip/shared";
 
 export async function POST(req: Request) {
@@ -34,9 +34,11 @@ export async function POST(req: Request) {
         send({
           type: "error",
           error:
-            error instanceof Error && error.message.startsWith("No valid stays")
-              ? "No stays match your accommodation preferences. Lower the minimum rating or change cancellation preferences, then retry."
-              : "Unable to update this trip. Check the request and try again.",
+            error instanceof IncompleteBriefError
+              ? error.message
+              : error instanceof Error && error.message.startsWith("No valid stays")
+                ? "No stays match your accommodation preferences. Lower the minimum rating or change cancellation preferences, then retry."
+                : "Unable to update this trip. Check the request and try again.",
         });
       } finally {
         if (!cancelled) controller.close();

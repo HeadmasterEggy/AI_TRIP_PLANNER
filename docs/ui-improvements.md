@@ -14,7 +14,7 @@
 
 已经具备：
 
-- 左侧 Chats / Trips 目录、聊天区、常驻地图，以及覆盖式 Trip Preferences / Your Trip 抽屉。
+- 左侧 Chats / Trips 目录、聊天区、仅含地图内容的常驻地图，以及覆盖式 Trip Preferences / Your Trip 抽屉（Your Trip 内含时间线与编辑）。
 - 首次计划加载时的 skeleton 和 Suspense 边界。
 - Chat 向 `POST /api/chat` 发送消息，并将返回的 `plan` 更新到页面。
 - 行程区的预算汇总、状态 chip、分段折叠和基础 CTA。
@@ -59,6 +59,8 @@
 - [x] Trip Preferences 与 Your Trip 使用完全移出视口的覆盖式抽屉；右上角 Trip 入口平滑展开并覆盖地图，不挤压主布局。
 - [x] 增加防抖自动保存状态；切换记录会中止旧请求，存储失败保留内存计划。
 - [x] New chat 创建独立空白会话和空白表单，不继承 demo 或上一段行程；demo 只用于首次示例填充。
+- [x] 空白会话表单与输入可保存恢复；自然语言起步不回退 demo brief；切换前立即落盘挂起的自动保存。
+- [x] Your Trip 抽屉恢复时间线、路线校验与活动编辑；地图与时间线共享地点和选中状态。
 
 ### P3：可视化编辑（依赖后端能力）
 
@@ -127,3 +129,45 @@
 详见 `docs/p3-implementation.md` 与 `docs/session-logs/2026-09-17-p3-*.md`。Google Maps/Places/步行 Routes/Time Zone 已真实联调；公共交通成功班次未进行真实验收，其日期限制和失败边界通过固定响应验证。
 
 右侧纯地图工作区、覆盖式抽屉、空白新对话、运行时地点解析、设备定位与 Chats/Trips 目录的后续验收见 `docs/session-logs/2026-09-17-workspace-map-shell.md`。
+
+## 工作区界面与交互改版（2026-09-17）
+
+审计发现上一轮提交存在以下缺口，本轮已修复：
+
+- 地图区复用了 `TripEditor` 的 map-only 分支，导致时间线、路线校验、活动移动/改时间/换地点、预览与撤销在界面上完全不可达。
+- New chat 只用 `freshChat` 标记隐藏旧计划，内存和首帧中仍持有上一段 Tokyo/demo 计划；空白会话的偏好表单不会保存，刷新后丢失。
+- 空白会话用自然语言发送时不带 brief，服务端会用 `DEMO_BRIEF` 补齐缺失字段，把 Tokyo 的日期、人数、预算带进新行程。
+- `overflow: hidden` 的工作区仍可被 `scrollIntoView` 横向滚动，露出本应在视口外的抽屉并使地图整体左移。
+- 自动保存有 350ms 防抖，在此窗口内点击 New chat 或切换会话会丢弃上一会话的最后修改。
+- New chat 中止旧请求后没有复位 `busy`，输入框可能保持禁用。
+
+### 当前结构
+
+| 区域                  | 内容                                                                                         | 实现                                  |
+| --------------------- | -------------------------------------------------------------------------------------------- | ------------------------------------- |
+| 左侧历史栏            | Chats / Trips 搜索、新建、重命名、删除、保存状态                                             | `WorkspaceSidebar`                    |
+| 中间聊天              | 对话、规划进度、确认卡片；空白会话显示起步提示                                               | `ChatPanel`                           |
+| 右侧地图              | 仅地图、编号标记、地点列表、地图状态、View all places / Show my location                     | `TripMapCanvas` + `TripMap`           |
+| 地图右上角            | Preferences 与 Trip 胶囊按钮；Trip 最靠右并显示待处理数量                                    | `Workspace`                           |
+| Your Trip 抽屉        | 预算、Overview（分段详情、住宿选择与确认事项）、Timeline & routes（原编辑器）、Review / Save | `Drawer` + `TripPanel` + `TripEditor` |
+| Trip Preferences 抽屉 | 结构化偏好表单，从左侧工作区边缘滑入                                                         | `Drawer` + `FiltersPanel`             |
+
+- 地点解析集中在 `useTripPlaces`：地图与时间线共享同一份 Google 地点缓存和选中活动；活动列表变化即中止旧查询，旧 Trip/Chat 的响应不能添加标记。匹配结果只在内存中，不写入计划或 localStorage。部分活动无法匹配时，地图右下角显示紧凑提示和 Retry，不遮挡地图。
+- `Drawer` 统一处理 `role="dialog"`、`aria-modal`、`aria-hidden`、`inert`、打开后聚焦关闭按钮、Tab 焦点循环、Escape（内层编辑预览和原生 dialog 优先）以及关闭后把焦点还给触发按钮。
+- 抽屉为工作区内的绝对定位层，关闭时平移到自身宽度加侧栏与阴影之外；工作区使用 `overflow: clip`，不可被程序化滚动。桌面 Trip 抽屉宽 `min(max(62vw, 560px), 100% - 24px)`，动画 240ms `cubic-bezier(0.32, 0.72, 0, 1)`，并尊重 `prefers-reduced-motion`。拖动缩放栏已移除（目录版本 3 中的 width 字段仅为兼容保留）。
+- 首次渲染前通过 `restoreWorkspace()` 一次性读取存储：活动会话为空白时直接渲染空白状态，不请求 demo、不闪现旧行程；只有存储中完全没有工作区时才请求 demo。
+- 空白会话在 `ConversationRecord.draft` 中保存未完成表单（目录仍为版本 3，字段可选，旧数据兼容）；生成计划后会话以新的 `tripId` 与 Trip 记录关联，标题更新为目的地与日期。
+- `ChatRequest.mode = "start"` 用于空白会话的自然语言起步：只从消息中提取字段，缺少目的地、日期、人数或预算时返回可读错误，不回退到 demo brief。
+- 切换会话/行程或 New chat 前先立即写出挂起的自动保存，再中止请求并清理进度、错误、选中活动和地图路线。
+- 窄屏（≤1000px）继续使用 History / Preferences / Chat / Map / Trip 视图切换；抽屉在该模式下作为静态视图显示，隐藏遮罩、地图浮动按钮和抽屉关闭按钮。
+
+### 验收清单
+
+- [x] 抽屉关闭后边界完全位于视口外，文档宽度等于视口宽度。
+- [x] 打开 Trip 前后地图容器宽度与位置不变，Trip 从右侧覆盖地图和部分聊天区。
+- [x] 抽屉标题与关闭按钮不重叠；关闭按钮、遮罩、Escape 均可关闭并恢复焦点；两个抽屉互斥。
+- [x] New chat 后目的地、日期、人数、预算与聊天输入为空，聊天、地图和 Trip 抽屉中无 Tokyo/demo 内容；地图回到世界视图。
+- [x] 地图区域不含时间线、路线编辑器或完整行程卡片；时间线与编辑功能在 Your Trip 抽屉内可用。
+- [x] 空白会话保存表单和输入并在刷新后恢复；生成计划前不创建 Trip 记录，生成后稳定关联。
+- [x] 地图地点查询与聊天请求可并行，旧查询结果被丢弃。
+- 详细验证见 `docs/session-logs/2026-09-17-workspace-redesign.md`。

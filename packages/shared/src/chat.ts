@@ -13,7 +13,9 @@ export const ChatRequest = z.object({
   // Optional for backward compatibility. The browser sends the latest brief so
   // serverless requests can apply incremental edits without sticky process state.
   brief: TripBrief.optional(),
-  mode: z.enum(["chat", "plan"]).optional(),
+  // "start" begins a blank conversation: the brief is extracted only from the
+  // message, and missing required fields are reported instead of defaulted.
+  mode: z.enum(["chat", "plan", "start"]).optional(),
 });
 export type ChatRequest = z.infer<typeof ChatRequest>;
 

@@ -1027,15 +1027,34 @@ button:not(.section__row):not(.stay-option):not(.primary):not(.trip__cta) {
 }
 
 /* ---- multi-panel planning workspace ---- */
+.workspace-app {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
+  overflow: clip;
+}
+.workspace-app > .header {
+  flex: none;
+}
+.workspace-notices:empty {
+  display: none;
+}
 .workspace-shell {
-  --preferences-width: 280px;
-  --trip-width: 680px;
+  --sidebar-width: 240px;
+  --drawer-ease: cubic-bezier(0.32, 0.72, 0, 1);
+  --drawer-duration: 240ms;
   position: relative;
   display: grid;
-  grid-template-columns: 220px minmax(360px, 0.9fr) minmax(480px, 1.1fr);
-  height: calc(100dvh - 72px);
+  flex: 1;
+  grid-template-columns: var(--sidebar-width) minmax(340px, 0.85fr) minmax(420px, 1.15fr);
+  min-height: 0;
   min-width: 0;
+  /* Closed drawers sit beyond these edges. `clip` (unlike `hidden`) cannot be scrolled by
+     focus or scrollIntoView, so the grid never shifts sideways to reveal them. */
   overflow: hidden;
+  overflow: clip;
   background: var(--surface);
 }
 .workspace-shell > * {
@@ -1131,90 +1150,160 @@ button:not(.section__row):not(.stay-option):not(.primary):not(.trip__cta) {
 }
 .workspace-panel {
   position: relative;
+  min-height: 0;
   overflow: hidden;
-  border-right: 1px solid var(--border);
   background: var(--surface);
 }
 .workspace-panel--chat {
-  grid-column: 2;
+  border-right: 1px solid var(--border);
 }
-.workspace-panel--map {
-  grid-column: 3;
-}
-.workspace-panel > .panel,
-.workspace-panel > .filter-container,
-.workspace-panel > .trip-editor {
+.workspace-panel--chat > .panel {
   height: 100%;
   max-height: none;
-  margin: 0;
-  border: 0;
-  border-radius: 0;
-  overflow: auto;
 }
-.workspace-panel--map .trip-editor {
-  padding: 0;
+.chat-empty {
+  margin: auto 0;
+  padding: 24px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-lg);
+  color: var(--text-dim);
+  text-align: center;
 }
-.workspace-panel--map > .trip-map {
-  position: relative;
+.chat-empty h3 {
+  margin: 0 0 6px;
+  color: var(--text);
+  font-size: 18px;
+}
+.skeleton--map {
   height: 100%;
-}
-.workspace-panel--map .google-map {
-  height: 100%;
-  min-height: 100%;
   border-radius: 0;
 }
-.trip-editor--map-only,
-.trip-editor--map-only .trip-map {
+
+/* Map canvas: map, markers, status and map controls only. */
+.trip-map-canvas,
+.trip-map-canvas > .trip-map {
   position: relative;
   height: 100%;
   min-height: 0;
 }
-.trip-editor--map-only .trip-map-controls,
-.workspace-panel--map > .trip-map .trip-map-controls {
+.trip-map-canvas .google-map {
+  height: 100%;
+  min-height: 0;
+  border-radius: 0;
+}
+.trip-map-canvas .trip-map-controls,
+.trip-map-canvas .trip-map-place-list,
+.trip-map-canvas .trip-map-location-status:not(:empty),
+.trip-map-status {
   position: absolute;
   z-index: 4;
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface) 94%, transparent);
+  box-shadow: var(--shadow-sm);
+}
+.trip-map-canvas .trip-map-controls {
   top: 14px;
   left: 14px;
+  max-width: calc(100% - 260px);
   margin: 0;
-  padding: 6px;
-  border: 1px solid var(--border);
+  padding: 5px;
   border-radius: var(--radius-pill);
-  background: color-mix(in srgb, var(--surface) 92%, transparent);
-  box-shadow: var(--shadow-sm);
 }
-.trip-editor--map-only .trip-map-place-list,
-.workspace-panel--map > .trip-map .trip-map-place-list {
-  position: absolute;
-  z-index: 4;
+.trip-map-canvas .trip-map-controls button {
+  border-radius: var(--radius-pill) !important;
+}
+.trip-map-canvas .trip-map-place-list {
   left: 14px;
   bottom: 14px;
-  max-width: min(420px, calc(100% - 28px));
-  max-height: 150px;
+  max-width: min(460px, calc(100% - 28px));
+  max-height: 132px;
+  margin: 0;
   overflow: auto;
   padding: 6px;
-  border: 1px solid var(--border);
   border-radius: var(--radius);
-  background: color-mix(in srgb, var(--surface) 92%, transparent);
-  box-shadow: var(--shadow-sm);
 }
-.workspace-floating-actions {
+.trip-map-canvas .trip-map-location-status:not(:empty) {
+  top: 64px;
+  left: 14px;
+  max-width: min(420px, calc(100% - 28px));
+  margin: 0;
+  padding: 6px 10px;
+  border-radius: var(--radius);
+}
+.trip-map-canvas .trip-map-location-status:empty {
+  display: none;
+}
+.trip-map-status {
+  top: 50%;
+  left: 50%;
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  max-width: min(360px, calc(100% - 48px));
+  padding: 12px 16px;
+  border-radius: var(--radius);
+  color: var(--text-dim);
+  text-align: center;
+  transform: translate(-50%, -50%);
+}
+.trip-map-status--partial {
+  top: auto;
+  right: 14px;
+  bottom: 14px;
+  left: auto;
+  display: flex;
+  align-items: center;
+  max-width: min(360px, calc(100% - 500px));
+  min-width: 220px;
+  padding: 6px 8px 6px 12px;
+  font-size: 12px;
+  text-align: left;
+  transform: none;
+}
+.trip-map-status p {
+  margin: 0;
+}
+.trip-map-canvas .trip-map-fallback {
+  position: absolute;
+  z-index: 5;
+  inset: 0;
+  overflow: auto;
+  border: 0;
+  border-radius: 0;
+}
+.trip-map-loading {
+  display: grid;
+  height: 100%;
+  margin: 0;
+  place-items: center;
+  color: var(--text-dim);
+}
+.workspace-map-actions {
   position: absolute;
   z-index: 12;
-  top: 12px;
+  top: 14px;
   right: 14px;
   display: flex;
+  align-items: center;
   gap: 8px;
 }
-.workspace-floating-actions button {
-  min-height: 36px;
-  border-radius: var(--radius-pill) !important;
-  background: color-mix(in srgb, var(--surface) 94%, transparent) !important;
-  box-shadow: var(--shadow-sm);
-}
-.trip-trigger {
+.workspace-map-actions button {
   display: inline-flex;
   align-items: center;
   gap: 7px;
+  min-height: 38px;
+  padding: 6px 14px !important;
+  border-radius: var(--radius-pill) !important;
+  background: var(--surface) !important;
+  box-shadow: var(--shadow-md);
+  font-weight: 600;
+}
+.workspace-map-actions .trip-trigger {
+  border-color: var(--text) !important;
+}
+.trip-trigger__icon {
+  font-size: 15px;
+  line-height: 1;
 }
 .trip-trigger__count {
   display: grid;
@@ -1227,59 +1316,169 @@ button:not(.section__row):not(.stay-option):not(.primary):not(.trip__cta) {
   color: #fff;
   font-size: 11px;
 }
+
+/* Overlay drawers: they cover the workspace without changing its grid. */
 .workspace-drawer-backdrop {
-  position: fixed;
+  position: absolute;
   z-index: 30;
-  inset: 72px 0 0;
+  inset: 0;
   min-height: 0 !important;
+  padding: 0 !important;
   border: 0 !important;
   border-radius: 0 !important;
-  background: rgb(0 0 0 / 12%) !important;
+  background: rgb(15 15 20 / 18%) !important;
+  cursor: default;
+  animation: drawer-fade var(--drawer-duration) ease-out;
 }
-.workspace-panel--preferences,
-.workspace-panel--trip {
-  position: fixed;
-  z-index: 40;
-  top: 72px;
-  bottom: 0;
-  width: min(360px, calc(100vw - 24px));
-  visibility: hidden;
-  pointer-events: none;
-  box-shadow: var(--shadow-md);
-  transition:
-    transform 240ms cubic-bezier(0.22, 1, 0.36, 1),
-    visibility 240ms;
+@keyframes drawer-fade {
+  from {
+    opacity: 0;
+  }
 }
-.workspace-panel--preferences {
-  left: 220px;
-  transform: translateX(-110%);
-}
-.workspace-panel--trip {
-  right: 0;
-  width: min(62vw, calc(100vw - 24px));
-  transform: translateX(105%);
-}
-.workspace-panel--preferences.is-open,
-.workspace-panel--trip.is-open {
-  visibility: visible;
-  pointer-events: auto;
-  transform: translateX(0);
-}
-.workspace-panel__toggle {
+.drawer {
   position: absolute;
-  z-index: 3;
-  top: 8px;
-  right: 8px;
+  z-index: 40;
+  top: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background: var(--surface);
+  box-shadow: 0 12px 40px rgb(16 16 20 / 18%);
+  visibility: hidden;
+  transition:
+    transform var(--drawer-duration) var(--drawer-ease),
+    visibility 0s linear var(--drawer-duration);
 }
-.workspace-panel--trip .workspace-panel__toggle {
-  left: 12px;
-  right: auto;
+.drawer.is-open {
+  visibility: visible;
+  transform: translateX(0);
+  transition:
+    transform var(--drawer-duration) var(--drawer-ease),
+    visibility 0s;
 }
-.workspace-panel--trip .panel--right {
-  padding-top: 56px;
+.drawer--left {
+  left: var(--sidebar-width);
+  width: min(400px, calc(100% - var(--sidebar-width) - 24px));
+  border-right: 1px solid var(--border);
+  /* Past its own width, the sidebar and the shadow: no sliver stays in the viewport. */
+  transform: translateX(calc(-100% - var(--sidebar-width) - 48px));
+}
+.drawer--right {
+  right: 0;
+  width: min(max(62vw, 560px), calc(100% - 24px));
+  border-left: 1px solid var(--border);
+  transform: translateX(calc(100% + 48px));
+}
+.drawer__head {
+  display: flex;
+  flex: none;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 20px 14px;
+  border-bottom: 1px solid var(--border);
+}
+.drawer__title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+  min-width: 0;
+}
+.drawer__title h2 {
+  margin: 0;
+  font-size: 20px;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+.drawer__close {
+  display: grid;
+  flex: none;
+  width: 36px;
+  height: 36px;
+  padding: 0 !important;
+  place-items: center;
+  border-radius: var(--radius-pill) !important;
+  font-size: 22px;
+  line-height: 1;
+}
+.drawer__body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.drawer__body > .filter-container > .panel {
+  max-height: none;
+  border: 0;
+}
+.trip-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+  padding: 16px 20px 0;
+}
+.trip-tabs {
+  display: flex;
+  gap: 4px;
+  margin: 16px 0 8px;
+  border-bottom: 1px solid var(--border);
+}
+.trip-tabs button {
+  margin-bottom: -1px;
+  border-width: 0 0 2px !important;
+  border-color: transparent !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  color: var(--text-dim);
+  font-weight: 600;
+}
+.trip-tabs button[aria-selected="true"] {
+  border-color: var(--accent) !important;
+  color: var(--text);
+}
+.trip-tabpanel {
+  flex: 1;
+}
+.trip-panel__subhead {
+  margin: 20px 0 8px;
+  font-size: 14px;
+}
+.trip-panel__footer {
+  position: sticky;
+  bottom: 0;
+  margin: 16px -20px 0;
+  padding: 12px 20px;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+}
+.drawer .trip-editor {
+  margin: 0;
+  padding: 8px 0 16px;
+  max-width: none;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+.editor-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+}
+.editor-toolbar p {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 12px;
 }
 .trip-drawer-empty {
-  padding: 64px 28px 28px;
+  display: grid;
+  justify-items: start;
+  gap: 12px;
+  padding: 24px 20px;
+  color: var(--text-dim);
 }
 .workspace-mobile-nav {
   display: none;
@@ -1296,25 +1495,39 @@ button:not(.section__row):not(.stay-option):not(.primary):not(.trip__cta) {
   border: 0;
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .drawer,
+  .drawer.is-open {
+    transition: none;
+  }
+}
 @media (max-width: 1250px) {
   .workspace-shell {
-    grid-template-columns: 180px minmax(320px, 0.85fr) minmax(380px, 1.15fr);
-  }
-  .workspace-panel--preferences {
-    left: 180px;
+    --sidebar-width: 200px;
+    grid-template-columns: var(--sidebar-width) minmax(300px, 0.85fr) minmax(360px, 1.15fr);
   }
 }
 @media (max-width: 1000px) {
+  .workspace-app {
+    height: auto;
+    min-height: 100dvh;
+    overflow: visible;
+  }
   .workspace-mobile-nav {
     position: sticky;
     z-index: 15;
     top: 0;
     display: grid;
-    grid-template-columns: repeat(5, 1fr);
+    grid-template-columns: repeat(5, minmax(0, 1fr));
     gap: 4px;
     padding: 7px;
     border-bottom: 1px solid var(--border);
     background: var(--surface);
+  }
+  .workspace-mobile-nav button {
+    min-width: 0;
+    padding-inline: 4px !important;
+    font-size: 12px;
   }
   .workspace-shell {
     display: block;
@@ -1322,33 +1535,35 @@ button:not(.section__row):not(.stay-option):not(.primary):not(.trip__cta) {
     min-height: calc(100dvh - 72px);
     overflow: visible;
   }
-  .workspace-shell > :not(.workspace-mobile-nav) {
-    display: none;
+  .workspace-shell > :not(.workspace-mobile-nav),
+  .workspace-drawer-backdrop,
+  .workspace-map-actions,
+  .drawer__close {
+    display: none !important;
   }
   .workspace-shell[data-mobile-view="history"] > .workspace-sidebar,
-  .workspace-shell[data-mobile-view="preferences"] > .workspace-panel--preferences,
   .workspace-shell[data-mobile-view="chat"] > .workspace-panel--chat,
-  .workspace-shell[data-mobile-view="map"] > .workspace-panel--map,
-  .workspace-shell[data-mobile-view="trip"] > .workspace-panel--trip {
-    display: block;
+  .workspace-shell[data-mobile-view="map"] > .workspace-panel--map {
+    display: block !important;
+    height: calc(100dvh - 130px);
+  }
+  .workspace-shell[data-mobile-view="preferences"] > .drawer--left,
+  .workspace-shell[data-mobile-view="trip"] > .drawer--right {
     position: static;
+    display: flex !important;
     width: auto;
     height: calc(100dvh - 130px);
     visibility: visible;
-    pointer-events: auto;
     transform: none;
     box-shadow: none;
+    border: 0;
+    transition: none;
   }
-  .workspace-shell[data-mobile-view="preferences"] > .workspace-panel--preferences,
-  .workspace-shell[data-mobile-view="trip"] > .workspace-panel--trip {
-    overflow: auto;
+  .workspace-panel--chat {
+    border-right: 0;
   }
-  .workspace-panel--chat .chat {
-    height: 100%;
-    min-height: 0;
-  }
-  .workspace-panel--map .google-map {
-    height: 48dvh;
+  .trip-map-canvas .trip-map-controls {
+    max-width: calc(100% - 28px);
   }
 }
 .edit-preview {

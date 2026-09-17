@@ -4,6 +4,7 @@ export { DEMO_BRIEF } from "./demo";
 export {
   applyBriefPatch,
   extractBriefPatchLocally,
+  IncompleteBriefError,
   runTripChat,
   type BriefExtractor,
   type BriefPatch,

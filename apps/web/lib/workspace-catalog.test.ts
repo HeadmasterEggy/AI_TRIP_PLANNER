@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { plan, snapshot } from "./test-fixtures";
+import { CURRENT_KEY, blankDraft } from "./workspace";
 import {
+  CATALOG_KEY,
   createCatalog,
   parseCatalog,
+  restoreWorkspace,
   searchCatalog,
   serializeCatalog,
   updateCatalog,
@@ -100,5 +103,49 @@ describe("workspace catalog", () => {
     expect(next.layout.editorView).toBe("timeline");
     expect(catalog.layout.view).toBe("chat");
     expect(plan.tripId).toBe("test-trip");
+  });
+
+  it("round-trips a blank conversation's unfinished preferences", () => {
+    const draft = { ...blankDraft(), destination: "Lisbon" };
+    const next = upsertConversationDraft(createCatalog(snapshot), {
+      id: "conversation:blank",
+      messages: [],
+      input: "warm",
+      draft,
+    });
+    expect(parseCatalog(serializeCatalog(next)).conversations[0]!.draft).toEqual(draft);
+    expect(() =>
+      parseCatalog({ ...next, conversations: [{ ...next.conversations[0], draft: { bad: 1 } }] }),
+    ).toThrow("form is invalid");
+  });
+
+  it("restores a blank active conversation without the stored trip", () => {
+    const catalog = upsertConversationDraft(createCatalog(snapshot), {
+      id: "conversation:blank",
+      messages: [],
+      input: "warm",
+      draft: { ...blankDraft(), destination: "Lisbon" },
+    });
+    const storage = new Map([
+      [CURRENT_KEY, JSON.stringify(snapshot)],
+      [CATALOG_KEY, serializeCatalog(catalog)],
+    ]);
+    const restored = restoreWorkspace({ getItem: (key) => storage.get(key) ?? null });
+    expect(restored.blank).toBe(true);
+    expect(restored.plan).toBeUndefined();
+    expect(restored.draft.destination).toBe("Lisbon");
+    expect(restored.input).toBe("warm");
+    expect(restored.conversationId).toBe("conversation:blank");
+  });
+
+  it("reports unreadable history without discarding the readable trip", () => {
+    const storage = new Map([
+      [CURRENT_KEY, JSON.stringify(snapshot)],
+      [CATALOG_KEY, "{broken"],
+    ]);
+    const restored = restoreWorkspace({ getItem: (key) => storage.get(key) ?? null });
+    expect(restored.plan?.tripId).toBe("test-trip");
+    expect(restored.storageEnabled).toBe(false);
+    expect(restored.storageError).toMatch(/history could not be read/);
   });
 });

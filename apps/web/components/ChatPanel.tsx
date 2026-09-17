@@ -20,9 +20,10 @@ export function ChatPanel({
   onSend,
   onDecision,
   onEdit,
-  showPlan = true,
+  onStart,
 }: {
-  plan: TripPlan;
+  /** Undefined for a blank conversation that has not produced a plan. */
+  plan?: TripPlan;
   messages: Message[];
   input: string;
   onInput: (value: string) => void;
@@ -31,7 +32,8 @@ export function ChatPanel({
   onSend: () => void;
   onDecision: (decision: Decision) => void;
   onEdit: () => void;
-  showPlan?: boolean;
+  /** Opens Trip preferences from the blank-conversation prompt. */
+  onStart?: () => void;
 }) {
   const stream = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -41,6 +43,20 @@ export function ChatPanel({
     <section className="panel chat" aria-labelledby="chat-title">
       <h2 id="chat-title">Plan together</h2>
       <div className="chat__stream" ref={stream} aria-busy={busy}>
+        {!plan && !messages.length && (
+          <div className="chat-empty">
+            <h3>Where to next?</h3>
+            <p>
+              Describe your destination, dates (YYYY-MM-DD), number of travellers and total budget,
+              or fill in the preferences form.
+            </p>
+            {onStart && (
+              <button type="button" onClick={onStart}>
+                Fill in trip preferences
+              </button>
+            )}
+          </div>
+        )}
         <div role="log" aria-live="polite">
           {messages.map((m, i) => (
             <div key={i} className={`msg msg--${m.role}`}>
@@ -125,7 +141,7 @@ export function ChatPanel({
             })}
           </div>
         )}
-        {showPlan && (
+        {plan && (
           <CheckpointCards plan={plan} busy={busy} onDecision={onDecision} onEdit={onEdit} />
         )}
       </div>
@@ -139,7 +155,9 @@ export function ChatPanel({
         <input
           className="field"
           aria-label="Message AI Trip Planner"
-          placeholder="Tell me what to change…"
+          placeholder={
+            plan ? "Tell me what to change…" : "Destination, dates, travellers and budget…"
+          }
           value={input}
           disabled={busy}
           onChange={(e) => onInput(e.target.value)}

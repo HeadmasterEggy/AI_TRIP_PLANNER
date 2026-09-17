@@ -40,8 +40,7 @@ export function FiltersPanel({
     </label>
   );
   return (
-    <section className="panel panel--left" aria-labelledby="filters-title">
-      <h2 id="filters-title">Trip preferences</h2>
+    <div className="panel panel--left">
       <form
         noValidate
         onSubmit={(e) => {
@@ -87,6 +86,6 @@ export function FiltersPanel({
           </button>
         </fieldset>
       </form>
-    </section>
+    </div>
   );
 }

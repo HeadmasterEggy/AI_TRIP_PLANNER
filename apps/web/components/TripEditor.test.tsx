@@ -1,8 +1,9 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, it, expect, vi } from "vitest";
 import { TripEditor } from "./TripEditor";
+import type { TripPlaces } from "./useTripPlaces";
 import { plan as seed } from "@/lib/test-fixtures";
-import { identifyActivities } from "@/lib/workspace";
+import { identifyActivities, itineraryActivities } from "@/lib/workspace";
 import { TripPlan } from "@trip/shared";
 function fixture() {
   const plan = identifyActivities(structuredClone(seed));
@@ -13,6 +14,18 @@ function fixture() {
   });
   return plan;
 }
+const places = (plan: TripPlan): TripPlaces => ({
+  activities: itineraryActivities(plan),
+  markers: [],
+  places: {},
+  loading: false,
+  error: "",
+  unmatched: 0,
+  placeIdFor: (activity) => activity.placeId,
+  activityForPlace: () => undefined,
+  rememberPlace: vi.fn(),
+  retry: vi.fn(),
+});
 const response = (plan: TripPlan) =>
   new Response(
     JSON.stringify({
@@ -24,26 +37,36 @@ const response = (plan: TripPlan) =>
     }),
   );
 describe("editor request lifecycle", () => {
-  it("resolves an activity without a place ID into runtime-only map data", async () => {
+  it("renders the timeline only, without an embedded map", () => {
     const plan = fixture();
-    const fetcher = vi.fn(async (_url: string | URL | Request) =>
-      Response.json({
-        places: [
-          {
-            id: "google-place",
-            displayName: { text: "Verified candidate" },
-            location: { latitude: -33.86, longitude: 151.21 },
-          },
-        ],
-      }),
+    render(
+      <TripEditor
+        plan={plan}
+        disabled={false}
+        onApply={vi.fn()}
+        onPending={vi.fn()}
+        tripPlaces={places(plan)}
+        onSelect={vi.fn()}
+      />,
     );
-    vi.stubGlobal("fetch", fetcher);
-    render(<TripEditor plan={plan} disabled={false} onApply={vi.fn()} onPending={vi.fn()} />);
-    fireEvent.click(screen.getByRole("button", { name: "Map" }));
-    await waitFor(() => expect(fetcher).toHaveBeenCalled());
-    expect(fetcher.mock.calls.some(([url]) => url === "/api/places/search")).toBe(true);
-    expect(plan.sections[0]!.proposal!.items[0]!.placeId).toBeUndefined();
-    vi.unstubAllGlobals();
+    expect(screen.getByRole("button", { name: "Verify day routes" })).toBeTruthy();
+    expect(screen.queryByLabelText("Google activity map")).toBeNull();
+  });
+  it("shares activity selection with the map", () => {
+    const plan = fixture();
+    const select = vi.fn();
+    render(
+      <TripEditor
+        plan={plan}
+        disabled={false}
+        onApply={vi.fn()}
+        onPending={vi.fn()}
+        tripPlaces={places(plan)}
+        onSelect={select}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /09:00–10:00 · Museum/ }));
+    expect(select).toHaveBeenCalledWith(itineraryActivities(plan)[0]!.id);
   });
   it("discards a late preview after workspace restore", async () => {
     let finish!: (response: Response) => void;
@@ -60,33 +83,59 @@ describe("editor request lifecycle", () => {
       apply = vi.fn(),
       pending = vi.fn();
     const { rerender } = render(
-      <TripEditor plan={original} disabled={false} onApply={apply} onPending={pending} />,
+      <TripEditor
+        plan={original}
+        disabled={false}
+        onApply={apply}
+        onPending={pending}
+        tripPlaces={places(original)}
+        onSelect={vi.fn()}
+      />,
     );
-    fireEvent.click(screen.getByRole("button", { name: "Timeline" }));
     fireEvent.click(screen.getByRole("button", { name: "Preview time" }));
     const restored = { ...original, tripId: "restored" };
-    rerender(<TripEditor plan={restored} disabled={false} onApply={apply} onPending={pending} />);
+    rerender(
+      <TripEditor
+        plan={restored}
+        disabled={false}
+        onApply={apply}
+        onPending={pending}
+        tripPlaces={places(restored)}
+        onSelect={vi.fn()}
+      />,
+    );
     finish(response(original));
     await waitFor(() => expect(screen.queryByRole("button", { name: "Apply changes" })).toBeNull());
     expect(apply).not.toHaveBeenCalled();
-    vi.unstubAllGlobals();
   });
-  it("Escape cancels a preview and restores keyboard focus", async () => {
+  it("Escape cancels only the preview and restores keyboard focus", async () => {
     const plan = fixture();
     vi.stubGlobal(
       "fetch",
       vi.fn(async () => response(plan)),
     );
-    render(<TripEditor plan={plan} disabled={false} onApply={vi.fn()} onPending={vi.fn()} />);
-    fireEvent.click(screen.getByRole("button", { name: "Timeline" }));
+    const outer = vi.fn();
+    window.addEventListener("keydown", outer);
+    render(
+      <TripEditor
+        plan={plan}
+        disabled={false}
+        onApply={vi.fn()}
+        onPending={vi.fn()}
+        tripPlaces={places(plan)}
+        onSelect={vi.fn()}
+      />,
+    );
     const trigger = screen.getByRole("button", { name: "Preview time" });
     trigger.focus();
     fireEvent.click(trigger);
     await screen.findByRole("button", { name: "Apply changes" });
-    expect(document.activeElement).toBe(screen.getByRole("region", { name: "Edit preview" }));
-    fireEvent.keyDown(window, { key: "Escape" });
+    const region = screen.getByRole("region", { name: "Edit preview" });
+    expect(document.activeElement).toBe(region);
+    fireEvent.keyDown(region, { key: "Escape" });
     expect(screen.queryByRole("button", { name: "Apply changes" })).toBeNull();
     expect(document.activeElement).toBe(trigger);
-    vi.unstubAllGlobals();
+    expect(outer).not.toHaveBeenCalled();
+    window.removeEventListener("keydown", outer);
   });
 });

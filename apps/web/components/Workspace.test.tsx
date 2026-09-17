@@ -1,66 +1,304 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, it, expect, vi } from "vitest";
 import { Workspace } from "./Workspace";
 import { CURRENT_KEY, SAVED_KEY } from "@/lib/workspace";
 import { CATALOG_KEY, parseCatalog } from "@/lib/workspace-catalog";
 import { plan, snapshot } from "@/lib/test-fixtures";
-const complete = (destination: string) =>
+const planFor = (destination: string, activity = "Museum", tripId = plan.tripId) => ({
+  ...plan,
+  tripId,
+  brief: { ...plan.brief, tripId, destination },
+  sections: plan.sections.map((section) => ({
+    ...section,
+    proposal: section.proposal && {
+      ...section.proposal,
+      items: [{ kind: "activity" as const, detail: activity, estCost: 200 }],
+    },
+  })),
+});
+const complete = (destination: string, activity?: string) =>
   new Response(
     JSON.stringify({
       type: "complete",
-      response: { reply: "Updated", plan: { ...plan, brief: { ...plan.brief, destination } } },
+      response: { reply: "Updated", plan: planFor(destination, activity) },
     }),
   );
+/** A chat stream whose plan uses the trip ID the client sent. */
+const completeFor = (destination: string) => (init?: RequestInit) => {
+  const { tripId } = JSON.parse(init!.body as string);
+  return new Response(
+    JSON.stringify({
+      type: "complete",
+      response: { reply: "Updated", plan: planFor(destination, "Museum", tripId) },
+    }),
+  );
+};
+const louvre = {
+  id: "place-louvre",
+  displayName: { text: "Louvre" },
+  location: { latitude: 48.86, longitude: 2.34 },
+};
+const drawer = (name: "trip" | "preferences") =>
+  document.querySelector<HTMLElement>(`.workspace-drawer--${name}`)!;
 const openPreferences = () =>
   fireEvent.click(screen.getByRole("button", { name: "Open trip preferences" }));
 const googlePlace = {
   id: "place-museum",
-  displayName: "Museum",
+  displayName: { text: "Sydney museum" },
   formattedAddress: "Sydney NSW, Australia",
   location: { latitude: -33.8688, longitude: 151.2093 },
 };
-const withPlaceRequests = (...responses: Response[]) => {
+const withPlaceRequests = (...responses: (Response | ((init?: RequestInit) => Response))[]) => {
   let next = 0;
-  return vi.fn((input: RequestInfo | URL, _init?: RequestInit) => {
+  return vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     if (url === "/api/places/search")
       return Promise.resolve(Response.json({ places: [googlePlace] }));
     if (url === "/api/places/details")
       return Promise.resolve(Response.json({ place: googlePlace }));
-    return Promise.resolve(responses[next++]!);
+    const response = responses[next++]!;
+    return Promise.resolve(typeof response === "function" ? response(init) : response);
   });
 };
 
 describe("Workspace interactions", () => {
-  it("opens side drawers over the workspace and removes them completely when closed", async () => {
+  it("opens the trip drawer over the map and removes it completely when closed", async () => {
     render(<Workspace initialPlan={plan} />);
-    const trip = document.querySelector('[aria-label="Your trip panel"]')!;
+    const trigger = screen.getByRole("button", { name: "Open your trip" });
+    const map = document.querySelector(".workspace-panel--map")!;
+    const trip = drawer("trip");
     expect(trip.getAttribute("aria-hidden")).toBe("true");
-    fireEvent.click(screen.getByRole("button", { name: "Open your trip" }));
+    expect(trip.hasAttribute("inert")).toBe(true);
+    expect(map.contains(trip)).toBe(false);
+    expect(trigger.getAttribute("aria-expanded")).toBe("false");
+
+    fireEvent.click(trigger);
     expect(trip.getAttribute("aria-hidden")).toBe("false");
+    expect(trip.hasAttribute("inert")).toBe(false);
+    expect(trip.getAttribute("aria-modal")).toBe("true");
+    expect(trigger.getAttribute("aria-expanded")).toBe("true");
+    expect(document.activeElement).toBe(screen.getByRole("button", { name: "Close your trip" }));
+    // The drawer overlays the map; the map canvas stays mounted in its own column.
+    expect(document.querySelector(".workspace-panel--map")).toBe(map);
+    expect(within(trip).getByRole("button", { name: "Review plan" })).toBeTruthy();
+    expect(within(trip).getByRole("button", { name: "Save trip" })).toBeTruthy();
+
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(trip.getAttribute("aria-hidden")).toBe("true");
+    expect(document.activeElement).toBe(trigger);
+
+    fireEvent.click(trigger);
+    fireEvent.click(screen.getByRole("button", { name: "Close open panel" }));
+    expect(trip.getAttribute("aria-hidden")).toBe("true");
+    expect(document.activeElement).toBe(trigger);
+
+    fireEvent.click(trigger);
     fireEvent.click(screen.getByRole("button", { name: "Close your trip" }));
     expect(trip.getAttribute("aria-hidden")).toBe("true");
+    expect(document.activeElement).toBe(trigger);
     await waitFor(() => {
       const catalog = parseCatalog(localStorage.getItem(CATALOG_KEY));
       expect(catalog.layout.preferences.open).toBe(false);
       expect(catalog.layout.trip.open).toBe(false);
     });
   });
-  it("starts a blank conversation instead of carrying the demo trip into New chat", async () => {
+  it("keeps only one drawer open and returns focus from Preferences", () => {
     render(<Workspace initialPlan={plan} />);
-    fireEvent.click(screen.getByRole("button", { name: "+ New chat" }));
-    openPreferences();
-    expect((screen.getByLabelText("Destination") as HTMLInputElement).value).toBe("");
-    expect((screen.getByLabelText("Message AI Trip Planner") as HTMLInputElement).value).toBe("");
+    const preferences = drawer("preferences");
+    const trip = drawer("trip");
+    const preferencesTrigger = screen.getByRole("button", { name: "Open trip preferences" });
+    fireEvent.click(preferencesTrigger);
+    expect(preferences.getAttribute("aria-hidden")).toBe("false");
     fireEvent.click(screen.getByRole("button", { name: "Open your trip" }));
-    expect(screen.getByText(/Tell us where you want to go/)).toBeTruthy();
+    expect(preferences.getAttribute("aria-hidden")).toBe("true");
+    expect(trip.getAttribute("aria-hidden")).toBe("false");
+    fireEvent.click(screen.getByRole("button", { name: "Open trip preferences" }));
+    expect(trip.getAttribute("aria-hidden")).toBe("true");
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(preferences.getAttribute("aria-hidden")).toBe("true");
+    expect(document.activeElement).toBe(preferencesTrigger);
+    expect(document.querySelector(".workspace-drawer-backdrop")).toBeNull();
+  });
+  it("keeps the timeline and editors out of the map canvas", () => {
+    render(<Workspace initialPlan={plan} />);
+    const map = document.querySelector<HTMLElement>(".workspace-panel--map")!;
+    expect(within(map).queryByRole("button", { name: "Verify day routes" })).toBeNull();
+    expect(within(map).queryByRole("button", { name: "Review plan" })).toBeNull();
+    expect(within(map).queryByText(/Estimated total/)).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Open your trip" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Timeline & routes" }));
+    const trip = drawer("trip");
+    expect(within(trip).getByRole("button", { name: "Verify day routes" })).toBeTruthy();
+    expect(within(map).queryByRole("button", { name: "Verify day routes" })).toBeNull();
+  });
+  it("starts a blank conversation instead of carrying the demo trip into New chat", async () => {
+    vi.stubGlobal("fetch", withPlaceRequests());
+    render(<Workspace initialPlan={plan} />);
+    await waitFor(() =>
+      expect(parseCatalog(localStorage.getItem(CATALOG_KEY)).trips).toHaveLength(1),
+    );
+    fireEvent.change(screen.getByLabelText("Message AI Trip Planner"), {
+      target: { value: "left over from Sydney" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "+ New chat" }));
+    const chat = document.querySelector<HTMLElement>(".workspace-panel--chat")!;
+    const map = document.querySelector<HTMLElement>(".workspace-panel--map")!;
+    expect((screen.getByLabelText("Message AI Trip Planner") as HTMLInputElement).value).toBe("");
+    expect(within(chat).queryByText(/Sydney|Museum/)).toBeNull();
+    expect(within(map).queryByText(/Sydney|Museum/)).toBeNull();
+    expect(within(chat).getByText("Where to next?")).toBeTruthy();
+    openPreferences();
+    for (const label of [
+      "Destination",
+      "Start date",
+      "End date",
+      "Travellers",
+      "Total budget (USD)",
+    ])
+      expect((screen.getByLabelText(label) as HTMLInputElement).value).toBe("");
+    fireEvent.click(screen.getByRole("button", { name: "Open your trip" }));
+    expect(within(drawer("trip")).getByText(/No trip yet/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Save trip" })).toBeNull();
     await waitFor(() => {
       const catalog = parseCatalog(localStorage.getItem(CATALOG_KEY));
       const active = catalog.conversations.find(
         (conversation) => conversation.id === catalog.activeConversationId,
       );
+      expect(active?.title).toBe("New chat");
       expect(active?.tripId).toBeUndefined();
+      expect(active?.messages).toEqual([]);
+      expect(catalog.activeTripId).toBeUndefined();
+      expect(catalog.trips).toHaveLength(1);
+      expect(catalog.conversations).toHaveLength(2);
     });
+  });
+  it("saves a blank conversation's form and input and restores it after reload", async () => {
+    vi.stubGlobal("fetch", withPlaceRequests());
+    const view = render(<Workspace initialPlan={plan} />);
+    fireEvent.click(screen.getByRole("button", { name: "+ New chat" }));
+    openPreferences();
+    fireEvent.change(screen.getByLabelText("Destination"), { target: { value: "Lisbon" } });
+    fireEvent.change(screen.getByLabelText("Message AI Trip Planner"), {
+      target: { value: "somewhere warm" },
+    });
+    await waitFor(() => {
+      const catalog = parseCatalog(localStorage.getItem(CATALOG_KEY));
+      const active = catalog.conversations.find((item) => item.id === catalog.activeConversationId);
+      expect(active?.draft?.destination).toBe("Lisbon");
+      expect(active?.input).toBe("somewhere warm");
+    });
+    view.unmount();
+    render(<Workspace initialPlan={plan} />);
+    expect((screen.getByLabelText("Message AI Trip Planner") as HTMLInputElement).value).toBe(
+      "somewhere warm",
+    );
+    openPreferences();
+    expect((screen.getByLabelText("Destination") as HTMLInputElement).value).toBe("Lisbon");
+    expect((screen.getByLabelText("Start date") as HTMLInputElement).value).toBe("");
+    expect(within(drawer("trip")).queryByText(/Sydney/)).toBeNull();
+    expect(
+      within(document.querySelector<HTMLElement>(".workspace-panel--chat")!).queryByText(/Sydney/),
+    ).toBeNull();
+    // Switching back to the earlier chat restores its own trip.
+    fireEvent.click(
+      within(screen.getByRole("complementary", { name: "Chats and trips" })).getAllByRole(
+        "button",
+        { name: /^Sydney · 2026-10-01/ },
+      )[0]!,
+    );
+    expect((screen.getByLabelText("Destination") as HTMLInputElement).value).toBe("Sydney");
+  });
+  it("starts a blank chat from natural language and links the generated trip", async () => {
+    const fetcher = withPlaceRequests(completeFor("Lisbon"));
+    vi.stubGlobal("fetch", fetcher);
+    render(<Workspace initialPlan={plan} />);
+    fireEvent.click(screen.getByRole("button", { name: "+ New chat" }));
+    fireEvent.change(screen.getByLabelText("Message AI Trip Planner"), {
+      target: { value: "Lisbon, 2026-11-02 to 2026-11-06, 2 people, budget $2400" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    await screen.findByText("Updated");
+    const request = JSON.parse(
+      (fetcher.mock.calls.find(([url]) => url === "/api/chat")![1] as RequestInit).body as string,
+    );
+    expect(request.mode).toBe("start");
+    expect(request.brief).toBeUndefined();
+    expect(request.tripId).not.toBe(plan.tripId);
+    await waitFor(() => {
+      const catalog = parseCatalog(localStorage.getItem(CATALOG_KEY));
+      const active = catalog.conversations.find((item) => item.id === catalog.activeConversationId);
+      expect(active?.tripId).toBe(`trip:${request.tripId}`);
+      expect(catalog.trips.map((trip) => trip.id)).toContain(`trip:${request.tripId}`);
+      expect(catalog.activeTripId).toBe(`trip:${request.tripId}`);
+    });
+  });
+  it("aborts an in-flight plan on New chat and never shows its late answer", async () => {
+    let finish!: (response: Response) => void;
+    const fetcher = vi.fn((input: RequestInfo | URL) =>
+      String(input) === "/api/chat"
+        ? new Promise<Response>((resolve) => {
+            finish = resolve;
+          })
+        : Promise.resolve(Response.json({ places: [] })),
+    );
+    vi.stubGlobal("fetch", fetcher);
+    render(<Workspace initialPlan={plan} />);
+    fireEvent.change(screen.getByLabelText("Message AI Trip Planner"), {
+      target: { value: "Change to Tokyo" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    const call = fetcher.mock.calls.find(([url]) => url === "/api/chat") as unknown as [
+      string,
+      RequestInit,
+    ];
+    fireEvent.click(screen.getByRole("button", { name: "+ New chat" }));
+    expect(call[1].signal!.aborted).toBe(true);
+    await act(async () => {
+      finish(complete("Tokyo"));
+    });
+    expect(screen.queryByText(/Tokyo/)).toBeNull();
+    const input = screen.getByLabelText("Message AI Trip Planner") as HTMLInputElement;
+    expect(input.disabled).toBe(false);
+    expect(input.value).toBe("");
+  });
+  it("lets chat planning run while map lookups are pending and drops stale places", async () => {
+    let finishPlaces!: (response: Response) => void;
+    let finishChat!: (response: Response) => void;
+    const searches: string[] = [];
+    const fetcher = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === "/api/places/search") {
+        const body = JSON.parse(init!.body as string);
+        searches.push(`${body.text}@${body.destination}`);
+        if (body.destination === "Sydney")
+          return new Promise<Response>((resolve) => {
+            finishPlaces = resolve;
+          });
+        return Promise.resolve(Response.json({ places: [louvre] }));
+      }
+      return new Promise<Response>((resolve) => {
+        finishChat = resolve;
+      });
+    });
+    vi.stubGlobal("fetch", fetcher);
+    render(<Workspace initialPlan={plan} />);
+    await waitFor(() => expect(searches).toEqual(["Museum@Sydney"]));
+    fireEvent.change(screen.getByLabelText("Message AI Trip Planner"), {
+      target: { value: "Change to Paris" },
+    });
+    // A pending map lookup does not block the chat.
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    await act(async () => {
+      finishChat(complete("Paris", "Louvre"));
+    });
+    expect(await within(drawer("trip")).findByText(/Paris · 2026-10-01/)).toBeTruthy();
+    await waitFor(() => expect(searches).toContain("Louvre@Paris"));
+    await act(async () => {
+      finishPlaces(Response.json({ places: [googlePlace] }));
+    });
+    const list = await screen.findByRole("list", { name: "Places shown on the map" });
+    expect(within(list).getByText(/Louvre/)).toBeTruthy();
+    expect(within(list).queryByText(/Sydney museum/)).toBeNull();
   });
   it("renders the shell before the demo resolves without persisting a placeholder", async () => {
     let finish!: (response: Response) => void;

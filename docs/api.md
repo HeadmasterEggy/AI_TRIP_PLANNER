@@ -25,6 +25,16 @@ runs the planner and returns a user-facing reply plus the current plan.
 
 Response shape: `{ reply, plan }`.
 
+Optional `mode` values:
+
+- `"chat"` (default): extract explicit updates from `message` and apply them to `brief`. Without a
+  brief, the legacy demo brief is the baseline.
+- `"plan"`: `brief` is required and is planned as submitted, without extraction.
+- `"start"`: a blank conversation. `brief` is omitted and the destination, dates, traveller count and
+  total budget must all be stated in `message`. Missing fields are reported in an `error` frame
+  (for example “To start planning, include the start and end dates …”) and are never borrowed from
+  the demo or a previous trip.
+
 ## Stage 5.3 routes
 
 The Stage 5.3 prototype contains planned `POST /api/hitl` and `POST /api/trips` routes for HITL

@@ -31,7 +31,30 @@ export function draftFor(brief: TripBrief): Draft {
     freeCancellation: brief.accommodation?.freeCancellation ?? false,
   };
 }
-export function parseDraft(draft: Draft, current: TripBrief) {
+/** Empty preferences for a new conversation; never derived from the demo or a previous trip. */
+export const blankDraft = (): Draft => ({
+  destination: "",
+  start: "",
+  end: "",
+  groupSize: "",
+  budgetTotal: "",
+  nationality: "",
+  roomAllocation: "shared",
+  minRating: "",
+  freeCancellation: false,
+});
+export function isDraft(value: unknown): value is Draft {
+  return (
+    object(value) &&
+    ["destination", "start", "end", "groupSize", "budgetTotal", "nationality", "minRating"].every(
+      (key) => typeof value[key] === "string",
+    ) &&
+    ["shared", "individual"].includes(String(value.roomAllocation)) &&
+    typeof value.freeCancellation === "boolean"
+  );
+}
+/** `current` is the existing brief, or only the identifiers for a blank conversation. */
+export function parseDraft(draft: Draft, current: Pick<TripBrief, "tripId"> & Partial<TripBrief>) {
   return TripBrief.safeParse({
     ...current,
     destination: draft.destination,
@@ -71,16 +94,7 @@ export function parseSnapshot(value: unknown): Snapshot {
     throw new Error("Saved trip version or data is invalid.");
   const plan = identifyActivities(TripPlan.parse(value.plan));
   if (plan.tripId !== plan.brief.tripId) throw new Error("Saved trip identifiers do not match.");
-  const draft = value.draft;
-  if (
-    !object(draft) ||
-    !["destination", "start", "end", "groupSize", "budgetTotal", "nationality", "minRating"].every(
-      (key) => typeof draft[key] === "string",
-    ) ||
-    !["shared", "individual"].includes(String(draft.roomAllocation)) ||
-    typeof draft.freeCancellation !== "boolean"
-  )
-    throw new Error("Saved form data is invalid.");
+  if (!isDraft(value.draft)) throw new Error("Saved form data is invalid.");
   if (
     !Array.isArray(value.messages) ||
     !value.messages.every(
@@ -156,6 +170,15 @@ export async function readPlanStream(
   if (error) throw new Error(error);
   if (!result) throw new Error("Connection ended before the plan was ready. Please retry.");
   return result;
+}
+
+/** Itinerary activities in plan order; hotels and transport are never mapped. */
+export function itineraryActivities(plan: TripPlan | undefined) {
+  return (
+    plan?.sections
+      .find((section) => section.id === "itinerary")
+      ?.proposal?.items.filter((item) => item.kind === "activity") ?? []
+  );
 }
 
 /** Allocate IDs only for legacy/new items; never derive identity from array position. */
