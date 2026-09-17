@@ -24,9 +24,12 @@ describe("workspace boundaries", () => {
   });
   it("round-trips unfinished forms while rejecting corrupt or incompatible snapshots", () => {
     const unfinished = { ...snapshot, draft: { ...snapshot.draft, budgetTotal: "" } };
-    expect(parseSnapshot(JSON.parse(JSON.stringify(unfinished)))).toEqual(unfinished);
+    expect(parseSnapshot(JSON.parse(JSON.stringify(unfinished)))).toMatchObject({
+      version: 2,
+      draft: unfinished.draft,
+    });
     for (const invalid of [
-      { ...snapshot, version: 2 },
+      { ...snapshot, version: 3 },
       { ...snapshot, plan: {} },
       { ...snapshot, messages: [{ role: "system", text: "bad" }] },
       { ...snapshot, draft: {} },

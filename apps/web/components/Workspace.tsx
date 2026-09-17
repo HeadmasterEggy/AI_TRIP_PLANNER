@@ -3,12 +3,14 @@ import { useEffect, useRef, useState } from "react";
 import { TripPlan, type AgentProgressEvent, type ChatRequest } from "@trip/shared";
 import { FiltersPanel } from "./FiltersPanel";
 import { ChatPanel } from "./ChatPanel";
+import { TripEditor } from "./TripEditor";
 import { TripPanel } from "./TripPanel";
 import { CheckpointCards, type Decision } from "./CheckpointCards";
 import { Header, type Navigation } from "./Header";
 import { Dialog } from "./Dialog";
 import { WorkspaceSkeleton } from "./WorkspaceSkeleton";
 import {
+  identifyActivities,
   CURRENT_KEY,
   SAVED_KEY,
   draftFor,
@@ -37,7 +39,9 @@ export function Workspace({
   initialPlan?: TripPlan;
   initialError?: string;
 }) {
-  const [loadedPlan, setLoadedPlan] = useState(initialPlan);
+  const [loadedPlan, setLoadedPlan] = useState(() =>
+    initialPlan ? identifyActivities(initialPlan) : undefined,
+  );
   const [loadError, setLoadError] = useState("");
   const [attempt, setAttempt] = useState(0);
 
@@ -101,11 +105,13 @@ function WorkspaceContent({
   initialPlan: TripPlan;
   initialError?: string;
 }) {
-  const [plan, setPlan] = useState(initialPlan);
+  const [plan, setPlan] = useState(() => identifyActivities(initialPlan));
   const [draft, setDraft] = useState(() => draftFor(initialPlan.brief));
   const [messages, setMessages] = useState<Message[]>(seed);
   const [input, setInput] = useState("");
   const [previousTotal, setPreviousTotal] = useState<number>();
+  const [editorView, setEditorView] = useState<"overview" | "timeline" | "map">("overview");
+  const [editPending, setEditPending] = useState(false);
   const [busy, setBusy] = useState(false);
   const [activity, setActivity] = useState<AgentProgressEvent[]>([]);
   const [error, setError] = useState(initialError ?? "");
@@ -160,7 +166,7 @@ function WorkspaceContent({
       localStorage.setItem(
         CURRENT_KEY,
         JSON.stringify({
-          version: 1,
+          version: 2,
           id: plan.tripId,
           savedAt: new Date().toISOString(),
           plan,
@@ -179,6 +185,7 @@ function WorkspaceContent({
   }, [ready, storageEnabled, plan, draft, messages, input, previousTotal]);
 
   function edit() {
+    setEditorView("overview");
     setDialog(undefined);
     requestAnimationFrame(() => {
       left.current?.scrollIntoView({ block: "start" });
@@ -203,7 +210,7 @@ function WorkspaceContent({
   }
   function snapshot(): Snapshot {
     return {
-      version: 1,
+      version: 2,
       id: crypto.randomUUID(),
       savedAt: new Date().toISOString(),
       plan,
@@ -275,7 +282,7 @@ function WorkspaceContent({
         if (active.current !== controller) return;
       }
       if (task.kind === "chat" || next.estTotal !== plan.estTotal) setPreviousTotal(plan.estTotal);
-      setPlan(next);
+      setPlan(identifyActivities(next));
       if (task.kind === "chat") setDraft(draftFor(next.brief));
       setErrors({});
       if (task.kind === "decision" && task.decision.action === "reject") edit();
@@ -377,13 +384,32 @@ function WorkspaceContent({
           </p>
         )}
       </div>
-      <main className="layout" aria-busy={busy}>
+      <TripEditor
+        plan={plan}
+        disabled={busy || !ready}
+        onPending={setEditPending}
+        onViewChange={setEditorView}
+        currentView={editorView}
+        onReview={() => setDialog("review")}
+        onSave={save}
+        onApply={(next) => {
+          active.current?.abort();
+          active.current = null;
+          setPreviousTotal(plan.estTotal);
+          setPlan(next);
+        }}
+      />
+      <main
+        className="layout"
+        aria-busy={busy}
+        style={editorView !== "overview" ? { display: "none" } : undefined}
+      >
         <div ref={left} className="filter-container">
           <FiltersPanel
             draft={draft}
             onChange={setDraft}
             onSubmit={submit}
-            busy={busy || !ready}
+            busy={busy || !ready || editPending}
             errors={errors}
           />
         </div>
@@ -392,7 +418,7 @@ function WorkspaceContent({
           messages={messages}
           input={input}
           onInput={setInput}
-          busy={busy || !ready}
+          busy={busy || !ready || editPending}
           activity={activity}
           onSend={send}
           onDecision={onDecision}
@@ -400,7 +426,7 @@ function WorkspaceContent({
         />
         <TripPanel
           plan={plan}
-          busy={busy || !ready}
+          busy={busy || !ready || editPending}
           onReview={() => setDialog("review")}
           onDecision={onDecision}
           onEdit={edit}

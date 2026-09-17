@@ -47,7 +47,7 @@ export function parseDraft(draft: Draft, current: TripBrief) {
   });
 }
 export type Snapshot = {
-  version: 1;
+  version: 1 | 2;
   id: string;
   savedAt: string;
   plan: TripPlan;
@@ -63,13 +63,13 @@ const object = (value: unknown): value is Record<string, unknown> =>
 export function parseSnapshot(value: unknown): Snapshot {
   if (
     !object(value) ||
-    value.version !== 1 ||
+    (value.version !== 1 && value.version !== 2) ||
     typeof value.id !== "string" ||
     typeof value.savedAt !== "string" ||
     !Number.isFinite(Date.parse(value.savedAt))
   )
     throw new Error("Saved trip version or data is invalid.");
-  const plan = TripPlan.parse(value.plan);
+  const plan = identifyActivities(TripPlan.parse(value.plan));
   if (plan.tripId !== plan.brief.tripId) throw new Error("Saved trip identifiers do not match.");
   const draft = value.draft;
   if (
@@ -96,7 +96,7 @@ export function parseSnapshot(value: unknown): Snapshot {
       value.previousTotal < 0)
   )
     throw new Error("Saved budget history is invalid.");
-  return { ...value, plan } as Snapshot;
+  return { ...value, version: 2, plan } as Snapshot;
 }
 export function parseSaved(raw: string | null): Snapshot[] {
   if (raw === null) return [];
@@ -156,4 +156,23 @@ export async function readPlanStream(
   if (error) throw new Error(error);
   if (!result) throw new Error("Connection ended before the plan was ready. Please retry.");
   return result;
+}
+
+/** Allocate IDs only for legacy/new items; never derive identity from array position. */
+export function identifyActivities(plan: TripPlan): TripPlan {
+  return {
+    ...plan,
+    editVersion: plan.editVersion ?? 0,
+    sections: plan.sections.map((section) => ({
+      ...section,
+      proposal: section.proposal
+        ? {
+            ...section.proposal,
+            items: section.proposal.items.map((item) =>
+              item.kind === "activity" && !item.id ? { ...item, id: crypto.randomUUID() } : item,
+            ),
+          }
+        : undefined,
+    })),
+  };
 }

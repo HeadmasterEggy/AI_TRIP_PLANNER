@@ -10,6 +10,10 @@ export interface RouteQuery {
   from: string;
   to: string;
   date?: string;
+  /** Explicit RFC 3339 departure instant; providers may skip local-time lookup. */
+  departureTime?: string;
+  /** Local wall-clock departure time for `date`, in HH:MM (defaults to 09:00). */
+  localTime?: string;
 }
 export interface RouteLeg {
   mode: "train" | "flight" | "bus" | "walk" | "transit";

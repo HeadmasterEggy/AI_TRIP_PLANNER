@@ -32,6 +32,7 @@ export type HitlCheckpoint = z.infer<typeof HitlCheckpoint>;
 export const TripPlan = z.object({
   tripId: z.string(),
   brief: TripBrief,
+  editVersion: z.number().int().nonnegative().optional(),
   round: z.number().int().nonnegative(),
   budgetTotal: z.number().min(0.01),
   estTotal: z.number().nonnegative(),
@@ -39,6 +40,15 @@ export const TripPlan = z.object({
   sections: z.array(TripSection),
   hitl: z.array(HitlCheckpoint),
   conflicts: z.array(RevisionRequest).optional(),
+  editIssues: z
+    .array(
+      z.object({
+        code: z.enum(["route_unavailable", "price_unverified", "schedule_conflict"]),
+        message: z.string(),
+        activityIds: z.array(z.string()),
+      }),
+    )
+    .optional(),
 });
 export type TripPlan = z.infer<typeof TripPlan>;
 

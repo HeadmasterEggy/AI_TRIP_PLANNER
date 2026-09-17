@@ -119,7 +119,9 @@ describe("B transport reliability", () => {
   it("queries the date of the assigned travel day, not the first day", async () => {
     const { ctx, route } = context();
     await transportAgent.invoke({ brief, context: ctx });
-    expect(route).toHaveBeenCalledWith(expect.objectContaining({ day: 3, date: "2026-10-03" }));
+    expect(route).toHaveBeenCalledWith(
+      expect.objectContaining({ day: 3, date: "2026-10-03", localTime: "09:00" }),
+    );
   });
 
   it("reports missing routes and flights while preserving available evidence", async () => {

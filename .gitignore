@@ -22,3 +22,5 @@ dev.db
 # Local browser verification artifacts
 .playwright-cli/
 output/playwright/
+
+.next-dev/

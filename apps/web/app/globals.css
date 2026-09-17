@@ -936,3 +936,65 @@ button:not(.section__row):not(.stay-option):not(.primary):not(.trip__cta) {
 .section__body > button {
   margin-top: 12px;
 }
+
+.trip-editor {
+  margin: 24px auto;
+  padding: 24px;
+  max-width: 1400px;
+  background: #fff;
+  border: 1px solid #deded7;
+  border-radius: 16px;
+  overflow-wrap: anywhere;
+}
+.trip-editor nav {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.trip-editor button,
+.trip-editor select,
+.trip-editor input {
+  padding: 8px 12px;
+  margin: 4px;
+  border: 1px solid #c6cec6;
+  border-radius: 6px;
+  max-width: 100%;
+}
+.trip-editor button[aria-pressed="true"] {
+  background: #dce8df;
+}
+.trip-editor button:focus-visible,
+.trip-editor input:focus-visible,
+.trip-editor select:focus-visible {
+  outline: 3px solid #37664c;
+  outline-offset: 2px;
+}
+.editor-columns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr));
+  gap: 24px;
+}
+.editor-activity {
+  border-bottom: 1px solid #ddd;
+  padding: 16px 0;
+}
+.google-map {
+  height: 480px;
+  min-width: 0;
+  border-radius: 12px;
+  background: #edf0e9;
+}
+.edit-preview {
+  background: #f1f5ed;
+  padding: 16px;
+  border-radius: 12px;
+}
+@media (max-width: 600px) {
+  .trip-editor {
+    padding: 12px;
+    margin: 12px;
+  }
+  .google-map {
+    height: 340px;
+  }
+}

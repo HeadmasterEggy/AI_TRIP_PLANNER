@@ -30,6 +30,17 @@ async function googleRequest<T>(url: string, body: unknown, fieldMask: string): 
   return (await response.json()) as T;
 }
 
+async function googleGet<T>(url: string): Promise<T> {
+  const response = await fetch(url, {
+    headers: {
+      "x-goog-api-key": process.env.MAPS_API_KEY!,
+    },
+    signal: AbortSignal.timeout(8_000),
+  });
+  if (!response.ok) throw new Error(`Google Maps request failed (${response.status})`);
+  return (await response.json()) as T;
+}
+
 async function osmRequest<T>(url: string): Promise<T> {
   const response = await fetch(url, {
     headers: {
@@ -65,6 +76,124 @@ async function geocode(
   return { lat, lon, label: result.display_name };
 }
 
+const localTimePattern = /^([01]\d|2[0-3]):[0-5]\d$/;
+const isoInstantPattern =
+  /^\d{4}-\d{2}-\d{2}T(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d(?:\.\d{1,9})?)?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)$/;
+
+function parseDate(date: string): number {
+  const timestamp = Date.parse(`${date}T00:00:00.000Z`);
+  if (
+    !/^\d{4}-\d{2}-\d{2}$/.test(date) ||
+    !Number.isFinite(timestamp) ||
+    new Date(timestamp).toISOString().slice(0, 10) !== date
+  )
+    throw new Error(`Google transit route requires a valid YYYY-MM-DD date: ${date}`);
+  return timestamp;
+}
+
+function parseDepartureTime(value: string): number {
+  if (!isoInstantPattern.test(value))
+    throw new Error("Google transit route requires departureTime as an ISO instant.");
+  const offset = /([+-])(\d{2}):(\d{2})$/.exec(value);
+  if (offset && (Number(offset[2]) > 14 || (Number(offset[2]) === 14 && Number(offset[3]) !== 0)))
+    throw new Error("Google transit route requires departureTime as an ISO instant.");
+  try {
+    parseDate(value.slice(0, 10));
+  } catch {
+    throw new Error("Google transit route requires departureTime as an ISO instant.");
+  }
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp))
+    throw new Error("Google transit route requires departureTime as an ISO instant.");
+  return timestamp;
+}
+
+const transitWindowMs = {
+  past: 7 * 86400000,
+  future: 100 * 86400000,
+};
+
+function assertTransitWindow(timestamp: number): void {
+  const delta = timestamp - Date.now();
+  if (delta < -transitWindowMs.past || delta > transitWindowMs.future)
+    throw new Error("Transit departure is outside Google's supported date window.");
+}
+
+/** Convert a local wall time to UTC, rejecting DST gaps and repeated times. */
+function localInstant(date: string, time: string, zone: string): string {
+  const naive = Date.parse(`${date}T${time}:00.000Z`);
+  const formatter = new Intl.DateTimeFormat("sv-SE", {
+    timeZone: zone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  });
+  const target = `${date}T${time}`;
+  const matches: number[] = [];
+  // Cover every valid UTC offset, including zones with non-hour offsets.
+  for (let offset = -14 * 60; offset <= 14 * 60; offset += 1) {
+    const instant = naive - offset * 60_000;
+    if (formatter.format(new Date(instant)).replace(" ", "T") === target) matches.push(instant);
+  }
+  if (matches.length !== 1)
+    throw new Error("Local departure time is ambiguous or nonexistent due to daylight saving.");
+  return new Date(matches[0]!).toISOString();
+}
+
+async function googleOriginTimeZone(from: string, dateTimestamp: number): Promise<string> {
+  const places = await googleRequest<{
+    places?: Array<{ location?: { latitude?: number; longitude?: number } }>;
+  }>(
+    "https://places.googleapis.com/v1/places:searchText",
+    { textQuery: from, pageSize: 1 },
+    "places.location",
+  );
+  const location = places.places?.[0]?.location;
+  if (
+    !location ||
+    !Number.isFinite(location.latitude) ||
+    !Number.isFinite(location.longitude) ||
+    Math.abs(location.latitude!) > 90 ||
+    Math.abs(location.longitude!) > 180
+  )
+    throw new Error("Google Places returned no valid origin coordinates.");
+
+  const url = new URL("https://maps.googleapis.com/maps/api/timezone/json");
+  url.search = new URLSearchParams({
+    location: `${location.latitude},${location.longitude}`,
+    timestamp: String(Math.floor((dateTimestamp + 12 * 60 * 60 * 1000) / 1000)),
+    key: process.env.MAPS_API_KEY!,
+  }).toString();
+  const timezone = await googleGet<{ status?: string; timeZoneId?: string }>(url.toString());
+  if (timezone.status !== "OK" || typeof timezone.timeZoneId !== "string")
+    throw new Error("Google could not verify the origin time zone.");
+  return timezone.timeZoneId;
+}
+
+async function departureForGoogle(q: RouteQuery): Promise<string> {
+  if (q.departureTime !== undefined)
+    return new Date(parseDepartureTime(q.departureTime)).toISOString();
+  if (q.date === undefined)
+    throw new Error("Google transit route requires a date or explicit departureTime.");
+  const dateTimestamp = parseDate(q.date);
+  // A date clearly outside the provider window can be rejected before the
+  // Places/Time Zone lookups. Near a boundary, resolve the true instant first.
+  const roughDelta = dateTimestamp - Date.now();
+  if (
+    roughDelta < -(transitWindowMs.past + 86400000) ||
+    roughDelta > transitWindowMs.future + 86400000
+  )
+    throw new Error("Transit departure is outside Google's supported date window.");
+  const localTime = q.localTime ?? "09:00";
+  if (!localTimePattern.test(localTime))
+    throw new Error("Google transit route requires localTime in HH:MM format.");
+  const zone = await googleOriginTimeZone(q.from, dateTimestamp);
+  return localInstant(q.date, localTime, zone);
+}
+
 export async function route(q: RouteQuery): Promise<RouteLeg[]> {
   if (mockEnabled()) {
     return [{ mode: "train", durationMin: 140, priceUsd: 90, note: `mock ${q.from} -> ${q.to}` }];
@@ -91,6 +220,8 @@ export async function route(q: RouteQuery): Promise<RouteLeg[]> {
   }
   if (provider() !== "google") throw new Error(`Unsupported maps provider: ${provider()}`);
   if (!process.env.MAPS_API_KEY) throw new Error("Google Maps provider requires MAPS_API_KEY.");
+  const departureTime = await departureForGoogle(q);
+  assertTransitWindow(Date.parse(departureTime));
   const data = await googleRequest<{
     routes?: Array<{ duration?: string; distanceMeters?: number }>;
   }>(
@@ -99,7 +230,7 @@ export async function route(q: RouteQuery): Promise<RouteLeg[]> {
       origin: { address: q.from },
       destination: { address: q.to },
       travelMode: "TRANSIT",
-      departureTime: q.date ? `${q.date}T09:00:00Z` : undefined,
+      departureTime,
     },
     "routes.duration,routes.distanceMeters",
   );

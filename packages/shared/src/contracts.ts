@@ -69,6 +69,9 @@ const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 export const ProposalItem = z
   .object({
+    id: z.string().min(1).optional(),
+    placeId: z.string().min(1).optional(),
+    priceNeedsReview: z.boolean().optional(),
     kind: z.string(), // "transport" | "hotel" | "activity" | "meal" | "note" ...
     detail: z.string(),
     estCost: z.number().nonnegative().optional(),

@@ -54,6 +54,7 @@ async function buildTransportProposal(
   const scheduleRevision = revision !== undefined && /time|overlap|schedule/i.test(revision.reason);
 
   const routeQueries = destinations.slice(1).map((destination, index) => ({
+    localTime: scheduleRevision ? "06:00" : "09:00",
     from: destinations[index]!,
     to: destination,
     date: dateForDay(
@@ -66,6 +67,7 @@ async function buildTransportProposal(
   // the destination, keeping the proposal useful without inventing a flight.
   if (origin.toLowerCase() === destinations[0]!.toLowerCase() && routeQueries.length === 0) {
     routeQueries.push({
+      localTime: scheduleRevision ? "06:00" : "09:00",
       from: `${destinations[0]} airport`,
       to: destinations[0]!,
       date: brief.dates[0],
