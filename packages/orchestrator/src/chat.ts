@@ -14,143 +14,6 @@ import { runOrchestrator, type OrchestratorOptions } from "./workflow";
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
-const MONTH_NAMES: Record<string, number> = {
-  jan: 1,
-  january: 1,
-  feb: 2,
-  february: 2,
-  mar: 3,
-  march: 3,
-  apr: 4,
-  april: 4,
-  may: 5,
-  jun: 6,
-  june: 6,
-  jul: 7,
-  july: 7,
-  aug: 8,
-  august: 8,
-  sep: 9,
-  sept: 9,
-  september: 9,
-  oct: 10,
-  october: 10,
-  nov: 11,
-  november: 11,
-  dec: 12,
-  december: 12,
-};
-const MONTH_WORDS = Object.keys(MONTH_NAMES).join("|");
-
-const NUMBER_WORDS: Record<string, number> = {
-  one: 1,
-  two: 2,
-  three: 3,
-  four: 4,
-  five: 5,
-  six: 6,
-  seven: 7,
-  eight: 8,
-  nine: 9,
-  ten: 10,
-};
-
-/**
- * The date shapes `parseDateToken` understands, so a range can be found inside a sentence.
- * Order matters: the year-first form has to be tried before the year-last one.
- */
-const DATE_TOKEN = [
-  String.raw`\d{4}\s*[-/.年]\s*\d{1,2}\s*[-/.月]\s*\d{1,2}\s*日?`,
-  String.raw`(?:${MONTH_WORDS})[a-z]*\.?\s+\d{1,2}(?:st|nd|rd|th)?(?:\s*,?\s*\d{4})?`,
-  String.raw`\d{1,2}(?:st|nd|rd|th)?\s+(?:${MONTH_WORDS})[a-z]*\.?(?:\s*,?\s*\d{4})?`,
-  String.raw`\d{1,2}\s*月\s*\d{1,2}\s*日`,
-  String.raw`\d{1,2}\s*[-/.]\s*\d{1,2}\s*[-/.]\s*\d{2,4}`,
-].join("|");
-
-/** “to”, “through”, “~” and friends, plus a dash only when it stands alone between spaces. */
-const RANGE_SEPARATOR = String.raw`(?:to|through|until|till|and|~|～|–|—|至|到)|\s+-\s+`;
-
-function isoDate(year: number, month: number, day: number): string | undefined {
-  if (month < 1 || month > 12 || day < 1 || day > 31) return undefined;
-  const value = `${year.toString().padStart(4, "0")}-${month.toString().padStart(2, "0")}-${day
-    .toString()
-    .padStart(2, "0")}`;
-  return validDate(value) ? value : undefined;
-}
-
-/** The stated year inside one token, used to fill a year-less sibling like “10月1日”. */
-function statedYear(token: string): number | undefined {
-  const found = /\d{4}/.exec(token);
-  return found ? Number(found[0]) : undefined;
-}
-
-/**
- * Normalise the date shapes people actually type into `YYYY-MM-DD`.
- *
- * `M/D/YYYY` is read only when a component above 12 settles the order; a fully ambiguous token
- * is left undefined so the caller can ask. A token with no year of its own borrows `fallbackYear`;
- * without one there is nothing to normalise to.
- */
-function parseDateToken(token: string, fallbackYear?: number): string | undefined {
-  const text = token.trim();
-
-  // 2026-10-01, 2026/10/1, 2026.10.01, 2026年10月1日
-  const yearFirst = /^(\d{4})\s*[-/.年]\s*(\d{1,2})\s*[-/.月]\s*(\d{1,2})\s*日?$/.exec(text);
-  if (yearFirst) return isoDate(Number(yearFirst[1]), Number(yearFirst[2]), Number(yearFirst[3]));
-
-  // Oct 1 2026, October 1, 2026
-  const monthFirst = /^([A-Za-z]+)\.?\s+(\d{1,2})(?:st|nd|rd|th)?\s*,?\s*(\d{4})?$/.exec(text);
-  if (monthFirst) {
-    const month = MONTH_NAMES[monthFirst[1].toLowerCase()];
-    const year = monthFirst[3] ? Number(monthFirst[3]) : fallbackYear;
-    return month && year ? isoDate(year, month, Number(monthFirst[2])) : undefined;
-  }
-
-  // 1 Oct 2026, 1st October 2026
-  const dayFirstWord = /^(\d{1,2})(?:st|nd|rd|th)?\s+([A-Za-z]+)\.?\s*,?\s*(\d{4})?$/.exec(text);
-  if (dayFirstWord) {
-    const month = MONTH_NAMES[dayFirstWord[2].toLowerCase()];
-    const year = dayFirstWord[3] ? Number(dayFirstWord[3]) : fallbackYear;
-    return month && year ? isoDate(year, month, Number(dayFirstWord[1])) : undefined;
-  }
-
-  // 10月1日
-  const cjk = /^(\d{1,2})\s*月\s*(\d{1,2})\s*日$/.exec(text);
-  if (cjk) return fallbackYear ? isoDate(fallbackYear, Number(cjk[1]), Number(cjk[2])) : undefined;
-
-  // 13/10/2026, 10/13/2026 — only when a component above 12 settles the order. A fully ambiguous
-  // 01/10/2026 is left unset so the caller asks, rather than silently picking a month.
-  const numeric = /^(\d{1,2})\s*[-/.]\s*(\d{1,2})\s*[-/.]\s*(\d{2,4})$/.exec(text);
-  if (numeric) {
-    const first = Number(numeric[1]);
-    const second = Number(numeric[2]);
-    const year = Number(numeric[3]) < 100 ? 2000 + Number(numeric[3]) : Number(numeric[3]);
-    if (first > 12) return isoDate(year, second, first);
-    if (second > 12) return isoDate(year, first, second);
-    return undefined;
-  }
-
-  return undefined;
-}
-
-/**
- * The date range in a message, normalised to ISO. Either side may omit its year as long as the
- * other states one, so “2026年10月1日到10月5日” works. A range with no year at all stays unset
- * rather than borrowing a currency figure or today's date.
- */
-function parseDateRange(message: string): [string, string] | undefined {
-  const range = new RegExp(
-    String.raw`(${DATE_TOKEN})\s*(?:${RANGE_SEPARATOR})\s*(${DATE_TOKEN})`,
-    "i",
-  ).exec(message);
-  if (!range) return undefined;
-  const [, left, right] = range;
-  const year = statedYear(left!) ?? statedYear(right!);
-  const start = parseDateToken(left!, year);
-  const end = parseDateToken(right!, year);
-  return start && end ? [start, end] : undefined;
-}
-
 const BriefPatchSchema = z.object({
   destination: z.string().trim().min(1).optional(),
   dates: z.tuple([z.string().regex(ISO_DATE), z.string().regex(ISO_DATE)]).optional(),
@@ -229,8 +92,10 @@ function cleanDestination(value: string): string {
 export function extractBriefPatchLocally(message: string): BriefPatch {
   const patch: BriefPatch = {};
 
-  const dates = parseDateRange(message);
-  if (dates) patch.dates = dates;
+  const dates = message.match(
+    /(\d{4}-\d{2}-\d{2})\s*(?:to|through|until|–|—|至|到)\s*(\d{4}-\d{2}-\d{2})/i,
+  );
+  if (dates?.[1] && dates[2]) patch.dates = [dates[1], dates[2]];
 
   const budget =
     message.match(
@@ -238,17 +103,8 @@ export function extractBriefPatchLocally(message: string): BriefPatch {
     ) ?? message.match(/\$\s*([\d,]+(?:\.\d+)?)/);
   if (budget?.[1]) patch.budgetTotal = amount(budget[1]);
 
-  const group =
-    message.match(/(\d+)\s*(?:people|persons?|travell?ers?)/i) ??
-    message.match(/(\d+)\s*人/) ??
-    // “2个人”, “2 位”, “2名” — but not “3个月” or “2个晚上”, which are durations.
-    message.match(/(\d+)\s*(?:个|位|名)(?!\s*(?:月|天|日|晚|小时|钟头))/);
-  const englishGroup = new RegExp(
-    String.raw`\b(${Object.keys(NUMBER_WORDS).join("|")})\s+(?:people|persons?|travell?ers?)\b`,
-    "i",
-  ).exec(message);
+  const group = message.match(/(\d+)\s*(?:people|persons?|travell?ers?|人)/i);
   if (group?.[1]) patch.groupSize = amount(group[1]);
-  else if (englishGroup?.[1]) patch.groupSize = NUMBER_WORDS[englishGroup[1].toLowerCase()];
   if (!patch.groupSize) {
     const chineseGroup = message.match(/([一二两三四五六七八九十])\s*(?:个)?人/);
     const values: Record<string, number> = {
@@ -274,21 +130,16 @@ export function extractBriefPatchLocally(message: string): BriefPatch {
     /(?:destination|place)(?:\s+(?:is|to|as))?\s*[:=]?\s+(.+?)(?=\s+(?:and\s+)?(?:for|from|between|on|with|budget)\b|[,.;]|$)/i,
   );
   const leadingDestination = message.match(
-    new RegExp(String.raw`^\s*([A-Za-z][A-Za-z &.·\-]*?)\s*[,，]\s*(?=${DATE_TOKEN})`, "i"),
+    /^\s*([A-Za-z][A-Za-z &.\-]+?)\s*[,，]\s*\d{4}-\d{2}-\d{2}/,
   );
   const chineseDestination = message.match(
     /(?:去|前往|目的地(?:是|为|改成|调整为)?)[：:\s]*([\p{Script=Han}A-Za-z][\p{Script=Han}A-Za-z&·\- ]*?)(?=\s*(?:旅行|旅游|玩|，|,|。|预算|\d{4}-|$))/u,
-  );
-  // A place named at the start of the message and closed by a comma or a date, with no lead-in.
-  const bareChineseDestination = message.match(
-    /(?:^|[\s，,。:：])([\p{Script=Han}]{2,12}(?:&[\p{Script=Han}]{2,12})?)\s*(?=[，,。:：]|\s*\d{4}\s*[-/年])/u,
   );
   const destination = cleanDestination(
     englishDestination?.[1] ??
       explicitDestination?.[1] ??
       leadingDestination?.[1] ??
       chineseDestination?.[1] ??
-      bareChineseDestination?.[1] ??
       "",
   );
   if (destination) patch.destination = destination;
@@ -306,7 +157,7 @@ export function applyBriefPatch(current: TripBrief, patch: BriefPatch, tripId: s
   const next = TripBriefSchema.parse({ ...current, ...parsedPatch, tripId });
   if (!validDate(next.dates[0]) || !validDate(next.dates[1])) {
     throw new Error(
-      "I could not read those trip dates. Try a range like 2026-10-01 to 2026-10-05, or say 1 October 2026.",
+      "Those trip dates are not real calendar dates. Please restate the start and end dates.",
     );
   }
   if (Date.parse(next.dates[1]) <= Date.parse(next.dates[0])) {
@@ -316,9 +167,10 @@ export function applyBriefPatch(current: TripBrief, patch: BriefPatch, tripId: s
 }
 
 function extractionPrompt(message: string, current: TripBrief | undefined): string {
+  const today = new Date().toISOString().slice(0, 10);
   return `Extract only explicit updates to the trip brief. Use null for every field the user did not specify. Do not infer a nationality, group size, destination or budget the user did not state. Budget is total USD.
 
-Dates: write every date the user gave as YYYY-MM-DD, converting whatever shape they used ("Oct 1 2026", "01/10/2026", "2026年10月1日", "1 October 2026"). Normalising a date the user stated is a format conversion, not an inference. An ambiguous "01/10/2026" is read day first; the plan shows the dates you chose, so the traveller can correct it. Only return null when the user gave no year at all to work from.
+Dates: write the start and end date the user gave as YYYY-MM-DD, whatever shape they wrote them in ("Oct 1 2026", "2026年10月1日", "1 October 2026", "13/10/2026"). Converting a stated date is a format conversion, not an inference. Today is ${today}; a date written without a year is its next occurrence on or after today. Return null for both dates when the user gave only one end of the range, or when the day and month cannot be told apart because both are 12 or lower (such as "01/10/2026"), so the traveller is asked rather than planned a trip on a guessed month.
 
 Current brief:
 ${current ? JSON.stringify(current) : "None. This is a new conversation."}
@@ -339,8 +191,8 @@ function toBriefPatch(result: z.infer<typeof ModelPatchSchema>): BriefPatch {
 }
 
 function createModelExtractor(): BriefExtractor | undefined {
-  // The routed model normalises dates, so the shapes people type ("Oct 1", "2026年10月1日",
-  // "01/10/2026") do not each need a pattern here.
+  // The model reads dates in whatever shape people type them; without a key the local parser is
+  // used, and it only understands ISO dates.
   const invoke = createRoutedStructuredInvoker("itinerary", ModelPatchSchema, "TripBriefPatch");
   if (!invoke) return undefined;
   return {
@@ -350,17 +202,12 @@ function createModelExtractor(): BriefExtractor | undefined {
   };
 }
 
-function createLangChainExtractor(): BriefExtractor | undefined {
-  // The routed model handles chat/intent extraction; without a key the local parser is used.
-  return createModelExtractor();
-}
-
 async function extractPatch(
   message: string,
   current: TripBrief | undefined,
   extractor?: BriefExtractor,
 ): Promise<BriefPatch> {
-  const selected = extractor ?? createLangChainExtractor();
+  const selected = extractor ?? createModelExtractor();
   if (selected) {
     try {
       return await selected.extract(message, current);

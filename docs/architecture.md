@@ -101,12 +101,11 @@ Model routing (`MODEL_ROUTING` in `packages/agents/src/models.ts` and `chat.ts`)
 - **MiniMax**: configured but not routed; it was too slow for page-level planning. See
   `.env.example` for its account caveats.
 
-Extraction is told to normalise whatever date shape the traveller writes into `YYYY-MM-DD`, and that
-normalising a stated date is a format conversion rather than an inference. Without a key, or when a
-model call fails, a conservative English/Chinese rule parser handles extraction instead, and it
-accepts `2026-10-01`, `2026/10/01`, `2026年10月1日`, `Oct 1 2026` and `1 October 2026`. A numeric
-`01/10/2026` is only read when a component above 12 settles the order; a fully ambiguous one is left
-for the traveller to restate rather than guessed at.
+Dates are read by the model, not by patterns: extraction converts whatever shape the traveller writes
+into `YYYY-MM-DD`, takes the next occurrence for a date written without a year, and leaves the dates
+unset when only one end is given or the day and month cannot be told apart (`01/10/2026`), so the
+traveller is asked instead of planned a trip on a guessed month. Without a key, or when a model call
+fails, a small English/Chinese rule parser handles extraction instead; it only reads ISO dates.
 
 When a key is missing, a model call fails or output is off-schema, the step falls back to validated
 deterministic output, so planning requests still complete. Schema, budget, schedule and route checks
