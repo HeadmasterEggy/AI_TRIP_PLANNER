@@ -9,30 +9,30 @@
 
 ## 已确定的决策
 
-| 议题 | 决定 | 备注 |
-| --- | --- | --- |
-| 货币实现方式 | **方案 A：只改显示层** | 内部一律保持 USD；`packages/shared` 契约零改动 |
-| 汇率来源 | **先静态**（代码内常量表） | 离线、可测、无外部依赖；后续如需实时再换适配器 |
-| 语言的层次划分 | **分 3 层，机制不混** | 对话/计划内容走模型；界面走字典；数字日期走 `Intl` |
-| 地区格式化（locale） | **并入货币分支** | `Intl` 是货币与语言的天然交汇点，落点是同一批代码 |
-| Agent 输出语言 | **走模型 prompt 注入**，不走字典 | 计划内容是模型生成的，文案无限，字典翻不了 |
-| 界面 i18n | **本次不做** | 收益/成本比最低；方案已完整记录在末节，想做时可直接照做 |
-| 货币设置入口 | **`Trip Preferences` 抽屉内**，紧挨 `Total budget` 字段 | 预算就在那里输入，位置最自然，且不新增弹窗 |
-| ⋮ 菜单位置 | **侧边栏历史项右侧**，交互对齐 Codex / Claude | 不是聊天面板头部 |
-| 分支策略 | **拆 4 个分支** | 见下表 |
+| 议题                 | 决定                                                    | 备注                                                    |
+| -------------------- | ------------------------------------------------------- | ------------------------------------------------------- |
+| 货币实现方式         | **方案 A：只改显示层**                                  | 内部一律保持 USD；`packages/shared` 契约零改动          |
+| 汇率来源             | **先静态**（代码内常量表）                              | 离线、可测、无外部依赖；后续如需实时再换适配器          |
+| 语言的层次划分       | **分 3 层，机制不混**                                   | 对话/计划内容走模型；界面走字典；数字日期走 `Intl`      |
+| 地区格式化（locale） | **并入货币分支**                                        | `Intl` 是货币与语言的天然交汇点，落点是同一批代码       |
+| Agent 输出语言       | **走模型 prompt 注入**，不走字典                        | 计划内容是模型生成的，文案无限，字典翻不了              |
+| 界面 i18n            | **本次不做**                                            | 收益/成本比最低；方案已完整记录在末节，想做时可直接照做 |
+| 货币设置入口         | **`Trip Preferences` 抽屉内**，紧挨 `Total budget` 字段 | 预算就在那里输入，位置最自然，且不新增弹窗              |
+| ⋮ 菜单位置           | **侧边栏历史项右侧**，交互对齐 Codex / Claude           | 不是聊天面板头部                                        |
+| 分支策略             | **拆 4 个分支**                                         | 见下表                                                  |
 
 ## 分支与执行顺序
 
 按「独立、风险低、可快速 review」优先：
 
-| 顺序 | 分支 | 内容 | 主要落点 | 依赖 |
-| --- | --- | --- | --- | --- |
-| 1 | `fix/duplicate-new-chat` | New chat 重复点击产生多个空对话 | `apps/web` | 无 |
-| 2 | `feature/sidebar-chat-menu` | Rename / Delete 收进 ⋮ 菜单 | `apps/web` | 无 |
-| 3 | `feature/chat-date-parsing` | 日期输入放宽到多格式 | `packages/orchestrator` | 无 |
-| 4 | `feature/currency-and-locale-display` | 预算按设置显示货币 + 地区化数字/日期格式 | `apps/web` + `packages/*` 文案 | 无（设置入口已定为 Trip Preferences 抽屉） |
-| 5 | `feature/agent-output-language` | Agent 按用户语言输出计划内容与回复 | `packages/orchestrator` + `packages/agents` | 无 |
-| — | *(未排期)* `feature/ui-i18n` | 界面文案字典 | `apps/web` | 见末节；**先不建分支** |
+| 顺序 | 分支                                  | 内容                                     | 主要落点                                    | 依赖                                       |
+| ---- | ------------------------------------- | ---------------------------------------- | ------------------------------------------- | ------------------------------------------ |
+| 1    | `fix/duplicate-new-chat`              | New chat 重复点击产生多个空对话          | `apps/web`                                  | 无                                         |
+| 2    | `feature/sidebar-chat-menu`           | Rename / Delete 收进 ⋮ 菜单              | `apps/web`                                  | 无                                         |
+| 3    | `feature/chat-date-parsing`           | 日期输入放宽到多格式                     | `packages/orchestrator`                     | 无                                         |
+| 4    | `feature/currency-and-locale-display` | 预算按设置显示货币 + 地区化数字/日期格式 | `apps/web` + `packages/*` 文案              | 无（设置入口已定为 Trip Preferences 抽屉） |
+| 5    | `feature/agent-output-language`       | Agent 按用户语言输出计划内容与回复       | `packages/orchestrator` + `packages/agents` | 无                                         |
+| —    | _(未排期)_ `feature/ui-i18n`          | 界面文案字典                             | `apps/web`                                  | 见末节；**先不建分支**                     |
 
 1 和 2 都是纯前端、互不冲突，可以并行。3 独立。4 和 5 分别改 `apps/web` 与 `packages/*`，彼此不冲突，
 但都建议在前三项合入后再开。界面 i18n 未排期。
@@ -45,23 +45,23 @@
 
 ### 现象（已用真实函数实测复现）
 
-| 输入 | `extractBriefPatchLocally` 结果 |
-| --- | --- |
+| 输入                                                     | `extractBriefPatchLocally` 结果             |
+| -------------------------------------------------------- | ------------------------------------------- |
 | `Tokyo, 2026-10-01 to 2026-10-05, 2 people, budget 3000` | ✅ destination + dates + groupSize + budget |
-| `Tokyo, Oct 1 to Oct 5 2026, 2 people, budget 3000` | ❌ **dates 丢失** |
-| `东京，2026年10月1日到10月5日，2人，预算3000` | ❌ **dates 丢失** |
-| `Tokyo, 01/10/2026 to 05/10/2026` | ❌ **dates 丢失** |
-| `Tokyo, 2026-10-01 ~ 2026-10-05` | ❌ **dates 丢失**（`~` 不在分隔符表内） |
+| `Tokyo, Oct 1 to Oct 5 2026, 2 people, budget 3000`      | ❌ **dates 丢失**                           |
+| `东京，2026年10月1日到10月5日，2人，预算3000`            | ❌ **dates 丢失**                           |
+| `Tokyo, 01/10/2026 to 05/10/2026`                        | ❌ **dates 丢失**                           |
+| `Tokyo, 2026-10-01 ~ 2026-10-05`                         | ❌ **dates 丢失**（`~` 不在分隔符表内）     |
 
 后果：`mode: "start"` 下抛 `IncompleteBriefError`，前端提示
 `To start planning, include the start and end dates (YYYY-MM-DD), ...`，用户只能重发。
 
 ### 顺带发现的两个同类缺陷
 
-| 输入 | 问题 | 位置 |
-| --- | --- | --- |
-| `... ，2个人，预算3000` | **`2个人` 丢失**：正则要求数字后直接跟 `人`；中文分支只认「一/二/两…」，阿拉伯数字 + `个` + `人` 两边都不认 | `chat.ts:107`、`chat.ts:110` |
-| `东京，2026-10-01 到 2026-10-05，2人` | **destination 丢失**：中文目的地正则强制要求 `去` / `前往` / `目的地` 前缀，直接说地名不行 | `chat.ts:136` |
+| 输入                                  | 问题                                                                                                        | 位置                         |
+| ------------------------------------- | ----------------------------------------------------------------------------------------------------------- | ---------------------------- |
+| `... ，2个人，预算3000`               | **`2个人` 丢失**：正则要求数字后直接跟 `人`；中文分支只认「一/二/两…」，阿拉伯数字 + `个` + `人` 两边都不认 | `chat.ts:107`、`chat.ts:110` |
+| `东京，2026-10-01 到 2026-10-05，2人` | **destination 丢失**：中文目的地正则强制要求 `去` / `前往` / `目的地` 前缀，直接说地名不行                  | `chat.ts:136`                |
 
 ### 根因：三层都是 ISO-only
 
@@ -75,18 +75,18 @@
 
 ### 改动清单
 
-| 文件 | 位置 | 改动 |
-| --- | --- | --- |
-| `packages/orchestrator/src/chat.ts` | 新增函数 | `parseNaturalDate()`，接受 `2026-10-01`、`2026/10/01`、`01/10/2026`、`Oct 1 2026`、`October 1, 2026`、`2026年10月1日`、`10月1日`（在有年份的上下文中补年）、`10-01`（同月跨日） |
-| 同上 | `chat.ts:96-99` | 放宽分隔符：`~`、`-`、`—`、`to`、`until`、`through`、`–`、`至`、`到`；结果交给 `parseNaturalDate()` 归一化 |
-| 同上 | `chat.ts:107`、`chat.ts:110` | 补 `2个人` / `2 位`；顺带考虑 `two people` |
-| 同上 | `chat.ts:136` | 中文目的地去掉强制 `去` / `前往` / `目的地` 前缀 |
-| 同上 | `chat.ts:168` | 拆清职责：明确告诉模型「把日期归一化成 `YYYY-MM-DD` 是格式转换，不是推断」；把 `Budget is total USD` 的措辞与货币方案对齐 |
-| 同上 | `chat.ts:16`、`chat.ts:20`、`chat.ts:62-68` | **保持 `ISO_DATE` 作为输出约束**，入口解析放宽、归一化后再进 schema |
-| 同上 | `chat.ts:160` | 报错文案去掉 `in YYYY-MM-DD format`，改成用户能听懂的话 |
-| 同上 | `chat.ts:45` | `REQUIRED_START_FIELDS` 里的 `"start and end dates (YYYY-MM-DD)"` 同步改文案 |
-| `apps/web/components/ChatPanel.tsx` | `:50` | 空会话引导语 `dates (YYYY-MM-DD)` 改成人类说法 |
-| `apps/web/components/FiltersPanel.tsx` | `:49-50` | 已是 `<input type="date">`，**无需改动** |
+| 文件                                   | 位置                                        | 改动                                                                                                                                                                            |
+| -------------------------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `packages/orchestrator/src/chat.ts`    | 新增函数                                    | `parseNaturalDate()`，接受 `2026-10-01`、`2026/10/01`、`01/10/2026`、`Oct 1 2026`、`October 1, 2026`、`2026年10月1日`、`10月1日`（在有年份的上下文中补年）、`10-01`（同月跨日） |
+| 同上                                   | `chat.ts:96-99`                             | 放宽分隔符：`~`、`-`、`—`、`to`、`until`、`through`、`–`、`至`、`到`；结果交给 `parseNaturalDate()` 归一化                                                                      |
+| 同上                                   | `chat.ts:107`、`chat.ts:110`                | 补 `2个人` / `2 位`；顺带考虑 `two people`                                                                                                                                      |
+| 同上                                   | `chat.ts:136`                               | 中文目的地去掉强制 `去` / `前往` / `目的地` 前缀                                                                                                                                |
+| 同上                                   | `chat.ts:168`                               | 拆清职责：明确告诉模型「把日期归一化成 `YYYY-MM-DD` 是格式转换，不是推断」；把 `Budget is total USD` 的措辞与货币方案对齐                                                       |
+| 同上                                   | `chat.ts:16`、`chat.ts:20`、`chat.ts:62-68` | **保持 `ISO_DATE` 作为输出约束**，入口解析放宽、归一化后再进 schema                                                                                                             |
+| 同上                                   | `chat.ts:160`                               | 报错文案去掉 `in YYYY-MM-DD format`，改成用户能听懂的话                                                                                                                         |
+| 同上                                   | `chat.ts:45`                                | `REQUIRED_START_FIELDS` 里的 `"start and end dates (YYYY-MM-DD)"` 同步改文案                                                                                                    |
+| `apps/web/components/ChatPanel.tsx`    | `:50`                                       | 空会话引导语 `dates (YYYY-MM-DD)` 改成人类说法                                                                                                                                  |
+| `apps/web/components/FiltersPanel.tsx` | `:49-50`                                    | 已是 `<input type="date">`，**无需改动**                                                                                                                                        |
 
 **关键设计**：`TripBrief.dates` 内部**保持 ISO 不变**，只放宽入口解析。因此
 `packages/agents`、`packages/tools`、`apps/web/lib/google.ts` 一行都不用动。这是风险最低的切法。
@@ -131,20 +131,20 @@
 
 - 约 **30 处硬编码 `USD` 文案**，其中大部分是**服务端生成的 plan 文本**（`summary` / `detail`）：
 
-  | 文件 | 条数 | 用户可见 |
-  | --- | --- | --- |
-  | `packages/agents/src/accommodation/index.ts` | 6 | 是 |
-  | `packages/agents/src/dining/index.ts` | 5 | 是 |
-  | `packages/orchestrator/src/budget.ts` | 4 | 否（抛错消息，正常流程不出现） |
-  | `packages/orchestrator/src/hitl.ts` | 3 | 是 |
-  | `packages/orchestrator/src/chat.ts` | 3 | 是（含 `:246` 的降级回复） |
-  | `apps/web/components/TripEditor.tsx` | 3 | 是 |
-  | `packages/tools/src/booking.ts` | 2 | 1 是（`:92` 的 mock fare detail） |
-  | `packages/orchestrator/src/supervisor.ts` | 2 | 是 |
-  | `packages/agents/src/transport/index.ts` | 2 | 是 |
-  | `packages/orchestrator/src/workflow.ts` | 1 | 是 |
-  | `apps/web/lib/workspace.ts` | 1 | 是（`money()` 本身） |
-  | `apps/web/components/FiltersPanel.tsx` | 1 | 是（`Total budget (USD)` 标签） |
+  | 文件                                         | 条数 | 用户可见                          |
+  | -------------------------------------------- | ---- | --------------------------------- |
+  | `packages/agents/src/accommodation/index.ts` | 6    | 是                                |
+  | `packages/agents/src/dining/index.ts`        | 5    | 是                                |
+  | `packages/orchestrator/src/budget.ts`        | 4    | 否（抛错消息，正常流程不出现）    |
+  | `packages/orchestrator/src/hitl.ts`          | 3    | 是                                |
+  | `packages/orchestrator/src/chat.ts`          | 3    | 是（含 `:246` 的降级回复）        |
+  | `apps/web/components/TripEditor.tsx`         | 3    | 是                                |
+  | `packages/tools/src/booking.ts`              | 2    | 1 是（`:92` 的 mock fare detail） |
+  | `packages/orchestrator/src/supervisor.ts`    | 2    | 是                                |
+  | `packages/agents/src/transport/index.ts`     | 2    | 是                                |
+  | `packages/orchestrator/src/workflow.ts`      | 1    | 是                                |
+  | `apps/web/lib/workspace.ts`                  | 1    | 是（`money()` 本身）              |
+  | `apps/web/components/FiltersPanel.tsx`       | 1    | 是（`Total budget (USD)` 标签）   |
 
 ### ⚠️ 服务端文案必须先处理，否则 UI 会自相矛盾
 
@@ -153,29 +153,29 @@
 
 三个选项：
 
-| 选项 | 做法 | 评价 |
-| --- | --- | --- |
-| (i) 不动服务端文案 | 卡片 `¥`、detail `USD` | ❌ 自相矛盾，不能就这样发 |
+| 选项                        | 做法                                  | 评价                                                     |
+| --------------------------- | ------------------------------------- | -------------------------------------------------------- |
+| (i) 不动服务端文案          | 卡片 `¥`、detail `USD`                | ❌ 自相矛盾，不能就这样发                                |
 | (ii) **服务端文案去掉单位** | 只留数字，单位由 UI 的 `money()` 负责 | ✅ **推荐**：符合方案 A 的「显示层负责呈现」，契约仍不变 |
-| (iii) 把显示货币传给服务端 | 按货币生成文案 | ❌ 把 UI 偏好写进规划链路，破坏方案 A 的前提 |
+| (iii) 把显示货币传给服务端  | 按货币生成文案                        | ❌ 把 UI 偏好写进规划链路，破坏方案 A 的前提             |
 
 选 (ii)。这是第 2 项里**最大的一块工作量**，涉及约 20 条字符串 + 对应测试。
 
 ### 改动清单
 
-| 文件 | 位置 | 改动 |
-| --- | --- | --- |
-| `apps/web/lib/format.ts` | 新增 | 静态汇率表（USD 为基准）+ `convert()` + `formatMoney(value, code, locale)` + `formatDate(value, locale)`；支持的货币码与展示精度集中在此。若只做货币可命名为 `currency.ts` |
-| `apps/web/lib/workspace.ts` | `:17-23` | `money()` 改为按货币格式化，或在 `currency.ts` 提供实现后由此转发 |
-| 新增 | 货币上下文 | 用 React context + `useMoney()` 避免向 6 个组件透传 props；**推荐**，否则要改 14 个调用点的签名 |
-| 上述 14 个调用点 | 见上表 | 改用 `useMoney()`（或接收新的 `code` 参数） |
-| `apps/web/lib/workspace-catalog.ts` | `:42-50` `PanelLayout` | 加 `currency: { code: string }` |
-| 同上 | `:61-67` `DEFAULT_LAYOUT` | 加 `currency: { code: "USD" }` |
-| 同上 | `:95-125` `normalizeLayout` | 校验 `code` 是否在支持列表内，否则回退 `"USD"` |
-| 同上 | `:375-393` `updateCatalog` | `layout` 合并分支里补 `currency: { ...next.layout.currency, ...patch.layout.currency }` |
-| `apps/web/components/FiltersPanel.tsx` | `:59` | `Total budget (USD)` 标签改为跟随所选货币；**新增货币选择控件**，值写入 `PanelLayout.currency.code` |
-| `packages/agents/src/**`、`packages/orchestrator/src/**` | 约 20 条 `summary` / `detail` | 去掉 `USD ` 前缀与 `(USD ...)` 措辞，只留数字 |
-| `apps/web/components/TripEditor.tsx` | `:249`、`:386-387` | 去掉硬编码 `USD`，改用 `useMoney()` |
+| 文件                                                     | 位置                          | 改动                                                                                                                                                                       |
+| -------------------------------------------------------- | ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `apps/web/lib/format.ts`                                 | 新增                          | 静态汇率表（USD 为基准）+ `convert()` + `formatMoney(value, code, locale)` + `formatDate(value, locale)`；支持的货币码与展示精度集中在此。若只做货币可命名为 `currency.ts` |
+| `apps/web/lib/workspace.ts`                              | `:17-23`                      | `money()` 改为按货币格式化，或在 `currency.ts` 提供实现后由此转发                                                                                                          |
+| 新增                                                     | 货币上下文                    | 用 React context + `useMoney()` 避免向 6 个组件透传 props；**推荐**，否则要改 14 个调用点的签名                                                                            |
+| 上述 14 个调用点                                         | 见上表                        | 改用 `useMoney()`（或接收新的 `code` 参数）                                                                                                                                |
+| `apps/web/lib/workspace-catalog.ts`                      | `:42-50` `PanelLayout`        | 加 `currency: { code: string }`                                                                                                                                            |
+| 同上                                                     | `:61-67` `DEFAULT_LAYOUT`     | 加 `currency: { code: "USD" }`                                                                                                                                             |
+| 同上                                                     | `:95-125` `normalizeLayout`   | 校验 `code` 是否在支持列表内，否则回退 `"USD"`                                                                                                                             |
+| 同上                                                     | `:375-393` `updateCatalog`    | `layout` 合并分支里补 `currency: { ...next.layout.currency, ...patch.layout.currency }`                                                                                    |
+| `apps/web/components/FiltersPanel.tsx`                   | `:59`                         | `Total budget (USD)` 标签改为跟随所选货币；**新增货币选择控件**，值写入 `PanelLayout.currency.code`                                                                        |
+| `packages/agents/src/**`、`packages/orchestrator/src/**` | 约 20 条 `summary` / `detail` | 去掉 `USD ` 前缀与 `(USD ...)` 措辞，只留数字                                                                                                                              |
+| `apps/web/components/TripEditor.tsx`                     | `:249`、`:386-387`            | 去掉硬编码 `USD`，改用 `useMoney()`                                                                                                                                        |
 
 **无须 catalog 版本升级**：`parseCatalog` 会调 `normalizeLayout`（`:230`），旧数据缺 `currency`
 时自动落到默认值。确认这一点已由现有 `normalizeLayout` 兜底逻辑覆盖。
@@ -201,8 +201,8 @@
 `Intl` 是货币与语言的**天然交汇点**，两者共用同一批代码，因此不单独开分支：
 
 ```ts
-new Intl.NumberFormat(locale, { style: "currency", currency })
-new Intl.DateTimeFormat(locale, { dateStyle: "medium" })
+new Intl.NumberFormat(locale, { style: "currency", currency });
+new Intl.DateTimeFormat(locale, { dateStyle: "medium" });
 ```
 
 - `apps/web/lib/workspace.ts:17-23` 的 `money()` **已经是 `Intl`**，只需把写死的 `"en-US"` 换成参数
@@ -240,12 +240,18 @@ new Intl.DateTimeFormat(locale, { dateStyle: "medium" })
 `apps/web/components/WorkspaceSidebar.tsx:227-241` 在**每一个**历史项下面常驻渲染两个文字按钮：
 
 ```tsx
-{section === "chats" && (
-  <div className="history-item__actions">
-    <button aria-label={`Rename ${item.title}`} onClick={() => onRenameChat(item.id)}>Rename</button>
-    <button aria-label={`Delete ${item.title}`} onClick={() => onDeleteChat(item.id)}>Delete</button>
-  </div>
-)}
+{
+  section === "chats" && (
+    <div className="history-item__actions">
+      <button aria-label={`Rename ${item.title}`} onClick={() => onRenameChat(item.id)}>
+        Rename
+      </button>
+      <button aria-label={`Delete ${item.title}`} onClick={() => onDeleteChat(item.id)}>
+        Delete
+      </button>
+    </div>
+  );
+}
 ```
 
 CSS：`globals.css:1259-1262` `.history-item`（注意 `overflow: hidden`）、`:1288-1297`
@@ -253,14 +259,14 @@ CSS：`globals.css:1259-1262` `.history-item`（注意 `overflow: hidden`）、`
 
 ### 改动清单
 
-| 文件 | 位置 | 改动 |
-| --- | --- | --- |
-| `apps/web/components/WorkspaceSidebar.tsx` | `:227-241` | 删掉常驻按钮，改为 `⋮` 触发按钮 + 弹出菜单（Rename / Delete） |
-| `apps/web/components/WorkspaceSidebar.tsx` | `:74-75`、`:95-96` | props 签名不变（`onRenameChat` / `onDeleteChat` 仍由上层持有） |
-| `apps/web/app/globals.css` | `:1259-1262` | **`.history-item` 的 `overflow: hidden` 必须去掉或改 `visible`**，否则绝对定位菜单会被裁掉 |
-| 同上 | `:1288-1297` | `.history-item__actions` 从常驻 flex 行改为绝对定位浮层；`.history-item` 加 `position: relative` |
-| 同上 | 新增 | `.history-item__menu` 样式 |
-| `apps/web/components/Workspace.tsx` | `:555-584` | `renameChat` / `deleteChat` 现用 `window.prompt` / `window.confirm`。**建议本次保留**（改动最小），仅当作菜单的两个 action |
+| 文件                                       | 位置               | 改动                                                                                                                       |
+| ------------------------------------------ | ------------------ | -------------------------------------------------------------------------------------------------------------------------- |
+| `apps/web/components/WorkspaceSidebar.tsx` | `:227-241`         | 删掉常驻按钮，改为 `⋮` 触发按钮 + 弹出菜单（Rename / Delete）                                                              |
+| `apps/web/components/WorkspaceSidebar.tsx` | `:74-75`、`:95-96` | props 签名不变（`onRenameChat` / `onDeleteChat` 仍由上层持有）                                                             |
+| `apps/web/app/globals.css`                 | `:1259-1262`       | **`.history-item` 的 `overflow: hidden` 必须去掉或改 `visible`**，否则绝对定位菜单会被裁掉                                 |
+| 同上                                       | `:1288-1297`       | `.history-item__actions` 从常驻 flex 行改为绝对定位浮层；`.history-item` 加 `position: relative`                           |
+| 同上                                       | 新增               | `.history-item__menu` 样式                                                                                                 |
+| `apps/web/components/Workspace.tsx`        | `:555-584`         | `renameChat` / `deleteChat` 现用 `window.prompt` / `window.confirm`。**建议本次保留**（改动最小），仅当作菜单的两个 action |
 
 ### 无障碍要点
 
@@ -290,6 +296,43 @@ CSS：`globals.css:1259-1262` `.history-item`（注意 `overflow: hidden`）、`
 - 键盘可完整操作（Tab 到 `⋮` → Enter → 选 Rename → 焦点回位）
 - 菜单不被 `.history-item` 裁切
 
+### 已落地（PR #18，`22cc3c6`）
+
+已实现，但有一个**计划外的补充**和一条**必须记住的根因**，写在这里避免以后重蹈：
+
+**⋮ 被“盖住”的真正根因不是间距，而是 grid 隐式轨道。** 落地后发现长标题会把 ⋮ 挤出侧边栏。
+
+```css
+.history-list {
+  display: grid; /* 没写 grid-template-columns，单列是隐式 auto 轨道 */
+  gap: 7px;
+}
+```
+
+`auto` 轨道的最小尺寸取子项的 min-content，而标题是 `white-space: nowrap` → min-content 等于整串标题宽度
+→ 轨道被撑到超出侧边栏 → 整行溢出 → `.workspace-sidebar` 的 `overflow: hidden auto` 把右边的 ⋮ 裁掉。
+
+修法是给轨道加上限：
+
+```css
+.history-list {
+  grid-template-columns: minmax(0, 1fr); /* 0 允许轨道缩到内容以下 */
+}
+```
+
+> **以后遇到同类问题不要去调 `padding-right`。** 那是症状；真正要查的是“grid / flex 轨道有没有
+> `minmax(0, …)` 或 `min-width: 0`”。已排查过仓内其余 15 条无列宽的 grid 规则，有风险的两处
+> （`.sidebar-nav__label`、`.topbar-summary`）都已有 `min-width: 0`，无同类隐患。
+
+**另一个坑：不要在 `.history-item__menu-wrap` 上加 `z-index`。** 加上会创建层叠上下文，把菜单的
+`z-index: 5` 困在里面；各行 wrap 同层级后按 DOM 顺序绘制，下一行的 ⋮ 会盖住上一行已展开的菜单。
+代码里已用注释标明。
+
+**计划外的补充：侧边栏可拖拽调宽**（原计划没有）。 用户反馈“调不了左侧栏的宽”，于是新增
+`apps/web/components/SidebarResizer.tsx`：200–420px，指针拖拽 + 左右方向键/Home/End，双击恢复响应式默认，
+宽度只在用户真的调过之后才写进 `PanelLayout.sidebar.width`。它同时暴露了一个更早的缺口：
+`preferences.width` / `trip.width` 本来就在数据模型里，但**三个面板此前都没有任何拖拽 UI**。
+
 ---
 
 ## 4. New chat 重复点击 bug
@@ -312,9 +355,12 @@ CSS：`globals.css:1259-1262` `.history-item`（注意 `overflow: hidden`）、`
 const isBlank = (item) => !item.tripId && !item.snapshot;
 // Untouched 表示用户没有输入任何行程信息；筛选器默认值不算。
 const untouched = (item) =>
-  isBlank(item) && !item.messages.length && !item.input.trim() &&
-  (["destination","start","end","groupSize","budgetTotal","nationality"] as const)
-    .every((key) => !item.draft?.[key]?.trim());
+  isBlank(item) &&
+  !item.messages.length &&
+  !item.input.trim() &&
+  (["destination", "start", "end", "groupSize", "budgetTotal", "nationality"] as const).every(
+    (key) => !item.draft?.[key]?.trim(),
+  );
 // 取 updatedAt 最新者复用
 ```
 
@@ -340,10 +386,10 @@ const existing = next.conversations.findIndex((item) => item.id === conversation
 
 ### 改动清单
 
-| 文件 | 位置 | 改动 |
-| --- | --- | --- |
-| `apps/web/lib/workspace-catalog.ts` | 新增导出 | 把 ① 的 `untouched` 判断提成**唯一**函数，例如 `reusableBlankConversation(catalog)` |
-| 同上 | `:444-472` | `readHistory` 改为调用该函数，消除双实现 |
+| 文件                                | 位置       | 改动                                                                                         |
+| ----------------------------------- | ---------- | -------------------------------------------------------------------------------------------- |
+| `apps/web/lib/workspace-catalog.ts` | 新增导出   | 把 ① 的 `untouched` 判断提成**唯一**函数，例如 `reusableBlankConversation(catalog)`          |
+| 同上                                | `:444-472` | `readHistory` 改为调用该函数，消除双实现                                                     |
 | `apps/web/components/Workspace.tsx` | `:531-554` | `newChat()` 先查可复用的空对话：有则复用其 id、只刷新 `updatedAt`，**不再 `unshift` 新记录** |
 
 `newChat()` 里的 `resetTransient()` / `setPlan(undefined)` / `setDraft(blankDraft())` /
@@ -391,11 +437,11 @@ const existing = next.conversations.findIndex((item) => item.id === conversation
 
 「语言」在本项目里是**三个独立问题**，机制必须分开，用同一个方案解会失败：
 
-| 层次 | 现状 | 证据 |
-| --- | --- | --- |
-| **A. 对话回复** | ✅ **已经做对** | `chat.ts:270` 的 `replyPrompt` 已含指令 `Detect the language of the traveler's latest message and reply in that exact same language. Do not default to English` |
-| **B. 计划内容**（卡片 `summary` / `detail`、HITL checkpoint） | ❌ 英文硬编码，**即使配了模型也不会变中文** | 5 个 specialist 的 `systemPrompt` 里没有任何输出语言指令；确定性兜底约 **48 处**英文拼装 |
-| **C. 界面文案** | ❌ 英文硬编码，零 i18n 框架 | 见末节「未排期」 |
+| 层次                                                          | 现状                                        | 证据                                                                                                                                                            |
+| ------------------------------------------------------------- | ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **A. 对话回复**                                               | ✅ **已经做对**                             | `chat.ts:270` 的 `replyPrompt` 已含指令 `Detect the language of the traveler's latest message and reply in that exact same language. Do not default to English` |
+| **B. 计划内容**（卡片 `summary` / `detail`、HITL checkpoint） | ❌ 英文硬编码，**即使配了模型也不会变中文** | 5 个 specialist 的 `systemPrompt` 里没有任何输出语言指令；确定性兜底约 **48 处**英文拼装                                                                        |
+| **C. 界面文案**                                               | ❌ 英文硬编码，零 i18n 框架                 | 见末节「未排期」                                                                                                                                                |
 
 所以 Language 弹窗里那句 `You can chat in your preferred language` 目前**只对回复成立，对计划内容不成立**。
 
@@ -411,32 +457,32 @@ const existing = next.conversations.findIndex((item) => item.id === conversation
 
 两种设计：
 
-| 设计 | 做法 | 代价 |
-| --- | --- | --- |
-| **1. 服务端从消息推测语言** | 复用 `replyPrompt` 已有的「检测用户消息语言」思路，服务端自己定语言 | `packages/shared` 零改动，但**没有真正的设置** —— 用户设了中文却打英文提问就会变英文 |
-| **2. 显式传 `locale`** | `ChatRequest` 加一个**可选**字段 | 动 `packages/shared/src/chat.ts`，但**只是新增可选字段**，不是改 `TripBrief` / `estCost` / `pricePerNightUsd` |
+| 设计                        | 做法                                                                | 代价                                                                                                          |
+| --------------------------- | ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| **1. 服务端从消息推测语言** | 复用 `replyPrompt` 已有的「检测用户消息语言」思路，服务端自己定语言 | `packages/shared` 零改动，但**没有真正的设置** —— 用户设了中文却打英文提问就会变英文                          |
+| **2. 显式传 `locale`**      | `ChatRequest` 加一个**可选**字段                                    | 动 `packages/shared/src/chat.ts`，但**只是新增可选字段**，不是改 `TripBrief` / `estCost` / `pricePerNightUsd` |
 
 **推荐设计 2 + 设计 1 做兜底**：传了 `locale` 就用它；没传（旧客户端）则回退到消息语言检测。这样既是真正的设置，
 也保持向后兼容。
 
 > 注意：`ChatRequest` 属于「会话请求」契约，和 `team-workflow.md` 里那句「Don't edit `packages/shared` without
-telling the team」所指的**冻结行程契约**（`TripBrief`、`estCost` 规则）不是一回事。新增一个可选字段风险低很多，
-但依旧要知会团队并在 `api.md` 里补上。
+> telling the team」所指的**冻结行程契约**（`TripBrief`、`estCost` 规则）不是一回事。新增一个可选字段风险低很多，
+> 但依旧要知会团队并在 `api.md` 里补上。
 
 ### 改动清单
 
-| 文件 | 位置 | 改动 |
-| --- | --- | --- |
-| `packages/shared/src/chat.ts` | `:9-18` `ChatRequest` | 加**可选** `locale`（如 `z.enum(["en","zh"]).optional()`）；`agents/destination-guide/dining.ts` 现有的可选字段（`mode`）就是先例 |
-| `apps/web/components/Workspace.tsx` | 发 `/api/chat` 处 | 把 `PanelLayout.locale` 一并放进请求体 |
-| `apps/web/app/api/chat/route.ts` | `:5` 附近 | 校验通过后把 `locale` 转交给 `runTripChat` |
-| `packages/orchestrator/src/chat.ts` | `runTripChat` / `TripChatOptions` | 接收 `locale`，转成 `OrchestratorOptions.locale` |
-| `packages/orchestrator/src/workflow.ts` | `OrchestratorOptions` | 加可选 `locale` |
-| `packages/orchestrator/src/workflow.ts` | 调用 specialist 处 | 把 `locale` 透传进 `AgentContext` 或 prompt 构造 |
-| `packages/agents/src/{itinerary,destination-guide,dining,transport,accommodation}/index.ts` | `systemPrompt` | 注入一句「Output all traveler-facing text in {language}」，语言名由 `locale` 映射 |
-| `packages/orchestrator/src/supervisor.ts` | `:163` 的 `systemPrompt` | 同上 |
-| `packages/orchestrator/src/chat.ts` | `:270` `replyPrompt` | **保留**现有的语言检测指令；传了 `locale` 时改成「用 {language} 回复」，否则维持检测 |
-| `packages/orchestrator/src/chat.ts` | `:238` `fallbackReplyFor` | 保持英文即可；在文档里记录这是降级路径的限制 |
+| 文件                                                                                        | 位置                              | 改动                                                                                                                              |
+| ------------------------------------------------------------------------------------------- | --------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `packages/shared/src/chat.ts`                                                               | `:9-18` `ChatRequest`             | 加**可选** `locale`（如 `z.enum(["en","zh"]).optional()`）；`agents/destination-guide/dining.ts` 现有的可选字段（`mode`）就是先例 |
+| `apps/web/components/Workspace.tsx`                                                         | 发 `/api/chat` 处                 | 把 `PanelLayout.locale` 一并放进请求体                                                                                            |
+| `apps/web/app/api/chat/route.ts`                                                            | `:5` 附近                         | 校验通过后把 `locale` 转交给 `runTripChat`                                                                                        |
+| `packages/orchestrator/src/chat.ts`                                                         | `runTripChat` / `TripChatOptions` | 接收 `locale`，转成 `OrchestratorOptions.locale`                                                                                  |
+| `packages/orchestrator/src/workflow.ts`                                                     | `OrchestratorOptions`             | 加可选 `locale`                                                                                                                   |
+| `packages/orchestrator/src/workflow.ts`                                                     | 调用 specialist 处                | 把 `locale` 透传进 `AgentContext` 或 prompt 构造                                                                                  |
+| `packages/agents/src/{itinerary,destination-guide,dining,transport,accommodation}/index.ts` | `systemPrompt`                    | 注入一句「Output all traveler-facing text in {language}」，语言名由 `locale` 映射                                                 |
+| `packages/orchestrator/src/supervisor.ts`                                                   | `:163` 的 `systemPrompt`          | 同上                                                                                                                              |
+| `packages/orchestrator/src/chat.ts`                                                         | `:270` `replyPrompt`              | **保留**现有的语言检测指令；传了 `locale` 时改成「用 {language} 回复」，否则维持检测                                              |
+| `packages/orchestrator/src/chat.ts`                                                         | `:238` `fallbackReplyFor`         | 保持英文即可；在文档里记录这是降级路径的限制                                                                                      |
 
 **关键设计**：`locale` 进 `ChatRequest`（请求契约）而**不进** `TripBrief` —— 输出语言是**请求级偏好**，
 不是行程数据。这样 `packages/shared` 的行程契约与 `estCost` 规则完全不受影响。
@@ -475,11 +521,11 @@ telling the team」所指的**冻结行程契约**（`TripBrief`、`estCost` 规
 
 ### 规模（已实测）
 
-| 项 | 数量 |
-| --- | --- |
-| JSX 正文文案 | 43 |
-| `aria-label` / `title` / `placeholder` | 25 |
-| 现有 i18n 依赖 | **0** |
+| 项                                     | 数量  |
+| -------------------------------------- | ----- |
+| JSX 正文文案                           | 43    |
+| `aria-label` / `title` / `placeholder` | 25    |
+| 现有 i18n 依赖                         | **0** |
 
 ### 方案：手写字典，不引 next-intl
 
@@ -509,11 +555,11 @@ getByRole("tab", { name: "Timeline & routes" })
 
 界面一旦可切换语言，这些**全部会挂**。
 
-| 方案 | 做法 | 评价 |
-| --- | --- | --- |
-| **(a) 测试固定 `locale: "en"`** | 默认 locale 保持 `en`，测试显式注入 | ✅ **推荐**：改 1 处 setup，113 处不动 |
-| (b) 测试也走 `t()` | `name: t("newChat")` | 更真实但改动不成比例 |
-| (c) 改用 `data-testid` | 最稳 | ❌ 违背项目「按无障碍名查询」的现有风格，削弱 a11y 测试价值 |
+| 方案                            | 做法                                | 评价                                                        |
+| ------------------------------- | ----------------------------------- | ----------------------------------------------------------- |
+| **(a) 测试固定 `locale: "en"`** | 默认 locale 保持 `en`，测试显式注入 | ✅ **推荐**：改 1 处 setup，113 处不动                      |
+| (b) 测试也走 `t()`              | `name: t("newChat")`                | 更真实但改动不成比例                                        |
+| (c) 改用 `data-testid`          | 最稳                                | ❌ 违背项目「按无障碍名查询」的现有风格，削弱 a11y 测试价值 |
 
 ### 容易漏的地方
 
@@ -547,17 +593,17 @@ getByRole("tab", { name: "Timeline & routes" })
 
 五项全部落地后，除本文件外还需改：
 
-| 文件 | 位置 | 内容 |
-| --- | --- | --- |
-| `docs/workspace-ui.md` | `:24` | 「History supports search, select, rename and delete」→ 补「通过每一项的 ⋮ 菜单」 |
-| `docs/workspace-ui.md` | `:47-48` | 「...reused, so **refreshing** does not add empty chats」→ 「...so **clicking New chat or refreshing** does not add empty chats」 |
-| `docs/workspace-ui.md` | `:16` | Trip Preferences 抽屉那行补上货币选择；`Total budget` 不再硬编码 USD |
-| `docs/workspace-ui.md` | `:50` | `New chat` 条目补「不新增重复空对话」的行为说明 |
-| `docs/api.md` | `POST /api/chat` 段 | 若第 1 项改了 `mode: "start"` 的缺字段提示文案，同步错误示例 |
-| `docs/architecture.md` | Agents and models / Contracts 段 | 若第 2 项去掉了服务端文案里的 `USD`，说明「金额一律以 USD 存储与计算，单位由 UI 呈现」 |
-| `docs/architecture.md` | Agents and models 段 | 第 5 项：说明 agent 输出语言由 `OrchestratorOptions.locale` 控制，且**确定性兜底始终为英文** |
-| `docs/workspace-ui.md` | `:16` | Trip Preferences 抽屉那行补上货币与语言选择 |
-| `docs/workspace-ui.md` | `:11` | 侧边栏那行的 `Language` 与 `EN` 标签改为跟随 locale |
-| `docs/roadmap.md` | `:14` 附近 | 第 4 项是 bug 修复，可并入当前进行中的第 3 步；第 2 项如涉及持久化偏好则提一句 |
-| `README.md` | Scope 段 | 若第 5 项落地，说明「计划内容语言跟随对话语言；离线兜底为英文」 |
-| 本文件 | — | 删除或移入 `docs/archive/` |
+| 文件                   | 位置                             | 内容                                                                                                                              |
+| ---------------------- | -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `docs/workspace-ui.md` | `:24`                            | 「History supports search, select, rename and delete」→ 补「通过每一项的 ⋮ 菜单」                                                 |
+| `docs/workspace-ui.md` | `:47-48`                         | 「...reused, so **refreshing** does not add empty chats」→ 「...so **clicking New chat or refreshing** does not add empty chats」 |
+| `docs/workspace-ui.md` | `:16`                            | Trip Preferences 抽屉那行补上货币选择；`Total budget` 不再硬编码 USD                                                              |
+| `docs/workspace-ui.md` | `:50`                            | `New chat` 条目补「不新增重复空对话」的行为说明                                                                                   |
+| `docs/api.md`          | `POST /api/chat` 段              | 若第 1 项改了 `mode: "start"` 的缺字段提示文案，同步错误示例                                                                      |
+| `docs/architecture.md` | Agents and models / Contracts 段 | 若第 2 项去掉了服务端文案里的 `USD`，说明「金额一律以 USD 存储与计算，单位由 UI 呈现」                                            |
+| `docs/architecture.md` | Agents and models 段             | 第 5 项：说明 agent 输出语言由 `OrchestratorOptions.locale` 控制，且**确定性兜底始终为英文**                                      |
+| `docs/workspace-ui.md` | `:16`                            | Trip Preferences 抽屉那行补上货币与语言选择                                                                                       |
+| `docs/workspace-ui.md` | `:11`                            | 侧边栏那行的 `Language` 与 `EN` 标签改为跟随 locale                                                                               |
+| `docs/roadmap.md`      | `:14` 附近                       | 第 4 项是 bug 修复，可并入当前进行中的第 3 步；第 2 项如涉及持久化偏好则提一句                                                    |
+| `README.md`            | Scope 段                         | 若第 5 项落地，说明「计划内容语言跟随对话语言；离线兜底为英文」                                                                   |
+| 本文件                 | —                                | 删除或移入 `docs/archive/`                                                                                                        |

@@ -681,6 +681,35 @@ describe("Workspace navigation", () => {
       expect(parseCatalog(localStorage.getItem(CATALOG_KEY)).layout.sidebar.width).toBeUndefined(),
     );
   });
+  it("reports the width actually rendered when no width is stored", async () => {
+    render(<Workspace />);
+    const handle = () => screen.getByRole("separator", { name: "Resize sidebar" });
+    // jsdom does no layout, so the measured width falls back to the default to begin with.
+    expect(handle().getAttribute("aria-valuenow")).toBe("240");
+    const sidebar = document.querySelector<HTMLElement>(".workspace-sidebar")!;
+    // Stand in for the stylesheet, which narrows the sidebar below 1250px.
+    vi.spyOn(sidebar, "getBoundingClientRect").mockReturnValue({ width: 220 } as DOMRect);
+    fireEvent(window, new Event("resize"));
+    await waitFor(() => expect(handle().getAttribute("aria-valuenow")).toBe("220"));
+  });
+  it("does not pin a sidebar width when a click only drifts a pixel or two", async () => {
+    render(<Workspace initialPlan={plan} />);
+    await waitFor(() =>
+      expect(parseCatalog(localStorage.getItem(CATALOG_KEY)).trips).toHaveLength(1),
+    );
+    const handle = () => screen.getByRole("separator", { name: "Resize sidebar" });
+    fireEvent.pointerDown(handle(), { button: 0, pointerId: 1, clientX: 240 });
+    fireEvent.pointerMove(handle(), { pointerId: 1, clientX: 242 });
+    fireEvent.pointerUp(handle(), { pointerId: 1 });
+    expect(
+      document
+        .querySelector<HTMLElement>(".workspace-app")!
+        .style.getPropertyValue("--sidebar-width"),
+    ).toBe("");
+    await waitFor(() =>
+      expect(parseCatalog(localStorage.getItem(CATALOG_KEY)).layout.sidebar.width).toBeUndefined(),
+    );
+  });
 
   it("falls back safely when the stored layout is corrupt", () => {
     localStorage.setItem(
