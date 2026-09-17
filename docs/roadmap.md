@@ -5,7 +5,7 @@ decisions, save the trip and use it while travelling.
 
 ## Current sequence
 
-Status as of 2026-09-17 (`codex/ui-improvements`; see `docs/ui-improvements.md`):
+Status as of 2026-09-17 (`codex/ui-improvements`; see [workspace UI](workspace-ui.md)):
 
 1. **Done** — LangChain Agent migration for all five specialists and revision routing (merged in
    PR #10).

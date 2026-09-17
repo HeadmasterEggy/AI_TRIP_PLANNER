@@ -1,5 +1,7 @@
 # ELEC5620 Lab 1–6 实现状态与差距分析
 
+> 已归档的时点审计（2026-09-14）。文中提到的 README 与文档漂移已在 2026-09-17 修正；当前架构见 [`architecture.md`](../architecture.md)，文中的文件路径描述的是审计当时的仓库。
+
 > 审计日期：2026-09-14  
 > 审计对象：当前 `main` checkout（`2c1a49b`）  
 > 对照基线：`ELEC5620-Lab-Notes-1-6-Summary.md`  

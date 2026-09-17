@@ -1,0 +1,161 @@
+# Architecture
+
+AI Trip Planner is one Next.js deployable backed by workspace packages. A deterministic LangGraph
+workflow owns the planning control flow; LangChain agents do role-specific reasoning inside it.
+
+## Runtime flow
+
+```mermaid
+flowchart TB
+    U[User] --> UI[Next.js workspace]
+    UI -->|POST /api/chat, NDJSON progress| CHAT[runTripChat]
+    CHAT -->|explicit brief updates| EX[GPT structured extraction]
+    EX -.->|no key or invalid output| LP[Local rule parser]
+    CHAT --> WF[LangGraph workflow]
+    WF --> DISPATCH[dispatch_specialists / revise_conflicts]
+    DISPATCH --> SUP[LangChain supervisor agent]
+    DISPATCH -.->|no model or supervisor error| DIRECT[Deterministic dispatch]
+    SUP --> SPEC[Itinerary · Transport · Accommodation · Destination · Dining agents]
+    DIRECT --> SPEC
+    SPEC --> TOOLS[Typed tool gateway: maps, booking]
+    SPEC -.->|model unavailable or off-schema| FB[Deterministic fallback output]
+    WF --> CONF[detect_conflicts → build_plan]
+    WF --- MEM[(MemoryStore, packages/services)]
+    CONF --> PLAN[Validated TripPlan + HITL checkpoints]
+    UI -->|POST /api/hitl| HITL[applyHitl]
+    UI -->|places, routes, edit preview| GOOGLE[Google Places / Routes / Time Zone]
+```
+
+The LangGraph workflow drives the supervisor, not the other way round: the graph decides when to
+dispatch, revise and stop, and the supervisor only chooses which specialist tools a node needs. The
+control path, budget red lines and stopping condition never depend on a model improvising the next
+step.
+
+1. `POST /api/chat` calls `runTripChat` (`packages/orchestrator/src/chat.ts`). It extracts only
+   explicit `TripBrief` updates from the message. `mode: "plan"` skips extraction and plans the
+   submitted brief; `mode: "start"` requires every brief field in the message (see
+   [API](api.md)).
+2. The workflow runs the specialists, detects conflicts, revises targeted specialists for up to
+   `maxRounds` rounds and assembles a `TripPlan` with HITL checkpoints.
+3. Progress events stream to the browser as NDJSON; the final frame carries `{ reply, plan }`.
+4. HITL decisions are applied later through `POST /api/hitl` (`applyHitl` in
+   `packages/orchestrator/src/hitl.ts`). Map lookups and itinerary edit previews use the Google
+   routes in `apps/web` and never re-run the planner.
+
+## LangGraph workflow
+
+```mermaid
+flowchart LR
+    S((START)) --> D[dispatch_specialists]
+    D --> C[detect_conflicts]
+    C -->|conflicts and round < K| R[revise_conflicts]
+    R --> C
+    C -->|converged or round = K| B[build_plan]
+    B --> E((END))
+```
+
+The compiled graph lives in `packages/orchestrator/src/workflow.ts`. It carries `brief`, `round`,
+`proposals`, `conflicts` and the final `plan`. Public input and output use the `@trip/shared` Zod
+contracts; shared Zod v3 values are validated at the graph boundaries, and the internal
+`StateSchema` uses the graph's Zod v4 dependency.
+
+- `dispatch_specialists` asks the supervisor to delegate to the registered specialists. When no
+  model is configured or the supervisor fails, it invokes every specialist directly with
+  `Promise.all`.
+- `detect_conflicts` combines budget overruns, structured cross-agent schedule overlaps and geography
+  conflicts reported after itinerary route-duration checks.
+- `revise_conflicts` runs only targeted specialists with `supportsRevision`, passing an immutable
+  `revision` request through the same `invoke` entry point, through the revision supervisor or
+  directly.
+- A conditional edge repeats detection and revision up to `maxRounds` (default `3`).
+- `build_plan` rolls up costs (`budget.ts`) and derives HITL checkpoints (`checkpointsFor`).
+- Specialists, tools, memory and the round limit are injectable through `OrchestratorOptions`.
+
+`packages/orchestrator/src/budget.test.ts` shows the loop firing: the orchestrator's `DEMO_BRIEF` is
+over budget in round 1 and converges in round 2, while a much lower budget stops at `K = 3` with an
+escalation checkpoint. `plan.round` records how many rounds ran.
+
+## Agents and models
+
+Every specialist implements the framework-neutral `Specialist` contract
+(`packages/shared/src/agent.ts`): one immutable `invoke({ brief, context, revision? })` entry point for
+initial plans and revisions. An agent owns a durable role definition: model, `name`,
+`systemPrompt`, tools and output schema. The supervisor must not rewrite the brief or invent facts.
+
+| Agent         | Responsibility                                                        | Implementation                         |
+| ------------- | --------------------------------------------------------------------- | -------------------------------------- |
+| Itinerary     | Grounded day-by-day schedule, pacing and route feasibility            | Model agent with evidence tools        |
+| Destination   | Attractions, customs, safety, entry/health checks and packing context | Model agent with evidence tools        |
+| Dining        | Grounded venues, dietary preferences and meal budget                  | Model agent with evidence tools        |
+| Transport     | Flights, inter-city/local routes and timing                           | Agent around deterministic calculators |
+| Accommodation | Lodging search, comparison and room allocation                        | Agent around deterministic calculators |
+
+Transport and accommodation wrap calculators so models cannot invent prices, routes or properties.
+
+Model routing (`MODEL_ROUTING` in `packages/agents/src/models.ts` and `chat.ts`):
+
+- **GPT** (`GPT_API_KEY`): structured extraction of brief updates. An Anthropic model is used if only
+  that key is configured; otherwise a conservative English/Chinese rule parser.
+- **DeepSeek** (`DEEPSEEK_API_KEY`): all five specialists, the supervisor and the natural-language
+  chat reply, through LangChain's OpenAI-compatible adapter.
+- **MiniMax**: configured but not routed; it was too slow for page-level planning. See
+  `.env.example` for its account caveats.
+
+When a key is missing, a model call fails or output is off-schema, the step falls back to validated
+deterministic output, so planning requests still complete. Schema, budget, schedule and route checks
+gate every proposal before aggregation.
+
+## Contracts and dependency injection
+
+Shared contracts live in `packages/shared/src/`:
+
+- `contracts.ts`: `TripBrief`, `AgentProposal`, `ProposalItem`, `RevisionRequest`.
+- `plan.ts`: `TripPlan`, HITL checkpoints and `HitlRequest`.
+- `chat.ts`: `ChatRequest`, `ChatResponse` and progress events.
+- `ports.ts`: `ToolGateway` and `MemoryStore`.
+
+Agents receive `ctx.tools` (`ToolGateway`) and `ctx.mem` (`MemoryStore`) through `AgentContext`. Do
+not import the singletons; take them from `ctx` so tests can pass fakes. The tool gateway
+(`packages/tools/src/gateway.ts`) chooses in-process fixtures (`USE_MOCK_TOOLS=true`) or the real
+OpenStreetMap and Google maps adapters; booking is fictional mock data. `MemoryStore`
+(`packages/services/src/memory`) is still an in-process `Map`.
+
+Do not change `packages/shared` without telling the team; every package depends on it.
+
+## Design rules
+
+1. Use LangChain JS/TypeScript `createAgent`; do not add a Python runtime or another agent framework.
+2. Keep prompts limited to durable role and safety instructions. Pass trip data as messages, context
+   or typed tool results.
+3. Keep LangGraph responsible for state, retries, conflict validation, HITL and persistence.
+4. Preserve deterministic fallbacks and validate every model and tool boundary.
+5. Keep the public `TripBrief`, `AgentProposal` and `TripPlan` contracts stable.
+
+## History and remaining work
+
+The LangChain migration from the former `Agent.run()` / `revise()` abstraction was merged into `main`
+through PR #10 on 2026-09-09. Remaining work:
+
+- Persist supervisor checkpoints, memory, trips and decisions durably (the browser workspace saves
+  locally today).
+- Stream individual tool-loop steps inside an agent; coordinator and per-specialist progress already
+  stream.
+
+## Verification
+
+```bash
+pnpm --filter @trip/orchestrator test
+pnpm --filter @trip/agents test
+pnpm typecheck
+pnpm build
+```
+
+The workflow tests cover the named graph topology, stable `TripPlan` output, concurrent targeted
+revisions, round-limit escalation and invalid configuration.
+
+## Design model
+
+The ELEC5620 UML design model is in [`design/class-diagram.md`](design/class-diagram.md), with the
+rendered diagrams in [`design/diagrams/`](design/diagrams/): structural spine, domain model,
+specialists and orchestration, ports and adapters, class model with use cases, combined architecture
+map and use-case diagram.
