@@ -5,6 +5,7 @@ import {
   CATALOG_KEY,
   createCatalog,
   parseCatalog,
+  reusableBlankConversation,
   restoreWorkspace,
   searchCatalog,
   serializeCatalog,
@@ -160,6 +161,33 @@ describe("workspace catalog", () => {
     expect(restored.plan).toBeUndefined();
     expect(restored.conversationId).toBe("conversation:empty");
     expect(restored.catalog.activeConversationId).toBe("conversation:empty");
+  });
+
+  it("reuses the newest untouched chat and skips ones holding user content", () => {
+    const record = (id: string, updatedAt: string, extra: Partial<{ input: string }> = {}) => ({
+      id,
+      title: "New chat",
+      updatedAt,
+      messages: [],
+      input: extra.input ?? "",
+      draft: blankDraft(),
+    });
+    const base = createCatalog(snapshot);
+    const catalog = parseCatalog({
+      ...base,
+      conversations: [
+        ...base.conversations,
+        record("conversation:older", "2026-02-01T00:00:00.000Z"),
+        // Blank, but the user typed into it, so reusing it would discard their input.
+        record("conversation:typed", "2026-03-01T00:00:00.000Z", { input: "somewhere warm" }),
+        record("conversation:newer", "2026-04-01T00:00:00.000Z"),
+      ],
+    });
+    // The trip-linked conversation and the typed one are skipped.
+    expect(catalog.conversations).toHaveLength(4);
+    expect(reusableBlankConversation(catalog)?.id).toBe("conversation:newer");
+    // Only a conversation that produced a trip exists, so a new chat has to be created.
+    expect(reusableBlankConversation(base)).toBeUndefined();
   });
 
   it("reports unreadable history and starts blank without overwriting it", () => {

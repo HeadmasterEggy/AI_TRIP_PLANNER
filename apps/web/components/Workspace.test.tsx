@@ -174,6 +174,68 @@ describe("Workspace interactions", () => {
       expect(catalog.conversations).toHaveLength(2);
     });
   });
+  it("reuses the empty conversation instead of stacking one per New chat press", async () => {
+    vi.stubGlobal("fetch", withPlaceRequests());
+    render(<Workspace initialPlan={plan} />);
+    await waitFor(() =>
+      expect(parseCatalog(localStorage.getItem(CATALOG_KEY)).trips).toHaveLength(1),
+    );
+    const newChat = screen.getByRole("button", { name: "New chat" });
+    fireEvent.click(newChat);
+    fireEvent.click(newChat);
+    fireEvent.click(newChat);
+    await waitFor(() => {
+      const catalog = parseCatalog(localStorage.getItem(CATALOG_KEY));
+      expect(catalog.conversations).toHaveLength(2);
+      const empty = catalog.conversations.filter((item) => item.title === "New chat");
+      expect(empty).toHaveLength(1);
+      // The reused conversation stays selected, so the next message belongs to it.
+      expect(catalog.activeConversationId).toBe(empty[0]!.id);
+    });
+  });
+  it("does not add a second empty conversation when New chat follows a reload", async () => {
+    vi.stubGlobal("fetch", withPlaceRequests());
+    const view = render(<Workspace initialPlan={plan} />);
+    await waitFor(() =>
+      expect(parseCatalog(localStorage.getItem(CATALOG_KEY)).trips).toHaveLength(1),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "New chat" }));
+    fireEvent.click(screen.getByRole("button", { name: "New chat" }));
+    await waitFor(() =>
+      expect(parseCatalog(localStorage.getItem(CATALOG_KEY)).conversations).toHaveLength(2),
+    );
+    view.unmount();
+    render(<Workspace />);
+    fireEvent.click(screen.getByRole("button", { name: "New chat" }));
+    await waitFor(() => {
+      const catalog = parseCatalog(localStorage.getItem(CATALOG_KEY));
+      expect(catalog.conversations).toHaveLength(2);
+      expect(catalog.conversations.filter((item) => item.title === "New chat")).toHaveLength(1);
+    });
+  });
+  it("keeps the user's name when New chat reuses a renamed empty conversation", async () => {
+    vi.stubGlobal("fetch", withPlaceRequests());
+    render(<Workspace initialPlan={plan} />);
+    await waitFor(() =>
+      expect(parseCatalog(localStorage.getItem(CATALOG_KEY)).trips).toHaveLength(1),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "New chat" }));
+    const prompt = vi.spyOn(window, "prompt").mockReturnValue("Later ideas");
+    fireEvent.click(screen.getByRole("button", { name: "Rename New chat" }));
+    prompt.mockRestore();
+    await waitFor(() =>
+      expect(
+        parseCatalog(localStorage.getItem(CATALOG_KEY)).conversations.map((item) => item.title),
+      ).toContain("Later ideas"),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "New chat" }));
+    await waitFor(() => {
+      const catalog = parseCatalog(localStorage.getItem(CATALOG_KEY));
+      expect(catalog.conversations).toHaveLength(2);
+      expect(catalog.conversations.map((item) => item.title)).toContain("Later ideas");
+      expect(catalog.conversations.filter((item) => item.title === "New chat")).toHaveLength(0);
+    });
+  });
   it("saves a blank conversation's form and input and restores it after reload", async () => {
     vi.stubGlobal("fetch", withPlaceRequests());
     const view = render(<Workspace initialPlan={plan} />);

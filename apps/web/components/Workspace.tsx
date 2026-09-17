@@ -31,6 +31,7 @@ import {
 import {
   CATALOG_KEY,
   restoreWorkspace,
+  reusableBlankConversation,
   searchCatalog,
   serializeCatalog,
   updateCatalog,
@@ -530,7 +531,9 @@ function WorkspaceContent({ restored }: { restored: RestoredWorkspace }) {
   }
   function newChat() {
     resetTransient();
-    const id = `conversation:${crypto.randomUUID()}`;
+    // Reuse an untouched conversation so repeated New chat presses cannot stack blank history
+    // entries. Only a conversation holding nothing the user wrote is safe to reuse.
+    const id = reusableBlankConversation(catalog)?.id ?? `conversation:${crypto.randomUUID()}`;
     activeConversation.current = id;
     freshTripId.current = crypto.randomUUID();
     setPlan(undefined);
