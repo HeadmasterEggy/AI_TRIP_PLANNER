@@ -637,6 +637,51 @@ describe("Workspace navigation", () => {
     expect(document.activeElement).toBe(within(sidebar()).getByRole("searchbox"));
   });
 
+  it("resizes the sidebar by dragging or keyboard, remembers it and resets on double-click", async () => {
+    const view = render(<Workspace />);
+    const app = () => document.querySelector<HTMLElement>(".workspace-app")!;
+    const handle = () => screen.getByRole("separator", { name: "Resize sidebar" });
+    // No stored width: the stylesheet's responsive default applies.
+    expect(app().style.getPropertyValue("--sidebar-width")).toBe("");
+
+    // A click without movement must not pin a width.
+    fireEvent.pointerDown(handle(), { button: 0, pointerId: 1, clientX: 240 });
+    fireEvent.pointerUp(handle(), { pointerId: 1 });
+    expect(app().style.getPropertyValue("--sidebar-width")).toBe("");
+
+    fireEvent.pointerDown(handle(), { button: 0, pointerId: 1, clientX: 240 });
+    expect(app().dataset.resizing).toBe("true");
+    fireEvent.pointerMove(handle(), { pointerId: 1, clientX: 331 });
+    expect(app().style.getPropertyValue("--sidebar-width")).toBe("331px");
+    fireEvent.pointerMove(handle(), { pointerId: 1, clientX: 900 });
+    fireEvent.pointerUp(handle(), { pointerId: 1 });
+    expect(app().dataset.resizing).toBeUndefined();
+    expect(app().style.getPropertyValue("--sidebar-width")).toBe("420px");
+    expect(handle().getAttribute("aria-valuenow")).toBe("420");
+
+    fireEvent.keyDown(handle(), { key: "ArrowLeft" });
+    expect(app().style.getPropertyValue("--sidebar-width")).toBe("404px");
+    fireEvent.keyDown(handle(), { key: "Home" });
+    expect(app().style.getPropertyValue("--sidebar-width")).toBe("200px");
+    await waitFor(() =>
+      expect(parseCatalog(localStorage.getItem(CATALOG_KEY)).layout.sidebar.width).toBe(200),
+    );
+
+    // Collapsed, there is no edge to drag; expanding restores the width.
+    fireEvent.click(screen.getByRole("button", { name: "Collapse sidebar" }));
+    expect(screen.queryByRole("separator", { name: "Resize sidebar" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Expand sidebar" }));
+    view.unmount();
+    render(<Workspace />);
+    expect(app().style.getPropertyValue("--sidebar-width")).toBe("200px");
+
+    fireEvent.doubleClick(handle());
+    expect(app().style.getPropertyValue("--sidebar-width")).toBe("");
+    await waitFor(() =>
+      expect(parseCatalog(localStorage.getItem(CATALOG_KEY)).layout.sidebar.width).toBeUndefined(),
+    );
+  });
+
   it("falls back safely when the stored layout is corrupt", () => {
     localStorage.setItem(
       CATALOG_KEY,
