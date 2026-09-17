@@ -1029,14 +1029,10 @@ button:not(.section__row):not(.stay-option):not(.primary):not(.trip__cta) {
 /* ---- multi-panel planning workspace ---- */
 .workspace-shell {
   --preferences-width: 280px;
-  --trip-width: 390px;
+  --trip-width: 680px;
+  position: relative;
   display: grid;
-  grid-template-columns:
-    220px
-    var(--preferences-column, var(--preferences-width))
-    minmax(360px, 1fr)
-    minmax(420px, 0.95fr)
-    var(--trip-column, var(--trip-width));
+  grid-template-columns: 220px minmax(360px, 0.9fr) minmax(480px, 1.1fr);
   height: calc(100dvh - 72px);
   min-width: 0;
   overflow: hidden;
@@ -1139,6 +1135,12 @@ button:not(.section__row):not(.stay-option):not(.primary):not(.trip__cta) {
   border-right: 1px solid var(--border);
   background: var(--surface);
 }
+.workspace-panel--chat {
+  grid-column: 2;
+}
+.workspace-panel--map {
+  grid-column: 3;
+}
 .workspace-panel > .panel,
 .workspace-panel > .filter-container,
 .workspace-panel > .trip-editor {
@@ -1150,16 +1152,118 @@ button:not(.section__row):not(.stay-option):not(.primary):not(.trip__cta) {
   overflow: auto;
 }
 .workspace-panel--map .trip-editor {
-  padding: 14px;
+  padding: 0;
+}
+.workspace-panel--map > .trip-map {
+  position: relative;
+  height: 100%;
 }
 .workspace-panel--map .google-map {
-  height: min(62dvh, 650px);
+  height: 100%;
+  min-height: 100%;
+  border-radius: 0;
 }
-.workspace-panel--collapsed {
+.trip-editor--map-only,
+.trip-editor--map-only .trip-map {
+  position: relative;
+  height: 100%;
+  min-height: 0;
+}
+.trip-editor--map-only .trip-map-controls,
+.workspace-panel--map > .trip-map .trip-map-controls {
+  position: absolute;
+  z-index: 4;
+  top: 14px;
+  left: 14px;
+  margin: 0;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  box-shadow: var(--shadow-sm);
+}
+.trip-editor--map-only .trip-map-place-list,
+.workspace-panel--map > .trip-map .trip-map-place-list {
+  position: absolute;
+  z-index: 4;
+  left: 14px;
+  bottom: 14px;
+  max-width: min(420px, calc(100% - 28px));
+  max-height: 150px;
+  overflow: auto;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--surface) 92%, transparent);
+  box-shadow: var(--shadow-sm);
+}
+.workspace-floating-actions {
+  position: absolute;
+  z-index: 12;
+  top: 12px;
+  right: 14px;
   display: flex;
-  align-items: flex-start;
-  justify-content: center;
-  padding-top: 12px;
+  gap: 8px;
+}
+.workspace-floating-actions button {
+  min-height: 36px;
+  border-radius: var(--radius-pill) !important;
+  background: color-mix(in srgb, var(--surface) 94%, transparent) !important;
+  box-shadow: var(--shadow-sm);
+}
+.trip-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+.trip-trigger__count {
+  display: grid;
+  min-width: 20px;
+  height: 20px;
+  padding-inline: 5px;
+  place-items: center;
+  border-radius: var(--radius-pill);
+  background: var(--accent);
+  color: #fff;
+  font-size: 11px;
+}
+.workspace-drawer-backdrop {
+  position: fixed;
+  z-index: 30;
+  inset: 72px 0 0;
+  min-height: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: rgb(0 0 0 / 12%) !important;
+}
+.workspace-panel--preferences,
+.workspace-panel--trip {
+  position: fixed;
+  z-index: 40;
+  top: 72px;
+  bottom: 0;
+  width: min(360px, calc(100vw - 24px));
+  visibility: hidden;
+  pointer-events: none;
+  box-shadow: var(--shadow-md);
+  transition:
+    transform 240ms cubic-bezier(0.22, 1, 0.36, 1),
+    visibility 240ms;
+}
+.workspace-panel--preferences {
+  left: 220px;
+  transform: translateX(-110%);
+}
+.workspace-panel--trip {
+  right: 0;
+  width: min(62vw, calc(100vw - 24px));
+  transform: translateX(105%);
+}
+.workspace-panel--preferences.is-open,
+.workspace-panel--trip.is-open {
+  visibility: visible;
+  pointer-events: auto;
+  transform: translateX(0);
 }
 .workspace-panel__toggle {
   position: absolute;
@@ -1168,26 +1272,14 @@ button:not(.section__row):not(.stay-option):not(.primary):not(.trip__cta) {
   right: 8px;
 }
 .workspace-panel--trip .workspace-panel__toggle {
-  left: 8px;
+  left: 12px;
   right: auto;
 }
-.workspace-resizer {
-  position: absolute;
-  z-index: 4;
-  top: 0;
-  right: -4px;
-  width: 8px;
-  height: 100%;
-  cursor: col-resize;
-  touch-action: none;
+.workspace-panel--trip .panel--right {
+  padding-top: 56px;
 }
-.workspace-panel--trip .workspace-resizer {
-  right: auto;
-  left: -4px;
-}
-.workspace-resizer:focus-visible,
-.workspace-resizer:hover {
-  background: color-mix(in srgb, var(--accent) 24%, transparent);
+.trip-drawer-empty {
+  padding: 64px 28px 28px;
 }
 .workspace-mobile-nav {
   display: none;
@@ -1204,53 +1296,12 @@ button:not(.section__row):not(.stay-option):not(.primary):not(.trip__cta) {
   border: 0;
 }
 
-@media (max-width: 1750px) {
+@media (max-width: 1250px) {
   .workspace-shell {
-    grid-template-columns:
-      190px
-      var(--preferences-column, 44px)
-      minmax(340px, 1fr)
-      minmax(400px, 0.9fr)
-      var(--trip-column, 44px);
-  }
-  .workspace-shell[data-preferences-open="true"] {
-    --preferences-column: var(--preferences-width);
-  }
-  .workspace-shell[data-trip-open="true"] {
-    --trip-column: var(--trip-width);
-  }
-}
-@media (max-width: 1550px) {
-  .workspace-shell {
-    grid-template-columns: 180px minmax(340px, 1fr) minmax(380px, 0.9fr);
-  }
-  .workspace-panel--preferences,
-  .workspace-panel--trip {
-    position: fixed;
-    z-index: 20;
-    top: 72px;
-    bottom: 0;
-    width: min(390px, calc(100vw - 32px));
-    box-shadow: var(--shadow-md);
+    grid-template-columns: 180px minmax(320px, 0.85fr) minmax(380px, 1.15fr);
   }
   .workspace-panel--preferences {
     left: 180px;
-  }
-  .workspace-panel--trip {
-    right: 0;
-  }
-  .workspace-panel--preferences.workspace-panel--collapsed,
-  .workspace-panel--trip.workspace-panel--collapsed {
-    position: fixed;
-    width: 44px;
-    box-shadow: none;
-  }
-  .workspace-panel--preferences.workspace-panel--collapsed {
-    left: 180px;
-  }
-  .workspace-panel--trip.workspace-panel--collapsed {
-    left: auto;
-    right: 0;
   }
 }
 @media (max-width: 1000px) {
@@ -1283,6 +1334,9 @@ button:not(.section__row):not(.stay-option):not(.primary):not(.trip__cta) {
     position: static;
     width: auto;
     height: calc(100dvh - 130px);
+    visibility: visible;
+    pointer-events: auto;
+    transform: none;
     box-shadow: none;
   }
   .workspace-shell[data-mobile-view="preferences"] > .workspace-panel--preferences,

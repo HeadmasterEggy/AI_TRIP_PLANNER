@@ -17,6 +17,7 @@ export function TripEditor({
   currentView,
   onReview,
   onSave,
+  mapOnly = false,
 }: {
   plan: TripPlan;
   disabled: boolean;
@@ -26,6 +27,7 @@ export function TripEditor({
   currentView?: "overview" | "timeline" | "map";
   onReview?(): void;
   onSave?(): void;
+  mapOnly?: boolean;
 }) {
   const [localView, setView] = useState<"overview" | "timeline" | "map">("overview");
   const view = currentView ?? localView;
@@ -57,14 +59,15 @@ export function TripEditor({
     [plan],
   );
   const daily = useMemo(() => activities.filter((a) => a.day === day), [activities, day]);
+  const visibleActivities = mapOnly ? activities : daily;
   const dayPlaces = useMemo(
     () =>
-      daily.flatMap((activity) => {
+      visibleActivities.flatMap((activity) => {
         const placeId =
           activity.placeId ?? (activity.id ? runtimePlaceIds[activity.id] : undefined);
         return placeId && places[placeId] ? [places[placeId]!] : [];
       }),
-    [daily, places, runtimePlaceIds],
+    [visibleActivities, places, runtimePlaceIds],
   );
   const active = activities.find((a) => a.id === selected);
   const days = (Date.parse(plan.brief.dates[1]) - Date.parse(plan.brief.dates[0])) / 86400000;
@@ -114,12 +117,8 @@ export function TripEditor({
         daily.flatMap((item) => (item.placeId && !places[item.placeId] ? [item.placeId] : [])),
       ),
     ];
-    const unresolved = daily.filter(
-      (item) =>
-        item.id &&
-        !item.placeId &&
-        !runtimePlaceIds[item.id] &&
-        !attempted.has(item.id),
+    const unresolved = visibleActivities.filter(
+      (item) => item.id && !item.placeId && !runtimePlaceIds[item.id] && !attempted.has(item.id),
     );
     unresolved.forEach((item) => attempted.add(item.id!));
     if (ids.length || unresolved.length)
@@ -180,7 +179,7 @@ export function TripEditor({
       controller.abort();
       unresolved.forEach((item) => item.id && attempted.delete(item.id));
     };
-  }, [daily, view, places, placeRetry, plan.brief.destination, runtimePlaceIds]);
+  }, [daily, visibleActivities, view, places, placeRetry, plan.brief.destination, runtimePlaceIds]);
   async function edit(operation: EditInput["operation"]) {
     returnFocus.current = document.activeElement as HTMLElement;
     request.current?.abort();
@@ -235,16 +234,53 @@ export function TripEditor({
   }
   const selectPlace = useCallback(
     (placeId: string) => {
-      const item = daily.find(
+      const item = visibleActivities.find(
         (activity) =>
           activity.placeId === placeId ||
           (activity.id !== undefined && runtimePlaceIds[activity.id] === placeId),
       );
       if (item?.id) setSelected(item.id);
     },
-    [daily, runtimePlaceIds],
+    [runtimePlaceIds, visibleActivities],
   );
   const locked = disabled || working || !!preview;
+  if (mapOnly) {
+    return (
+      <section className="trip-editor trip-editor--map-only" aria-label="Interactive trip map">
+        {dayPlaces.length ? (
+          <TripMap
+            places={dayPlaces}
+            selected={active?.placeId ?? (active?.id ? runtimePlaceIds[active.id] : undefined)}
+            onSelect={selectPlace}
+            routes={verifiedRoutes}
+            mode={mode}
+          />
+        ) : (
+          <div className="map-empty" role={error ? "alert" : "status"}>
+            <p>
+              {error ||
+                (activities.length
+                  ? "Loading Google places for this trip…"
+                  : "Add trip details to place destinations on the map.")}
+            </p>
+            {error && (
+              <button
+                onClick={() => {
+                  visibleActivities.forEach(
+                    (item) => item.id && attemptedPlaces.current.delete(item.id),
+                  );
+                  setError("");
+                  setPlaceRetry((value) => value + 1);
+                }}
+              >
+                Retry places
+              </button>
+            )}
+          </div>
+        )}
+      </section>
+    );
+  }
   return (
     <section className="trip-editor" aria-label="Trip timeline and map">
       <nav aria-label="Trip views">

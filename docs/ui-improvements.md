@@ -14,7 +14,7 @@
 
 已经具备：
 
-- Header、Filters、Chat、Your trip 三栏布局。
+- 左侧 Chats / Trips 目录、聊天区、常驻地图，以及覆盖式 Trip Preferences / Your Trip 抽屉。
 - 首次计划加载时的 skeleton 和 Suspense 边界。
 - Chat 向 `POST /api/chat` 发送消息，并将返回的 `plan` 更新到页面。
 - 行程区的预算汇总、状态 chip、分段折叠和基础 CTA。
@@ -56,8 +56,9 @@
 - [x] 增加 Header 的用户/语言入口占位行为，并确保键盘和屏幕阅读器可用。
 - [x] 统一响应式布局，覆盖窄屏、长标题、长摘要和小预算数值等情况。
 - [x] 左侧增加可搜索的 Chats / Trips 本地历史，支持新建、恢复、重命名和删除对话。
-- [x] Trip Preferences 与 Your Trip 支持收起、恢复、键盘调宽及本地记忆。
+- [x] Trip Preferences 与 Your Trip 使用完全移出视口的覆盖式抽屉；右上角 Trip 入口平滑展开并覆盖地图，不挤压主布局。
 - [x] 增加防抖自动保存状态；切换记录会中止旧请求，存储失败保留内存计划。
+- [x] New chat 创建独立空白会话和空白表单，不继承 demo 或上一段行程；demo 只用于首次示例填充。
 
 ### P3：可视化编辑（依赖后端能力）
 
@@ -125,4 +126,4 @@
 
 详见 `docs/p3-implementation.md` 与 `docs/session-logs/2026-09-17-p3-*.md`。Google Maps/Places/步行 Routes/Time Zone 已真实联调；公共交通成功班次未进行真实验收，其日期限制和失败边界通过固定响应验证。
 
-右侧常驻地图、多面板工作区、运行时地点解析、设备定位与 Chats/Trips 目录的后续验收见 `docs/session-logs/2026-09-17-workspace-map-shell.md`。
+右侧纯地图工作区、覆盖式抽屉、空白新对话、运行时地点解析、设备定位与 Chats/Trips 目录的后续验收见 `docs/session-logs/2026-09-17-workspace-map-shell.md`。

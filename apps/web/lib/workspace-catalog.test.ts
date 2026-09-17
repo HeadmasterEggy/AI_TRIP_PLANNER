@@ -7,6 +7,7 @@ import {
   serializeCatalog,
   updateCatalog,
   upsertCurrent,
+  upsertConversationDraft,
 } from "./workspace-catalog";
 
 describe("workspace catalog", () => {
@@ -45,6 +46,21 @@ describe("workspace catalog", () => {
       "conversation:another-chat",
     ]);
     expect(next.activeConversationId).toBe("conversation:another-chat");
+  });
+
+  it("keeps a new conversation independent until it has a generated trip", () => {
+    const next = upsertConversationDraft(createCatalog(snapshot), {
+      id: "conversation:blank",
+      messages: [],
+      input: "",
+    });
+    expect(next.activeTripId).toBeUndefined();
+    expect(next.conversations[0]).toMatchObject({
+      id: "conversation:blank",
+      title: "New chat",
+      messages: [],
+    });
+    expect(next.conversations[0].tripId).toBeUndefined();
   });
 
   it("searches destination, dates, titles and message text", () => {

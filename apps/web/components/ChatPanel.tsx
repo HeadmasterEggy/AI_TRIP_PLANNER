@@ -20,6 +20,7 @@ export function ChatPanel({
   onSend,
   onDecision,
   onEdit,
+  showPlan = true,
 }: {
   plan: TripPlan;
   messages: Message[];
@@ -30,6 +31,7 @@ export function ChatPanel({
   onSend: () => void;
   onDecision: (decision: Decision) => void;
   onEdit: () => void;
+  showPlan?: boolean;
 }) {
   const stream = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -123,7 +125,9 @@ export function ChatPanel({
             })}
           </div>
         )}
-        <CheckpointCards plan={plan} busy={busy} onDecision={onDecision} onEdit={onEdit} />
+        {showPlan && (
+          <CheckpointCards plan={plan} busy={busy} onDecision={onDecision} onEdit={onEdit} />
+        )}
       </div>
       <form
         className="chat__form"

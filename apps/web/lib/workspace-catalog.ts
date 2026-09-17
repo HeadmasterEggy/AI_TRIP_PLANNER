@@ -301,6 +301,33 @@ export function upsertCurrent(
   return next;
 }
 
+export function upsertConversationDraft(
+  catalog: WorkspaceCatalog,
+  conversation: Pick<ConversationRecord, "id" | "messages" | "input"> & {
+    title?: string;
+  },
+): WorkspaceCatalog {
+  const next = parseCatalog(catalog);
+  const now = new Date().toISOString();
+  const existing = next.conversations.findIndex((item) => item.id === conversation.id);
+  const record: ConversationRecord = {
+    id: conversation.id,
+    title: conversation.title?.trim() || "New chat",
+    updatedAt: now,
+    messages: clone(conversation.messages),
+    input: conversation.input,
+  };
+  if (existing >= 0) {
+    const previous = next.conversations[existing];
+    next.conversations[existing] = previous.renamed
+      ? { ...record, title: previous.title, renamed: true }
+      : record;
+  } else next.conversations.unshift(record);
+  next.activeConversationId = conversation.id;
+  delete next.activeTripId;
+  return next;
+}
+
 export function searchCatalog(
   catalog: WorkspaceCatalog,
   query: string,
