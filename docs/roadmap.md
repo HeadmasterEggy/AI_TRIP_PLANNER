@@ -5,12 +5,19 @@ decisions, save the trip and use it while travelling.
 
 ## Current sequence
 
-1. Finish the LangChain Agent migration for all five specialists and revision routing.
-2. Complete the single-user UI: controlled filters, detail cards, review flow and clear loading/error states.
-3. Persist trips, preferences, chat turns and HITL decisions in durable storage.
-4. Add editable timeline/map interactions with route, time and budget checks.
-5. Add source imports, then real search and booking hand-offs with freshness labels.
-6. Consider on-trip mode after the save/edit/confirm/travel loop is stable.
+Status as of 2026-09-17 (`codex/ui-improvements`; see [workspace UI](workspace-ui.md)):
+
+1. **Done** — LangChain Agent migration for all five specialists and revision routing (merged in
+   PR #10).
+2. **Done on the UI branch** — single-user UI: controlled filters, detail cards, review flow, HITL
+   decisions and clear loading/error states.
+3. **Partly done** — trips, chats, forms and HITL results are saved in browser storage with
+   versioned migration; durable server-side storage of trips, preferences, chat turns and decisions
+   is still open (`MemoryStore` is in process).
+4. **Done on the UI branch** — editable timeline and Google map with route, time and budget checks.
+5. **Open** — source imports, then real search and booking hand-offs with freshness labels (booking
+   is still fictional mock data).
+6. **Open** — consider on-trip mode after the save/edit/confirm/travel loop is stable.
 
 ## Definition of done for the MVP
 

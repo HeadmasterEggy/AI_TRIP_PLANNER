@@ -1,4 +1,3 @@
-import { ChatAnthropic } from "@langchain/anthropic";
 import { ChatOpenAI } from "@langchain/openai";
 import { createRoutedChatModel } from "@trip/agents";
 import { memory } from "@trip/services";
@@ -27,8 +26,26 @@ const BriefPatchSchema = z.object({
 export type BriefPatch = z.infer<typeof BriefPatchSchema>;
 
 export interface BriefExtractor {
-  extract(message: string, current: TripBrief): Promise<BriefPatch>;
+  /** `current` is undefined when a blank conversation starts without a brief. */
+  extract(message: string, current: TripBrief | undefined): Promise<BriefPatch>;
 }
+
+/** A blank conversation did not state every field required to plan a trip. */
+export class IncompleteBriefError extends Error {
+  constructor(readonly missing: string[]) {
+    super(
+      `To start planning, include the ${missing.join(", ")}. You can also fill in Trip preferences.`,
+    );
+    this.name = "IncompleteBriefError";
+  }
+}
+
+const REQUIRED_START_FIELDS = [
+  ["destination", "destination"],
+  ["dates", "start and end dates (YYYY-MM-DD)"],
+  ["groupSize", "number of travellers"],
+  ["budgetTotal", "total budget"],
+] as const;
 
 export interface ReplyGenerator {
   generate(prompt: string): Promise<string>;
@@ -38,14 +55,6 @@ export interface TripChatOptions extends OrchestratorOptions {
   extractor?: BriefExtractor;
   replyGenerator?: ReplyGenerator;
 }
-
-const ModelPatchSchema = z.object({
-  destination: z.string().trim().min(1).nullable(),
-  dates: z.tuple([z.string().regex(ISO_DATE), z.string().regex(ISO_DATE)]).nullable(),
-  groupSize: z.number().int().positive().nullable(),
-  budgetTotal: z.number().positive().nullable(),
-  nationality: z.string().trim().min(1).nullable(),
-});
 
 // OpenAI strict JSON Schema does not accept a tuple whose array items are
 // primitive values. Keep the public TripBrief contract unchanged and use two
@@ -116,7 +125,7 @@ export function extractBriefPatchLocally(message: string): BriefPatch {
   }
 
   const englishDestination = message.match(
-    /(?:trip|travel|holiday|go|going)\s+(?:to|in)\s+(.+?)(?=\s+(?:for|from|between|on|with|budget)\b|[,.;]|$)/i,
+    /(?:(?:trip|travel|holiday|go|going)\s+(?:to|in)|visit(?:ing)?)\s+(.+?)(?=\s+(?:for|from|between|on|with|budget)\b|[,.;]|$)/i,
   );
   const explicitDestination = message.match(
     /(?:destination|place)(?:\s+(?:is|to|as))?\s*[:=]?\s+(.+?)(?=\s+(?:and\s+)?(?:for|from|between|on|with|budget)\b|[,.;]|$)/i,
@@ -156,8 +165,8 @@ export function applyBriefPatch(current: TripBrief, patch: BriefPatch, tripId: s
   return next;
 }
 
-function extractionPrompt(message: string, current: TripBrief): string {
-  return `Extract only explicit updates to the trip brief. Use null for every field the user did not specify. Do not infer dates, nationality, group size, destination, or budget. Budget is total USD. Dates must be YYYY-MM-DD.\n\nCurrent brief:\n${JSON.stringify(current)}\n\nUser message:\n${message}`;
+function extractionPrompt(message: string, current: TripBrief | undefined): string {
+  return `Extract only explicit updates to the trip brief. Use null for every field the user did not specify. Do not infer dates, nationality, group size, destination, or budget. Budget is total USD. Dates must be YYYY-MM-DD.\n\nCurrent brief:\n${current ? JSON.stringify(current) : "None. This is a new conversation."}\n\nUser message:\n${message}`;
 }
 
 function createOpenAIExtractor(): BriefExtractor | undefined {
@@ -199,37 +208,14 @@ function createOpenAIExtractor(): BriefExtractor | undefined {
   };
 }
 
-function createAnthropicExtractor(): BriefExtractor | undefined {
-  if (!process.env.ANTHROPIC_API_KEY) return undefined;
-  const model = new ChatAnthropic({
-    apiKey: process.env.ANTHROPIC_API_KEY,
-    model: process.env.AI_MODEL || "claude-haiku-4-5-20251001",
-    temperature: 0,
-  });
-  const structured = model.withStructuredOutput(ModelPatchSchema, {
-    name: "TripBriefPatch",
-    method: "functionCalling",
-    strict: true,
-  });
-  return {
-    async extract(message, current) {
-      const result = await structured.invoke(extractionPrompt(message, current));
-      return BriefPatchSchema.parse(
-        Object.fromEntries(Object.entries(result).filter(([, value]) => value !== null)),
-      );
-    },
-  };
-}
-
 function createLangChainExtractor(): BriefExtractor | undefined {
-  // Prefer the GPT profile for chat/intent extraction, then preserve the
-  // existing Anthropic profile for teams that still configure that provider.
-  return createOpenAIExtractor() ?? createAnthropicExtractor();
+  // GPT handles chat/intent extraction; without a key the local parser is used.
+  return createOpenAIExtractor();
 }
 
 async function extractPatch(
   message: string,
-  current: TripBrief,
+  current: TripBrief | undefined,
   extractor?: BriefExtractor,
 ): Promise<BriefPatch> {
   const selected = extractor ?? createLangChainExtractor();
@@ -337,19 +323,41 @@ export async function runTripChat(
   options: TripChatOptions = {},
 ): Promise<ChatResponse> {
   const { extractor, replyGenerator, ...orchestrationOptions } = options;
-  const current = TripBriefSchema.parse({
-    ...(request.brief ?? DEMO_BRIEF),
-    tripId: request.tripId,
-  });
-  const patch = await extractPatch(request.message, current, extractor);
-  const brief = applyBriefPatch(current, patch, request.tripId);
+  if (request.mode === "plan" && !request.brief) throw new Error("A brief is required to plan.");
+  let current: TripBrief;
+  let brief: TripBrief;
+  if (request.mode === "start") {
+    // Never borrow fields from the demo or a previous trip for a blank conversation.
+    const patch = BriefPatchSchema.parse(await extractPatch(request.message, undefined, extractor));
+    const missing = REQUIRED_START_FIELDS.filter(([key]) => patch[key] === undefined).map(
+      ([, label]) => label,
+    );
+    if (missing.length) throw new IncompleteBriefError(missing);
+    brief = applyBriefPatch(
+      TripBriefSchema.parse({ ...patch, tripId: request.tripId }),
+      {},
+      request.tripId,
+    );
+    current = brief;
+  } else {
+    current = TripBriefSchema.parse({
+      ...(request.brief ?? DEMO_BRIEF),
+      tripId: request.tripId,
+    });
+    const patch =
+      request.mode === "plan" ? {} : await extractPatch(request.message, current, extractor);
+    brief = applyBriefPatch(current, patch, request.tripId);
+  }
   const mem: MemoryStore = orchestrationOptions.mem ?? memory;
   await mem.appendShortTerm(
     request.tripId,
     ChatTurn.parse({ role: "user", content: request.message }),
   );
   const plan = await runOrchestrator(brief, { ...orchestrationOptions, mem });
-  const fields = changedFields(current, brief);
+  const fields =
+    request.mode === "start"
+      ? ["destination", "dates", "groupSize", "budgetTotal"]
+      : changedFields(current, brief);
   const generator = replyGenerator ?? createReplyGenerator();
   let reply = fallbackReplyFor(plan);
   if (generator) {

@@ -1,110 +1,90 @@
 # AI Trip Planner
 
-AI Trip Planner is a single-user, multi-agent travel workspace. A user describes a trip, the
-supervisor delegates research to specialist agents, and the system returns a grounded itinerary
-with budget, transport, accommodation, dining and destination guidance.
+[![CI](https://github.com/Lilstanie/AI_TRIP_PLANNER/actions/workflows/ci.yml/badge.svg)](https://github.com/Lilstanie/AI_TRIP_PLANNER/actions/workflows/ci.yml)
 
-The project is being migrated from a custom `Agent.run()` abstraction to LangChain JS
-`createAgent()` specialists coordinated by a LangGraph workflow.
+AI Trip Planner is a single-user, multi-agent travel workspace. A user describes a trip in chat or a
+preferences form; a LangGraph workflow delegates to five LangChain specialist agents and returns a
+validated plan with itinerary, transport, accommodation, dining, destination guidance, budget and
+human-in-the-loop (HITL) decisions. The user can review decisions, edit the day timeline on a Google
+map and save trips in the browser.
 
-Live demo: [elec5620-ai-trip-planner.vercel.app](https://elec5620-ai-trip-planner.vercel.app)
+Live demo: [elec5620-ai-trip-planner.vercel.app](https://elec5620-ai-trip-planner.vercel.app). The
+hosted demo uses mock map and booking fixtures, so place and hotel names labelled “Mock …” are
+expected there and are not a failed live integration. It may also lag behind the branch you are
+reading.
 
-## Current status
-
-The LangChain agent migration has landed on `main`.
-
-- Every specialist is a named LangChain JS agent with typed evidence or calculator tools and a Zod
-  structured response; LangGraph still owns durable state, conflict checks, retries and HITL.
-- Revision requests are immutable inputs to targeted tools chosen by a dedicated revision
-  supervisor.
-- Memory, HITL, conflict validation, UI and proposal contracts were preserved across the migration;
-  the legacy `Agent.run()` / `revise()` compatibility type is gone.
-
-See [the architecture and migration plan](docs/agent-architecture.md) for details.
-
-## Prerequisites
-
-- Node.js 22 LTS or newer
-- Corepack-enabled pnpm
-- API keys are optional for local development; deterministic fallbacks and mock tools are enabled
-  by default.
-
-## Architecture
+## How it works
 
 ```mermaid
-flowchart TB
-    U[User] --> UI[Next.js Web UI]
-    UI --> SUP[LangChain Supervisor Agent]
-    SUP --> IT[Itinerary Agent]
-    SUP --> DG[Destination Agent]
-    SUP --> DN[Dining Agent]
-    SUP --> TR[Transport Agent]
-    SUP --> AC[Accommodation Agent]
-    SUP --> WF[LangGraph Workflow]
-    WF --> HITL[Memory and HITL]
-    WF --> PLAN[Validated Trip Plan]
-    IT --> TOOLS[Typed Tool Gateway]
-    DG --> TOOLS
-    DN --> TOOLS
-    TR --> TOOLS
-    AC --> TOOLS
+flowchart LR
+    UI[Next.js workspace] -->|POST /api/chat| CHAT[Brief extraction]
+    CHAT --> WF[LangGraph workflow]
+    WF --> SUP[LangChain supervisor]
+    SUP --> SPEC[Five specialist agents]
+    SPEC --> TOOLS[Maps and booking tools]
+    WF --> PLAN[Validated plan + HITL]
 ```
 
-The target architecture uses LangGraph for durable state, validation, conflict checks, retries,
-HITL and plan persistence, with LangChain agents responsible for role-specific reasoning and tool
-selection. The target is implemented on the refactor branch; `main` remains on the compatibility
-path until that work is merged.
+The LangGraph graph owns control flow, conflict checks and revision rounds; the supervisor only
+chooses which specialists to call. GPT extracts brief updates from chat, DeepSeek runs the specialists,
+and any missing key or failed model call falls back to validated deterministic output, so requests
+still complete. The LangChain migration was merged in PR #10. Details:
+[architecture](docs/architecture.md).
 
 ## Quick start
+
+Requires Node.js 22+ and pnpm 9.15.0 (selected by `corepack enable`).
 
 ```bash
 corepack enable
 pnpm install
-pnpm dev                         # http://localhost:3000
-pnpm typecheck
-pnpm test
-pnpm build
+cp .env.example .env.local   # optional keys; mock tools and fallbacks work without them
+pnpm dev                     # http://localhost:3000
 ```
 
-Copy `.env.example` to `.env.local`. `USE_MOCK_TOOLS=true` uses local map and booking fixtures;
-set it to `false` to use the OpenStreetMap adapters. GPT handles chat extraction, DeepSeek handles
-itinerary generation, and provider failures fall back to validated deterministic output.
-Docker setup is documented in [docs/development.md](docs/development.md).
-
-## API entry points
-
-The web server exposes the core workflow through:
-
-- `POST /api/chat` — extract trip updates, run planning and return the current plan.
-
-The HITL and saved-trip routes from the Stage 5.3 prototype will be reconnected after the Agent
-migration. See [docs/api.md](docs/api.md) for the current route and migration notes.
+Environment variables, Google Maps setup, the optional mock server, Docker and the CI checks
+(`pnpm typecheck`, `pnpm lint`, `pnpm test`, `pnpm build`) are covered in
+[development](docs/development.md).
 
 ## Repository layout
 
 ```text
-apps/web/                 Next.js UI and API routes
-packages/agents/          Specialist LangChain agents and fallbacks
-packages/orchestrator/    Supervisor integration and LangGraph workflow
-packages/shared/          Zod contracts, plans and ports
-packages/services/        Memory and service adapters
-packages/tools/           Maps, booking and external tool gateways
-docs/                     Architecture, workflow, roadmap and session notes
+apps/web/                 Next.js workspace UI and API routes
+packages/agents/          Five specialist LangChain agents, model routing and fallbacks
+packages/orchestrator/    LangGraph workflow, supervisor, chat intake, budget, conflicts, HITL
+packages/shared/          Zod contracts, plan types and ports
+packages/services/        memory (in-process MemoryStore), notify and auth adapters
+packages/tools/           Maps and booking adapters, mock fixtures, tool gateway, optional mock server
+docs/                     Project documentation
 ```
 
 ## Documentation
 
-- [Agent architecture and migration](docs/agent-architecture.md)
-- [Development environment](docs/development.md)
-- [Team and Git workflow](docs/team-workflow.md)
-- [Product roadmap](docs/roadmap.md)
-- [API entry points](docs/api.md)
-- [Scaffold and module ownership](docs/scaffold.md)
-- [UML and design model](docs/class-diagram.md), including the [diagram index](docs/diagrams/)
-- [Session-log template](docs/session-logs/TEMPLATE.md)
+| Document                               | Contents                                                    |
+| -------------------------------------- | ----------------------------------------------------------- |
+| [Architecture](docs/architecture.md)   | Runtime flow, LangGraph workflow, agents, models, contracts |
+| [API](docs/api.md)                     | The six API routes with requests, responses and errors      |
+| [Development](docs/development.md)     | Setup, environment variables, Docker, verification          |
+| [Workspace UI](docs/workspace-ui.md)   | Current UI behaviour, storage, map and editing rules        |
+| [Roadmap](docs/roadmap.md)             | MVP sequence and status                                     |
+| [Team workflow](docs/team-workflow.md) | Ownership, branches, reviews and session logs               |
+
+Also in `docs/`:
+
+- [`modules/`](docs/modules/): handoff notes from module owners (itinerary and transport reliability,
+  accommodation and budget).
+- [`design/`](docs/design/class-diagram.md): the ELEC5620 UML design model and SVG diagrams.
+- [`archive/`](docs/archive/): dated plans and audits kept for history; not current documentation.
+- [`session-logs/`](docs/session-logs/README.md): one note per AI-assisted session, indexed by phase.
 
 ## Scope
 
-The current product target is a single-user flow: enter a trip, inspect grounded recommendations,
-edit the plan, confirm HITL decisions, save it, and use it while travelling. Multi-user editing,
-social features, payments and booking fulfilment are out of scope for the current roadmap.
+The product target is a single-user flow: describe a trip, inspect grounded recommendations, edit the
+plan, confirm HITL decisions and save it. Saving is browser-local today; durable storage is next on
+the [roadmap](docs/roadmap.md). Multi-user editing, social features, payments and booking fulfilment
+are out of scope.
+
+## License
+
+This is an ELEC5620 course project. No licence file is included, so no open-source licence has been
+granted.

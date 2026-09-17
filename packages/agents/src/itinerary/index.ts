@@ -187,6 +187,7 @@ async function travelConflicts(
           from: previous.location,
           to: current.location,
           date: dateForDay(brief.dates[0], day),
+          localTime: previous.endTime,
         });
       } catch {
         ctx.signal?.throwIfAborted();

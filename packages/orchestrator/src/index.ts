@@ -4,6 +4,7 @@ export { DEMO_BRIEF } from "./demo";
 export {
   applyBriefPatch,
   extractBriefPatchLocally,
+  IncompleteBriefError,
   runTripChat,
   type BriefExtractor,
   type BriefPatch,
@@ -24,3 +25,5 @@ export {
   type SupervisorDispatchOptions,
   type SupervisorRevisionOptions,
 } from "./supervisor";
+
+export { applyHitl, checkpointsFor } from "./hitl";

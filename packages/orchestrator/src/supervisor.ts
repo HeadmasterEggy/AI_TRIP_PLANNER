@@ -46,6 +46,7 @@ export function createSupervisorTools(
     tool(
       async ({ objective }) => {
         options.onProgress?.({
+          summary: `${options.brief.destination} · ${options.brief.dates.join(" to ")} · ${options.brief.groupSize} people · USD ${options.brief.budgetTotal}`,
           type: "agent_started",
           agent: specialist.name,
           round: options.context.round,
@@ -60,11 +61,12 @@ export function createSupervisorTools(
             type: "agent_failed",
             agent: specialist.name,
             round: options.context.round,
-            error: error instanceof Error ? error.message : "unknown agent error",
+            error: "This specialist could not finish. Retry the request.",
           });
           throw error;
         }
         options.onProgress?.({
+          summary: proposal.summary,
           type: "agent_completed",
           agent: specialist.name,
           round: options.context.round,
@@ -96,7 +98,9 @@ export function createRevisionTools(
       tool(
         async ({ objective }) => {
           options.onProgress?.({
+            summary: `${options.brief.destination} · ${options.brief.dates.join(" to ")} · ${options.brief.groupSize} people · USD ${options.brief.budgetTotal}`,
             type: "agent_started",
+            constraints: request.constraints,
             agent: specialist.name,
             round: options.context.round,
           });
@@ -114,11 +118,12 @@ export function createRevisionTools(
               type: "agent_failed",
               agent: specialist.name,
               round: options.context.round,
-              error: error instanceof Error ? error.message : "unknown agent error",
+              error: "This specialist could not finish. Retry the request.",
             });
             throw error;
           }
           options.onProgress?.({
+            summary: proposal.summary,
             type: "agent_completed",
             agent: specialist.name,
             round: options.context.round,

@@ -92,7 +92,14 @@ describe("accommodation integration with negotiation", () => {
     expect(plan.sections.find((section) => section.id === "dining")!.estCost).toBe(700);
     expect(plan.sections.find((section) => section.id === "accommodation")!.estCost).toBe(1480);
     expect(plan.hitl.some((checkpoint) => checkpoint.type === "escalation")).toBe(false);
-    expect(plan.sections.every((section) => section.status === "draft")).toBe(true);
+    expect(plan.sections.find((section) => section.id === "accommodation")?.status).toBe(
+      "needs_you",
+    );
+    expect(
+      plan.sections
+        .filter((section) => section.id !== "accommodation")
+        .every((section) => section.status === "draft"),
+    ).toBe(true);
   });
 
   it("stops at K=3 and escalates when the cheapest valid plan is still too expensive", async () => {

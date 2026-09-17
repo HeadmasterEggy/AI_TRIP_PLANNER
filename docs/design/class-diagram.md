@@ -1,9 +1,9 @@
 # Class model — design-time structure
 
 ELEC5620 Lab 4 Part 2. Static structure of `AI_TRIP_PLANNER` as five UML 2.5 class
-diagrams that share one namespace. Rendered reference (with the full relationship,
-multiplicity, interface and rationale tables):
-<https://claude.ai/code/artifact/06ae7f45-f805-47f0-b610-4c8f46854e42>
+diagrams that share one namespace. Rendered diagrams are in [`diagrams/`](diagrams/)
+(start with [`combined-architecture-map.svg`](diagrams/combined-architecture-map.svg));
+the relationship, multiplicity, interface and rationale tables are below.
 
 This is a **design** model — a light refinement of the current skeleton. One class
 is introduced ahead of implementation and flagged below: `ConflictDetector`

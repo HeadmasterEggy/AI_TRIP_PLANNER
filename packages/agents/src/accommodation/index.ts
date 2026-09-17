@@ -20,7 +20,7 @@ async function buildStayProposal(
 ): Promise<AgentProposal> {
   ctx.signal?.throwIfAborted();
   const segments = splitStay(brief);
-  const prefs = readPreferences(await ctx.mem.getLongTerm(brief.userId));
+  const prefs = brief.accommodation ?? readPreferences(await ctx.mem.getLongTerm(brief.userId));
   ctx.signal?.throwIfAborted();
   const rooms =
     prefs.roomAllocation === "individual" ? brief.groupSize : Math.ceil(brief.groupSize / 2);
@@ -112,6 +112,20 @@ async function buildStayProposal(
   }
   return {
     agent: "accommodation",
+    source: {
+      label: "Simulated booking data",
+      freshness: "Fictional rates and availability; not a live quote.",
+    },
+    stays: selections.map(({ segment, options, chosen }) => ({
+      id: `stay-${segment.day}`,
+      ...segment,
+      rooms,
+      selectedId: `stay-${segment.day}-${options.indexOf(chosen)}`,
+      candidates: options.map((option, index) => ({
+        ...option,
+        id: `stay-${segment.day}-${index}`,
+      })),
+    })),
     summary: `${rooms} room(s), ${segments.reduce((sum, segment) => sum + segment.nights, 0)} nights in ${segments.map((segment) => segment.city).join(" & ")} · USD ${total.toFixed(2)}${budgetRevision ? " (lowest eligible cost)" : ""}`,
     items: selections.map(({ segment, chosen, cost }) => ({
       kind: "hotel",
@@ -175,7 +189,7 @@ async function planStays(
         "Accommodation specialist returned the wrong proposal type or skipped its tool.",
       );
     }
-    return proposal;
+    return { ...proposal, stays: evidence.stays, source: evidence.source, items: evidence.items };
   } catch (error) {
     const reason = error instanceof Error ? error.message : "unknown model error";
     console.warn(`[accommodation] Specialist failed; using a safe local plan: ${reason}`);

@@ -119,7 +119,9 @@ describe("B transport reliability", () => {
   it("queries the date of the assigned travel day, not the first day", async () => {
     const { ctx, route } = context();
     await transportAgent.invoke({ brief, context: ctx });
-    expect(route).toHaveBeenCalledWith(expect.objectContaining({ day: 3, date: "2026-10-03" }));
+    expect(route).toHaveBeenCalledWith(
+      expect.objectContaining({ day: 3, date: "2026-10-03", localTime: "09:00" }),
+    );
   });
 
   it("reports missing routes and flights while preserving available evidence", async () => {
@@ -184,7 +186,7 @@ describe("B transport reliability", () => {
         brief: { ...brief, dates: ["2026-02-30", "2026-03-05"] },
         context: ctx,
       }),
-    ).rejects.toThrow("valid YYYY-MM-DD");
+    ).rejects.toThrow("Enter a real date");
     expect(route).not.toHaveBeenCalled();
     expect(searchFlights).not.toHaveBeenCalled();
   });

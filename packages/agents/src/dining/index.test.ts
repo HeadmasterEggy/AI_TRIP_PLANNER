@@ -110,9 +110,7 @@ describe("dining planner", () => {
       context: context(preferences),
     });
 
-    expect(generate).toHaveBeenCalledWith(
-      expect.objectContaining({ dietaryPreferences: [] }),
-    );
+    expect(generate).toHaveBeenCalledWith(expect.objectContaining({ dietaryPreferences: [] }));
   });
 
   it("deduplicates and canonicalizes venue names before returning them", async () => {
@@ -237,7 +235,7 @@ describe("dining planner", () => {
         brief: { ...brief, dates: ["2026-10-03", "2026-10-01"] },
         context: ctx,
       }),
-    ).rejects.toThrow("ordered dates");
+    ).rejects.toThrow("End date must follow start date");
     expect(ctx.tools.maps.places).not.toHaveBeenCalled();
 
     await expect(

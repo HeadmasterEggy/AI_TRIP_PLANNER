@@ -1,38 +1,40 @@
-// Owner: E — first paint while the orchestrator runs. Mirrors the Workspace
-// grid so the real panels stream in without the layout shifting.
-const SECTION_WIDTHS = ["82%", "64%", "74%", "58%", "70%"];
+import { BrandMark } from "./BrandMark";
+
+// First paint while the client reads local history. Mirrors the workspace layout (sidebar,
+// top bar, chat and map) so nothing shifts; there is no initial plan to wait for.
+const HISTORY_WIDTHS = ["82%", "64%", "74%"];
 
 export function WorkspaceSkeleton() {
   return (
-    <main className="layout" aria-busy="true">
-      <section className="panel panel--left">
-        <h2>Filters</h2>
-        <div className="skeleton skeleton--line" style={{ width: "40%" }} />
-        <div className="skeleton skeleton--field" />
-        <div className="skeleton skeleton--line" style={{ width: "30%" }} />
-        <div className="skeleton skeleton--field" />
-        <div className="skeleton skeleton--line" style={{ width: "45%" }} />
-        <div className="skeleton skeleton--field" />
-      </section>
-
-      <section className="panel chat">
-        <h2>AI Trip Planner · Agent</h2>
-        <p className="skeleton__status" role="status">
-          Drafting your plan — the agents are negotiating transport, stay, activities and dining.
-        </p>
-      </section>
-
-      <section className="panel panel--right">
-        <h2>Your trip</h2>
-        <div className="skeleton skeleton--line" style={{ width: "60%" }} />
-        <div className="skeleton skeleton--bar" />
-        {SECTION_WIDTHS.map((width) => (
+    <div className="workspace-app" aria-busy="true">
+      <aside className="workspace-sidebar" aria-hidden="true">
+        <div className="sidebar-head">
+          <BrandMark />
+        </div>
+        {HISTORY_WIDTHS.map((width) => (
           <div className="skeleton__section" key={width}>
-            <div className="skeleton skeleton--line" style={{ width: "35%" }} />
             <div className="skeleton skeleton--line" style={{ width }} />
           </div>
         ))}
-      </section>
-    </main>
+      </aside>
+      <div className="workspace-main">
+        <div className="workspace-topbar" aria-hidden="true">
+          <div className="skeleton skeleton--line" style={{ width: 180 }} />
+        </div>
+        <main className="workspace-shell">
+          <section className="workspace-panel workspace-panel--chat">
+            <div className="panel chat">
+              <h2>Plan together</h2>
+              <p className="skeleton__status" role="status">
+                Opening your workspace…
+              </p>
+            </div>
+          </section>
+          <section className="workspace-panel workspace-panel--map" aria-hidden="true">
+            <div className="skeleton skeleton--map" />
+          </section>
+        </main>
+      </div>
+    </div>
   );
 }

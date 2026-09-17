@@ -15,8 +15,6 @@ import {
   type AgentContext,
   type AgentProposal,
   type AgentProgressEvent,
-  type AgentName,
-  type HitlCheckpoint,
   type MemoryStore,
   type RevisionRequest,
   type Specialist,
@@ -27,13 +25,10 @@ import {
 } from "@trip/shared";
 import { createToolGateway } from "@trip/tools";
 import { z } from "zod/v4";
-import {
-  assessBudget,
-  costOf,
-  rollUpCost,
-  ESCALATION_OVERRUN_PCT,
-  NEGOTIATION_OVERRUN_PCT,
-} from "./budget";
+import { assessBudget, costOf, rollUpCost, NEGOTIATION_OVERRUN_PCT } from "./budget";
+import { detectConflicts } from "./conflicts";
+export { detectConflicts } from "./conflicts";
+import { checkpointsFor } from "./hitl";
 import { dispatchWithSupervisor, reviseWithSupervisor } from "./supervisor";
 
 const DEFAULT_MAX_ROUNDS = 3;
@@ -48,9 +43,8 @@ export interface OrchestratorOptions {
 }
 
 const OrchestratorState = new StateSchema({
-  // The shared package still exposes Zod v3 contracts. LangGraph's recommended
-  // StateSchema uses Zod v4 fields, so public values are parsed at graph boundaries
-  // and represented as typed custom fields while the migration remains local.
+  // Public contracts are validated at graph boundaries; custom state fields
+  // keep the graph representation independent of the shared schema internals.
   brief: z.custom<TripBrief>(),
   round: z.number().int().nonnegative().default(0),
   proposals: z.array(z.custom<AgentProposal>()).default(() => []),
@@ -59,85 +53,6 @@ const OrchestratorState = new StateSchema({
 });
 
 type WorkflowNode = GraphNode<typeof OrchestratorState>;
-
-export function detectConflicts(proposals: AgentProposal[], brief: TripBrief): RevisionRequest[] {
-  const { overrunPct } = assessBudget(proposals.map(costOf), brief.budgetTotal);
-  const pending = new Map<AgentName, { reasons: string[]; constraints: string[] }>();
-  const add = (agent: AgentName, reason: string, constraint: string) => {
-    const entry = pending.get(agent) ?? { reasons: [], constraints: [] };
-    if (!entry.reasons.includes(reason)) entry.reasons.push(reason);
-    if (!entry.constraints.includes(constraint)) entry.constraints.push(constraint);
-    pending.set(agent, entry);
-  };
-
-  if (overrunPct > NEGOTIATION_OVERRUN_PCT) {
-    [...proposals]
-      .filter((proposal) => costOf(proposal) > 0)
-      .sort((left, right) => costOf(right) - costOf(left))
-      .slice(0, 2)
-      .forEach((proposal) =>
-        add(
-          proposal.agent,
-          `plan is ${overrunPct.toFixed(2)}% over budget`,
-          `cut ${proposal.agent} cost by ~30%`,
-        ),
-      );
-  }
-
-  for (const proposal of proposals) {
-    for (const reason of proposal.conflictsWith) {
-      add(proposal.agent, reason, "make the route geographically feasible");
-    }
-  }
-
-  const scheduled = proposals.flatMap((proposal) =>
-    proposal.items.flatMap((item) =>
-      item.day !== undefined && item.startTime && item.endTime
-        ? [{ agent: proposal.agent, item }]
-        : [],
-    ),
-  );
-  const toMinutes = (time: string) => {
-    const [hour, minute] = time.split(":").map(Number);
-    return hour! * 60 + minute!;
-  };
-  for (let leftIndex = 0; leftIndex < scheduled.length; leftIndex += 1) {
-    for (let rightIndex = leftIndex + 1; rightIndex < scheduled.length; rightIndex += 1) {
-      const left = scheduled[leftIndex]!;
-      const right = scheduled[rightIndex]!;
-      if (left.item.day !== right.item.day) continue;
-      const overlaps =
-        toMinutes(left.item.startTime!) < toMinutes(right.item.endTime!) &&
-        toMinutes(right.item.startTime!) < toMinutes(left.item.endTime!);
-      if (!overlaps) continue;
-      const targets =
-        left.agent === "itinerary" || right.agent === "itinerary"
-          ? (["itinerary"] as const)
-          : ([left.agent, right.agent] as const);
-      const reason = `time overlap on day ${left.item.day}: ${left.item.startTime}-${left.item.endTime} conflicts with ${right.item.startTime}-${right.item.endTime}`;
-      for (const target of new Set<AgentName>(targets)) {
-        // A revising agent only sees its own proposal, so name the window it has
-        // to work around and who owns it. Without this it is guessing, and the
-        // graph burns every remaining round without converging.
-        const blocker = target === left.agent ? right : left;
-        add(
-          target,
-          reason,
-          `on day ${left.item.day} keep clear of ${blocker.item.startTime}-${blocker.item.endTime}, held by ${blocker.agent}${
-            blocker.item.location ? ` (${blocker.item.location})` : ""
-          }; reschedule without changing trip dates`,
-        );
-      }
-    }
-  }
-
-  return [...pending].map(([targetAgent, value]) => ({
-    tripId: brief.tripId,
-    targetAgent,
-    reason: value.reasons.join("; "),
-    constraints: value.constraints,
-  }));
-}
 
 function toSection(
   proposal: AgentProposal,
@@ -153,36 +68,6 @@ function toSection(
     estCost: costOf(proposal),
     proposal,
   };
-}
-
-function buildHitl(
-  brief: TripBrief,
-  overrunPct: number,
-  unresolved: boolean,
-  maxRounds: number,
-): HitlCheckpoint[] {
-  const items: HitlCheckpoint[] = [
-    {
-      id: "confirm-brief",
-      type: "confirm_brief",
-      title: "Confirm your trip basics",
-      detail: `${brief.destination} · ${brief.dates[0]} to ${brief.dates[1]} · ${brief.groupSize} people · $${brief.budgetTotal}`,
-      status: "pending",
-    },
-  ];
-
-  if (overrunPct > ESCALATION_OVERRUN_PCT || unresolved) {
-    items.push({
-      id: "escalation",
-      type: "escalation",
-      title: "Needs a human decision",
-      detail: unresolved
-        ? `Agents did not converge within ${maxRounds} rounds.`
-        : `Plan is ${overrunPct.toFixed(2)}% over budget.`,
-      status: "pending",
-    });
-  }
-  return items;
 }
 
 function resolveOptions(options: OrchestratorOptions) {
@@ -227,17 +112,36 @@ export function createOrchestratorGraph(options: OrchestratorOptions = {}) {
     tripId: brief.tripId,
     round,
     tools,
-    mem,
+    mem: brief.accommodation
+      ? {
+          ...mem,
+          getLongTerm: async (userId) => [
+            ...(await mem.getLongTerm(userId)).filter((p) => !p.key.startsWith("accommodation.")),
+            ...Object.entries(brief.accommodation!).map(([key, value]) => ({
+              key: `accommodation.${key}`,
+              value: String(value),
+              source: "filter" as const,
+            })),
+          ],
+        }
+      : mem,
   });
 
   const invokeSpecialist = async (
     specialist: Specialist,
     request: Parameters<Specialist["invoke"]>[0],
   ): Promise<AgentProposal> => {
-    onProgress?.({ type: "agent_started", agent: specialist.name, round: request.context.round });
+    onProgress?.({
+      type: "agent_started",
+      agent: specialist.name,
+      round: request.context.round,
+      summary: `${request.brief.destination} · ${request.brief.dates.join(" to ")} · ${request.brief.groupSize} people · USD ${request.brief.budgetTotal}`,
+      constraints: request.revision?.constraints,
+    });
     try {
       const proposal = AgentProposalSchema.parse(await specialist.invoke(request));
       onProgress?.({
+        summary: proposal.summary,
         type: "agent_completed",
         agent: specialist.name,
         round: request.context.round,
@@ -248,7 +152,7 @@ export function createOrchestratorGraph(options: OrchestratorOptions = {}) {
         type: "agent_failed",
         agent: specialist.name,
         round: request.context.round,
-        error: error instanceof Error ? error.message : "unknown agent error",
+        error: "This specialist could not finish. Retry the request.",
       });
       throw error;
     }
@@ -256,6 +160,12 @@ export function createOrchestratorGraph(options: OrchestratorOptions = {}) {
 
   const dispatchSpecialists: WorkflowNode = async (state) => {
     const round = 1;
+    onProgress?.({
+      type: "coordinator",
+      phase: "dispatch",
+      round,
+      summary: `Assigning planning tasks for ${state.brief.destination}.`,
+    });
     const agentContext = context(state.brief, round);
     let proposals: AgentProposal[];
     // Explicit specialist injection is the deterministic seam used by tests.
@@ -289,12 +199,27 @@ export function createOrchestratorGraph(options: OrchestratorOptions = {}) {
     return { round, proposals: proposals.map((proposal) => AgentProposalSchema.parse(proposal)) };
   };
 
-  const detectProposalConflicts: WorkflowNode = (state) => ({
-    conflicts: detectConflicts(state.proposals, state.brief),
-  });
+  const detectProposalConflicts: WorkflowNode = (state) => {
+    const conflicts = detectConflicts(state.proposals, state.brief);
+    onProgress?.({
+      type: "coordinator",
+      phase: "conflicts",
+      round: state.round,
+      summary: `Checked budget and schedules: ${conflicts.length} revision request(s).`,
+      constraints: conflicts.flatMap((c) => c.constraints),
+    });
+    return { conflicts };
+  };
 
   const reviseConflicts: WorkflowNode = async (state) => {
     const round = state.round + 1;
+    onProgress?.({
+      type: "coordinator",
+      phase: "revision",
+      round,
+      summary: "Revising affected sections.",
+      constraints: state.conflicts.flatMap((c) => c.constraints),
+    });
     const requestByAgent = new Map(
       state.conflicts.map((request) => [request.targetAgent, request]),
     );
@@ -336,7 +261,12 @@ export function createOrchestratorGraph(options: OrchestratorOptions = {}) {
   };
 
   const buildPlan: WorkflowNode = (state) => {
-    const unresolved = state.conflicts.length > 0;
+    onProgress?.({
+      type: "coordinator",
+      phase: "assembly",
+      round: state.round,
+      summary: "Assembling the plan and decisions for your review.",
+    });
     const sections = state.proposals.map((proposal) =>
       toSection(proposal, state.conflicts, specialistByName),
     );
@@ -349,8 +279,25 @@ export function createOrchestratorGraph(options: OrchestratorOptions = {}) {
       estTotal,
       overrunPct,
       sections,
-      hitl: buildHitl(state.brief, overrunPct, unresolved, maxRounds),
+      hitl: [],
+      conflicts: state.conflicts,
     };
+    plan.hitl = checkpointsFor(plan);
+    for (const section of plan.sections) {
+      if (plan.hitl.some((c) => c.sectionId === section.id)) section.status = "needs_you";
+      if (section.proposal && !section.proposal.source)
+        section.proposal.source = {
+          label: injected
+            ? "Injected planning data"
+            : process.env.USE_MOCK_TOOLS !== "false"
+              ? "Simulated Places / route data and AI estimates"
+              : section.id === "transport"
+                ? "Map route estimates; flight fares are simulated"
+                : "Map place data and AI estimates",
+          freshness:
+            "Prices, availability and opening hours are not live verified. Check the proposal notes for data assumptions.",
+        };
+    }
     return { plan: TripPlanSchema.parse(plan) };
   };
 
