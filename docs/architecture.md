@@ -55,9 +55,10 @@ flowchart LR
 ```
 
 The compiled graph lives in `packages/orchestrator/src/workflow.ts`. It carries `brief`, `round`,
-`proposals`, `conflicts` and the final `plan`. Public input and output use the `@trip/shared` Zod
-contracts; shared Zod v3 values are validated at the graph boundaries, and the internal
-`StateSchema` uses the graph's Zod v4 dependency.
+`proposals`, `conflicts` and the final `plan`. Shared contracts and the internal `StateSchema` both use Zod 4
+(`zod` 4.5); `packages/shared` imports the `zod` entry point and the orchestrator imports `zod/v4`.
+Specialist proposals, the brief and the final plan are re-validated at the graph boundaries with
+`AgentProposalSchema.parse`, `TripBriefSchema.parse` and `TripPlanSchema.parse`.
 
 - `dispatch_specialists` asks the supervisor to delegate to the registered specialists. When no
   model is configured or the supervisor fails, it invokes every specialist directly with
@@ -94,8 +95,8 @@ Transport and accommodation wrap calculators so models cannot invent prices, rou
 
 Model routing (`MODEL_ROUTING` in `packages/agents/src/models.ts` and `chat.ts`):
 
-- **GPT** (`GPT_API_KEY`): structured extraction of brief updates. An Anthropic model is used if only
-  that key is configured; otherwise a conservative English/Chinese rule parser.
+- **GPT** (`GPT_API_KEY`, or `OPENAI_API_KEY`): structured extraction of brief updates. Without a
+  key, or when extraction fails, a conservative English/Chinese rule parser is used.
 - **DeepSeek** (`DEEPSEEK_API_KEY`): all five specialists, the supervisor and the natural-language
   chat reply, through LangChain's OpenAI-compatible adapter.
 - **MiniMax**: configured but not routed; it was too slow for page-level planning. See
@@ -134,7 +135,7 @@ Do not change `packages/shared` without telling the team; every package depends 
 ## History and remaining work
 
 The LangChain migration from the former `Agent.run()` / `revise()` abstraction was merged into `main`
-through PR #10 on 2026-09-09. Remaining work:
+through PR #10 (2026-09-09 UTC). Remaining work:
 
 - Persist supervisor checkpoints, memory, trips and decisions durably (the browser workspace saves
   locally today).

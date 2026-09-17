@@ -69,9 +69,13 @@ docs/                     Project documentation
 | [Roadmap](docs/roadmap.md)             | MVP sequence and status                                     |
 | [Team workflow](docs/team-workflow.md) | Ownership, branches, reviews and session logs               |
 
-Also in `docs/`: [module handoff notes](docs/modules/), the ELEC5620
-[design model and UML diagrams](docs/design/class-diagram.md), [archived plans and audits](docs/archive/)
-and [session logs](docs/session-logs/README.md).
+Also in `docs/`:
+
+- [`modules/`](docs/modules/): handoff notes from module owners (itinerary and transport reliability,
+  accommodation and budget).
+- [`design/`](docs/design/class-diagram.md): the ELEC5620 UML design model and SVG diagrams.
+- [`archive/`](docs/archive/): dated plans and audits kept for history; not current documentation.
+- [`session-logs/`](docs/session-logs/README.md): one note per AI-assisted session, indexed by phase.
 
 ## Scope
 

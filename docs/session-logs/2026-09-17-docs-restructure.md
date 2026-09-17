@@ -38,3 +38,35 @@ session-log index and archive banners. `docs/` now has six top-level documents p
 - Prettier passes for the new and rewritten documents.
 - Not checked: whether the ELEC5620 submission expects `docs/class-diagram.md` at its old path, and
   GitHub rendering of the two Mermaid diagrams.
+
+## Follow-up review fixes
+
+A second review of `d6f0725` and `167f857` was checked against the code before changing anything.
+
+- `architecture.md` said shared contracts used Zod v3. Every package resolves `zod` 4.5.4; `shared`
+  imports the `zod` entry point and the agents and orchestrator import `zod/v4`. The text now says so
+  and names the boundary parsers.
+- Anthropic was inconsistent: `.env.example` said the project does not use Claude/Anthropic, while
+  `chat.ts` fell back to an Anthropic extractor via the undocumented `ANTHROPIC_API_KEY` / `AI_MODEL`.
+  The Anthropic branch, its schema and `@langchain/anthropic` were removed (separate commit
+  `b1424fc`). Extraction is now GPT, then the local rule parser.
+- `.env.example` now lists every variable the code reads, including `OPENAI_API_KEY` (GPT alias),
+  `MAPS_API_BASE_URL`, `MOCK_API_PORT` and `NEXT_DIST_DIR`, so `development.md`'s “every variable”
+  claim holds.
+- `design/class-diagram.md` pointed to a claude.ai artifact that requires sign-in. It now points to
+  the SVGs in `design/diagrams/`.
+- The archived P3 plan's supersession note pointed at the deleted `ui-improvements.md`; it now names
+  `workspace-ui.md`.
+- The PR #10 date is marked as UTC (it merged on 2026-09-10 in Sydney time).
+- README explains what `modules/`, `design/`, `archive/` and `session-logs/` contain.
+
+Not adopted:
+
+- A README screenshot. `output/playwright/*.png` is git-ignored and shows the interface before the
+  redesign, so it cannot be linked. A current screenshot needs a deliberate capture and commit.
+- Copying the “which documents were merged” note into README. It stays in the session-log index to
+  keep README short.
+
+Verification: `pnpm typecheck`, `pnpm lint`, `pnpm test` and `pnpm build` passed after the code
+change. Every relative link in README and the non-log docs resolves, and every environment variable
+read in `apps/` and `packages/` appears in `.env.example`.

@@ -4,7 +4,7 @@
 
 ## Baseline and scope
 
-Merge `origin/main` (19a1bff) into `codex/ui-improvements`, preserving 2fd3030 and its P0–P2 work. Keep asynchronous `/api/demo`, local restore precedence, HITL and request cancellation. (Superseded on 2026-09-17: `/api/demo` was removed and the workspace now opens blank; see `docs/ui-improvements.md`.) No database, payment, real booking, or cross-city transport editing.
+Merge `origin/main` (19a1bff) into `codex/ui-improvements`, preserving 2fd3030 and its P0–P2 work. Keep asynchronous `/api/demo`, local restore precedence, HITL and request cancellation. (Superseded on 2026-09-17: `/api/demo` was removed and the workspace now opens blank; see `docs/workspace-ui.md`.) No database, payment, real booking, or cross-city transport editing.
 
 ## Delivery slices
 
