@@ -16,8 +16,16 @@ now. Implementation history and browser acceptance for each phase are in the
 | Trip Preferences drawer | Structured brief form: destination, dates, travellers, budget, nationality, accommodation                                      | `Drawer`, `FiltersPanel`                     |
 
 - **Sidebar.**
-  - Expands to 240 px or collapses to a 64 px icon rail. The toggle uses `aria-expanded`, and the
-    preference is saved in the catalog layout.
+  - Expands to 240 px (220 px below 1250 px) or collapses to a 64 px icon rail. The toggle uses
+    `aria-expanded`, and the preference is saved in the catalog layout.
+  - While expanded, a separator on its right edge resizes it between 200 and 420 px. Drag it, or focus
+    it and use Left/Right (16 px steps), Home and End; double-click restores the responsive default.
+    It is a `role="separator"` window splitter carrying `aria-valuenow`, and dragging writes
+    `--sidebar-width` straight onto the workspace grid so the workspace does not re-render on every
+    pointer move. A click that does not move the pointer leaves the responsive default alone.
+  - The width is stored in the catalog layout only once the user resizes. Until then the stylesheet's
+    responsive default applies, so narrowing the window still narrows the sidebar. Collapsing keeps
+    the width for the next expand.
   - Collapsed icons keep `aria-label`, a tooltip and focus styles. Search, Chats and Trips expand the
     sidebar.
   - The current section is shown by background, bold text, a filled icon and a bar, plus
@@ -72,6 +80,8 @@ now. Implementation history and browser acceptance for each phase are in the
   - Everything is saved in the browser only, with a debounced autosave state in the sidebar.
   - The catalog (`trip-workspace-catalog-v3`) keeps conversations and trips separately, with stable
     links and an optional conversation `draft`. Legacy version 1 and 2 snapshots are migrated.
+  - Layout stores the sidebar's `collapsed` always and its `width` only after a resize, so an
+    untouched workspace keeps following the stylesheet at every viewport size.
   - Corrupt data is never overwritten automatically, and layout fields fall back to defaults instead
     of making history unreadable.
   - When storage is full or unavailable, the plan stays in memory with a visible retry.
