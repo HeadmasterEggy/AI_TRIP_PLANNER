@@ -323,6 +323,38 @@ export function upsertCurrent(
   return next;
 }
 
+/** A conversation that has not produced a trip yet. */
+function isBlankConversation(item: ConversationRecord): boolean {
+  return !item.tripId && !item.snapshot;
+}
+
+/**
+ * An untouched conversation is blank and holds nothing the user wrote. Filter defaults do not
+ * count, so only the fields a person can type are read.
+ */
+function isUntouchedConversation(item: ConversationRecord): boolean {
+  return (
+    isBlankConversation(item) &&
+    !item.messages.length &&
+    !item.input.trim() &&
+    (["destination", "start", "end", "groupSize", "budgetTotal", "nationality"] as const).every(
+      (key) => !item.draft?.[key]?.trim(),
+    )
+  );
+}
+
+/**
+ * The untouched conversation a new chat should reuse, or undefined when one has to be created.
+ * Reusing is what keeps repeated `New chat` presses from stacking blank entries in the history.
+ */
+export function reusableBlankConversation(
+  catalog: WorkspaceCatalog,
+): ConversationRecord | undefined {
+  return [...catalog.conversations]
+    .filter(isUntouchedConversation)
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
+}
+
 export function upsertConversationDraft(
   catalog: WorkspaceCatalog,
   conversation: Pick<ConversationRecord, "id" | "messages" | "input"> & {
@@ -441,24 +473,11 @@ export function restoreWorkspace(storage: Pick<Storage, "getItem">): RestoredWor
   }
   try {
     const catalog = parseCatalog(storage.getItem(CATALOG_KEY), current, result.saved);
-    const isBlank = (item: ConversationRecord) => !item.tripId && !item.snapshot;
-    // Untouched means the user entered nothing about a trip; filter defaults do not count.
-    const untouched = (item: ConversationRecord) =>
-      isBlank(item) &&
-      !item.messages.length &&
-      !item.input.trim() &&
-      (["destination", "start", "end", "groupSize", "budgetTotal", "nationality"] as const).every(
-        (key) => !item.draft?.[key]?.trim(),
-      );
     const active = catalog.conversations.find((item) => item.id === catalog.activeConversationId);
     // Continue the active blank chat; otherwise reuse an untouched one instead of adding
     // another empty "New chat" on every refresh.
     const conversation =
-      active && isBlank(active)
-        ? active
-        : [...catalog.conversations]
-            .filter(untouched)
-            .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
+      active && isBlankConversation(active) ? active : reusableBlankConversation(catalog);
     if (conversation) {
       catalog.activeConversationId = conversation.id;
       result.conversationId = conversation.id;

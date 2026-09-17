@@ -47,7 +47,10 @@ now. Implementation history and browser acceptance for each phase are in the
   - An unfinished blank chat (form and input) is continued. Otherwise an untouched blank chat is
     reused, so refreshing does not add empty chats.
   - Saved chats and trips open only when chosen from the sidebar or Saved trips.
-- **New chat** creates an independent conversation with an empty form, input and map. A trip record is
+- **New chat** creates an independent conversation with an empty form, input and map. It reuses an
+  untouched blank chat when one exists, so pressing New chat repeatedly or after a refresh keeps a
+  single empty conversation instead of stacking blank history entries. A conversation holding
+  anything the user typed is never reused, and a renamed one keeps its name. A trip record is
   created and linked (`tripId`) only when a plan is produced; the chat title then becomes the
   destination and dates.
 - **Starting to plan.**
