@@ -33,6 +33,8 @@ export function TripEditor({
     [selected, setSelected] = useState("");
   const [mode, setMode] = useState<"WALK" | "TRANSIT">("WALK");
   const [places, setPlaces] = useState<Record<string, GooglePlace>>({});
+  const [runtimePlaceIds, setRuntimePlaceIds] = useState<Record<string, string>>({});
+  const [placeRetry, setPlaceRetry] = useState(0);
   const [query, setQuery] = useState(""),
     [results, setResults] = useState<GooglePlace[]>([]);
   const [error, setError] = useState(""),
@@ -44,6 +46,7 @@ export function TripEditor({
   const previewRoot = useRef<HTMLDivElement>(null);
   const returnFocus = useRef<HTMLElement | null>(null);
   const request = useRef<AbortController | null>(null);
+  const attemptedPlaces = useRef(new Set<string>());
   const current = useRef(plan);
   current.current = plan;
   const activities = useMemo(
@@ -55,11 +58,22 @@ export function TripEditor({
   );
   const daily = useMemo(() => activities.filter((a) => a.day === day), [activities, day]);
   const dayPlaces = useMemo(
-    () => daily.flatMap((a) => (a.placeId && places[a.placeId] ? [places[a.placeId]!] : [])),
-    [daily, places],
+    () =>
+      daily.flatMap((activity) => {
+        const placeId =
+          activity.placeId ?? (activity.id ? runtimePlaceIds[activity.id] : undefined);
+        return placeId && places[placeId] ? [places[placeId]!] : [];
+      }),
+    [daily, places, runtimePlaceIds],
   );
   const active = activities.find((a) => a.id === selected);
   const days = (Date.parse(plan.brief.dates[1]) - Date.parse(plan.brief.dates[0])) / 86400000;
+  useEffect(() => {
+    setDay((value) => Math.min(Math.max(1, value), Math.max(1, days)));
+  }, [days]);
+  useEffect(() => {
+    if (selected && !daily.some((item) => item.id === selected)) setSelected("");
+  }, [daily, selected]);
   useEffect(() => {
     request.current?.abort();
     setPreview(undefined);
@@ -69,6 +83,8 @@ export function TripEditor({
     }
     applied.current = null;
     setWorking(false);
+    attemptedPlaces.current.clear();
+    setRuntimePlaceIds({});
   }, [plan]);
   useEffect(() => {
     onPending(!!preview || working);
@@ -92,14 +108,23 @@ export function TripEditor({
   useEffect(() => {
     if (view === "overview") return;
     const controller = new AbortController();
+    const attempted = attemptedPlaces.current;
     const ids = [
       ...new Set(
         daily.flatMap((item) => (item.placeId && !places[item.placeId] ? [item.placeId] : [])),
       ),
     ];
-    if (ids.length)
-      void Promise.allSettled(
-        ids.map(async (placeId) => {
+    const unresolved = daily.filter(
+      (item) =>
+        item.id &&
+        !item.placeId &&
+        !runtimePlaceIds[item.id] &&
+        !attempted.has(item.id),
+    );
+    unresolved.forEach((item) => attempted.add(item.id!));
+    if (ids.length || unresolved.length)
+      void Promise.allSettled([
+        ...ids.map(async (placeId) => {
           const response = await fetch("/api/places/details", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -108,9 +133,24 @@ export function TripEditor({
           });
           const body = await response.json();
           if (!response.ok) throw new Error(body.error);
-          return body.place as GooglePlace;
+          return { place: body.place as GooglePlace };
         }),
-      ).then((results) => {
+        ...unresolved.map(async (activity) => {
+          const response = await fetch("/api/places/search", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ text: activity.detail, destination: plan.brief.destination }),
+            signal: controller.signal,
+          });
+          const body = await response.json();
+          if (!response.ok) throw new Error(body.error);
+          const place = (body.places as GooglePlace[] | undefined)?.find(
+            (candidate) => candidate.location,
+          );
+          if (!place) throw new Error(`No Google place matched ${activity.detail}.`);
+          return { place, activityId: activity.id! };
+        }),
+      ]).then((results) => {
         if (controller.signal.aborted) return;
         const found = results.flatMap((result) =>
           result.status === "fulfilled" ? [result.value] : [],
@@ -118,7 +158,15 @@ export function TripEditor({
         if (found.length)
           setPlaces((old) => ({
             ...old,
-            ...Object.fromEntries(found.map((place) => [place.id, place])),
+            ...Object.fromEntries(found.map(({ place }) => [place.id, place])),
+          }));
+        const resolved = found.filter(
+          (item): item is { place: GooglePlace; activityId: string } => "activityId" in item,
+        );
+        if (resolved.length)
+          setRuntimePlaceIds((old) => ({
+            ...old,
+            ...Object.fromEntries(resolved.map(({ activityId, place }) => [activityId, place.id])),
           }));
         const failed = results.find((result) => result.status === "rejected");
         if (failed?.status === "rejected")
@@ -128,8 +176,11 @@ export function TripEditor({
               : "Place details unavailable. Change day or reopen the map to retry.",
           );
       });
-    return () => controller.abort();
-  }, [daily, view, places]);
+    return () => {
+      controller.abort();
+      unresolved.forEach((item) => item.id && attempted.delete(item.id));
+    };
+  }, [daily, view, places, placeRetry, plan.brief.destination, runtimePlaceIds]);
   async function edit(operation: EditInput["operation"]) {
     returnFocus.current = document.activeElement as HTMLElement;
     request.current?.abort();
@@ -184,10 +235,14 @@ export function TripEditor({
   }
   const selectPlace = useCallback(
     (placeId: string) => {
-      const item = activities.find((a) => a.placeId === placeId);
+      const item = daily.find(
+        (activity) =>
+          activity.placeId === placeId ||
+          (activity.id !== undefined && runtimePlaceIds[activity.id] === placeId),
+      );
       if (item?.id) setSelected(item.id);
     },
-    [activities],
+    [daily, runtimePlaceIds],
   );
   const locked = disabled || working || !!preview;
   return (
@@ -424,19 +479,46 @@ export function TripEditor({
             </div>
             {view === "map" && (
               <div>
-                <TripMap
-                  places={dayPlaces}
-                  selected={active?.placeId}
-                  onSelect={selectPlace}
-                  routes={(preview?.routes ?? verifiedRoutes).filter(
-                    (r) =>
-                      daily.some((a) => a.placeId === r.from) &&
-                      daily.some((a) => a.placeId === r.to),
-                  )}
-                />
+                {!daily.length ? (
+                  <div className="map-empty">
+                    <h3>No activities for this day</h3>
+                    <p>Add an activity to this day to show it on the map.</p>
+                  </div>
+                ) : dayPlaces.length ? (
+                  <TripMap
+                    places={dayPlaces}
+                    selected={
+                      active?.placeId ?? (active?.id ? runtimePlaceIds[active.id] : undefined)
+                    }
+                    onSelect={selectPlace}
+                    mode={mode}
+                    routes={(preview?.routes ?? verifiedRoutes).filter(
+                      (r) =>
+                        daily.some((a) => a.placeId === r.from) &&
+                        daily.some((a) => a.placeId === r.to),
+                    )}
+                  />
+                ) : (
+                  <div className="map-empty" role={error ? "alert" : "status"}>
+                    <p>{error || "Loading verified Google place details…"}</p>
+                    {error && (
+                      <button
+                        onClick={() => {
+                          daily.forEach(
+                            (item) => item.id && attemptedPlaces.current.delete(item.id),
+                          );
+                          setError("");
+                          setPlaceRetry((value) => value + 1);
+                        }}
+                      >
+                        Retry places
+                      </button>
+                    )}
+                  </div>
+                )}
                 <p>
-                  Google Maps · Only verified activity places are shown. Simulated hotels are not
-                  mapped.
+                  Google Maps · Named activities without a saved place ID are matched at runtime and
+                  remain unverified until selected. Simulated hotels are not mapped.
                 </p>
               </div>
             )}

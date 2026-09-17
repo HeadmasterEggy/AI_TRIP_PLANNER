@@ -1,5 +1,12 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
 import { TripPlan, type AgentProgressEvent, type ChatRequest } from "@trip/shared";
 import { FiltersPanel } from "./FiltersPanel";
 import { ChatPanel } from "./ChatPanel";
@@ -9,6 +16,7 @@ import { CheckpointCards, type Decision } from "./CheckpointCards";
 import { Header, type Navigation } from "./Header";
 import { Dialog } from "./Dialog";
 import { WorkspaceSkeleton } from "./WorkspaceSkeleton";
+import { WorkspaceSidebar } from "./WorkspaceSidebar";
 import {
   identifyActivities,
   CURRENT_KEY,
@@ -22,6 +30,16 @@ import {
   type Message,
   type Snapshot,
 } from "@/lib/workspace";
+import {
+  CATALOG_KEY,
+  createCatalog,
+  parseCatalog,
+  searchCatalog,
+  serializeCatalog,
+  updateCatalog,
+  upsertCurrent,
+  type WorkspaceCatalog,
+} from "@/lib/workspace-catalog";
 
 type Task =
   { kind: "chat"; request: ChatRequest } | { kind: "decision"; plan: TripPlan; decision: Decision };
@@ -110,7 +128,7 @@ function WorkspaceContent({
   const [messages, setMessages] = useState<Message[]>(seed);
   const [input, setInput] = useState("");
   const [previousTotal, setPreviousTotal] = useState<number>();
-  const [editorView, setEditorView] = useState<"overview" | "timeline" | "map">("overview");
+  const [editorView, setEditorView] = useState<"overview" | "timeline" | "map">("map");
   const [editPending, setEditPending] = useState(false);
   const [busy, setBusy] = useState(false);
   const [activity, setActivity] = useState<AgentProgressEvent[]>([]);
@@ -123,15 +141,36 @@ function WorkspaceContent({
   const [notice, setNotice] = useState("");
   const [ready, setReady] = useState(false);
   const [storageEnabled, setStorageEnabled] = useState(true);
+  const [saveState, setSaveState] = useState<"saving" | "saved" | "failed">("saved");
+  const [catalog, setCatalog] = useState<WorkspaceCatalog>(() => createCatalog());
+  const catalogRef = useRef(catalog);
+  const [historyQuery, setHistoryQuery] = useState("");
+  const [preferencesOpen, setPreferencesOpen] = useState(true);
+  const [tripOpen, setTripOpen] = useState(true);
+  const [preferencesWidth, setPreferencesWidth] = useState(280);
+  const [tripWidth, setTripWidth] = useState(390);
+  const [mobileView, setMobileView] = useState<"history" | "preferences" | "chat" | "map" | "trip">(
+    "chat",
+  );
+  const activeConversation = useRef(`conversation:${crypto.randomUUID()}`);
+
+  useEffect(() => {
+    catalogRef.current = catalog;
+  }, [catalog]);
   const active = useRef<AbortController | null>(null);
   const left = useRef<HTMLDivElement>(null);
+  const preferencesToggle = useRef<HTMLButtonElement>(null);
+  const tripToggle = useRef<HTMLButtonElement>(null);
 
   // Restore after hydration; never overwrite unreadable data automatically.
   useEffect(() => {
+    let restoredCurrent: Snapshot | undefined;
+    let restoredSaved: Snapshot[] = [];
     try {
       const raw = localStorage.getItem(CURRENT_KEY);
       if (raw) {
         const restored = parseSnapshot(JSON.parse(raw));
+        restoredCurrent = restored;
         setPlan(restored.plan);
         setDraft(restored.draft);
         setMessages(restored.messages);
@@ -147,11 +186,47 @@ function WorkspaceContent({
       setStorageEnabled(false);
     }
     try {
-      setSaved(parseSaved(localStorage.getItem(SAVED_KEY)));
+      restoredSaved = parseSaved(localStorage.getItem(SAVED_KEY));
+      setSaved(restoredSaved);
     } catch {
       setStorageError(
         "Saved trips could not be read. Existing stored data has been kept; you can retry from Saved trips.",
       );
+    }
+    try {
+      const nextCatalog = parseCatalog(
+        localStorage.getItem(CATALOG_KEY),
+        restoredCurrent,
+        restoredSaved,
+      );
+      setCatalog(nextCatalog);
+      if (nextCatalog.activeConversationId)
+        activeConversation.current = nextCatalog.activeConversationId;
+      setPreferencesOpen(nextCatalog.layout.preferences.open);
+      setTripOpen(nextCatalog.layout.trip.open);
+      setPreferencesWidth(nextCatalog.layout.preferences.width);
+      setTripWidth(nextCatalog.layout.trip.width);
+      setMobileView(nextCatalog.layout.view);
+      setEditorView(nextCatalog.layout.editorView);
+      const activeTrip = nextCatalog.trips.find((item) => item.id === nextCatalog.activeTripId);
+      const activeChat = nextCatalog.conversations.find(
+        (item) => item.id === nextCatalog.activeConversationId,
+      );
+      if (activeTrip) {
+        const restored = activeTrip.snapshot;
+        setPlan(restored.plan);
+        setDraft(restored.draft);
+        setPreviousTotal(restored.previousTotal);
+      }
+      if (activeChat) {
+        setMessages(activeChat.messages);
+        setInput(activeChat.input);
+      }
+    } catch {
+      setStorageError(
+        "Workspace history could not be read. Existing stored data was kept and the current trip remains available.",
+      );
+      setStorageEnabled(false);
     }
     setReady(true);
     return () => {
@@ -162,27 +237,90 @@ function WorkspaceContent({
 
   useEffect(() => {
     if (!ready || !storageEnabled) return;
-    try {
-      localStorage.setItem(
-        CURRENT_KEY,
-        JSON.stringify({
+    setSaveState("saving");
+    const timer = window.setTimeout(() => {
+      try {
+        const id = activeConversation.current.replace(/^conversation:/, "");
+        const current = {
           version: 2,
-          id: plan.tripId,
+          id,
           savedAt: new Date().toISOString(),
           plan,
           draft,
           messages,
           input,
           previousTotal,
-        } satisfies Snapshot),
-      );
+        } satisfies Snapshot;
+        const nextCatalog = upsertCurrent(catalogRef.current, current, messages);
+        localStorage.setItem(CURRENT_KEY, JSON.stringify(current));
+        localStorage.setItem(CATALOG_KEY, serializeCatalog(nextCatalog));
+        setCatalog(nextCatalog);
+        setSaveState("saved");
+      } catch {
+        setStorageEnabled(false);
+        setSaveState("failed");
+        setStorageError(
+          "Browser storage is unavailable or full. Your current plan is still in this tab. Retry after freeing space.",
+        );
+      }
+    }, 350);
+    return () => window.clearTimeout(timer);
+  }, [
+    ready,
+    storageEnabled,
+    plan,
+    draft,
+    messages,
+    input,
+    previousTotal,
+    preferencesOpen,
+    tripOpen,
+    preferencesWidth,
+    tripWidth,
+    mobileView,
+    editorView,
+  ]);
+
+  useEffect(() => {
+    if (!ready || !storageEnabled) return;
+    try {
+      localStorage.setItem(CATALOG_KEY, serializeCatalog(catalog));
     } catch {
+      setSaveState("failed");
       setStorageEnabled(false);
       setStorageError(
         "Browser storage is unavailable or full. Your current plan is still in this tab. Retry after freeing space.",
       );
     }
-  }, [ready, storageEnabled, plan, draft, messages, input, previousTotal]);
+  }, [catalog, ready, storageEnabled]);
+
+  useEffect(() => {
+    setCatalog((current) =>
+      updateCatalog(current, {
+        layout: {
+          preferences: { open: preferencesOpen, width: preferencesWidth },
+          trip: { open: tripOpen, width: tripWidth },
+          view: mobileView === "history" || mobileView === "preferences" ? "chat" : mobileView,
+          editorView,
+        },
+      }),
+    );
+  }, [preferencesOpen, tripOpen, preferencesWidth, tripWidth, mobileView, editorView]);
+
+  useEffect(() => {
+    const closePanel = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      if (mobileView === "trip" && tripOpen) {
+        setTripOpen(false);
+        tripToggle.current?.focus();
+      } else if (mobileView === "preferences" && preferencesOpen) {
+        setPreferencesOpen(false);
+        preferencesToggle.current?.focus();
+      }
+    };
+    window.addEventListener("keydown", closePanel);
+    return () => window.removeEventListener("keydown", closePanel);
+  }, [mobileView, preferencesOpen, tripOpen]);
 
   function edit() {
     setEditorView("overview");
@@ -206,12 +344,13 @@ function WorkspaceContent({
     setErrors({});
     setRetry(undefined);
     setDialog(undefined);
+    activeConversation.current = `conversation:${snapshot.id}`;
     setNotice("Trip restored. Future edits are saved to your current workspace.");
   }
   function snapshot(): Snapshot {
     return {
       version: 2,
-      id: crypto.randomUUID(),
+      id: activeConversation.current.replace(/^conversation:/, ""),
       savedAt: new Date().toISOString(),
       plan,
       draft,
@@ -223,7 +362,7 @@ function WorkspaceContent({
   function save() {
     try {
       const current = parseSaved(localStorage.getItem(SAVED_KEY));
-      const next = [snapshot(), ...current];
+      const next = [{ ...snapshot(), id: crypto.randomUUID() }, ...current];
       localStorage.setItem(SAVED_KEY, JSON.stringify(next));
       setSaved(next);
       setNotice("Saved a copy of this trip in this browser.");
@@ -329,6 +468,146 @@ function WorkspaceContent({
   const onDecision = (decision: Decision) => {
     void run({ kind: "decision", plan, decision });
   };
+  const filteredHistory = useMemo(
+    () => searchCatalog(catalog, historyQuery),
+    [catalog, historyQuery],
+  );
+  const historyChats = filteredHistory.conversations.map((item) => ({
+    id: item.id,
+    title: item.title,
+    subtitle: item.tripId
+      ? (catalog.trips.find((trip) => trip.id === item.tripId)?.title ?? "Linked trip")
+      : "No linked trip",
+    updatedAt: item.updatedAt,
+    active: item.id === catalog.activeConversationId,
+  }));
+  const historyTrips = filteredHistory.trips.map((item) => ({
+    id: item.id,
+    title: item.title,
+    subtitle: `${item.snapshot.plan.brief.dates.join(" – ")} · ${money(item.snapshot.plan.estTotal)}`,
+    updatedAt: item.updatedAt,
+    status:
+      item.status === "needs_review"
+        ? ("Needs review" as const)
+        : item.status === "confirmed"
+          ? ("Confirmed" as const)
+          : ("Draft" as const),
+    active: item.id === catalog.activeTripId,
+  }));
+  function selectConversation(id: string) {
+    const conversation = catalog.conversations.find((item) => item.id === id);
+    if (!conversation) return;
+    active.current?.abort();
+    active.current = null;
+    const linkedTrip = catalog.trips.find((item) => item.id === conversation.tripId);
+    if (conversation.snapshot) restore(conversation.snapshot);
+    else if (linkedTrip) restore(linkedTrip.snapshot);
+    activeConversation.current = id;
+    setMessages(conversation.messages);
+    setInput(conversation.input);
+    setCatalog((current) =>
+      updateCatalog(current, {
+        activeConversationId: id,
+        ...(conversation.tripId ? { activeTripId: conversation.tripId } : {}),
+      }),
+    );
+    setMobileView("chat");
+  }
+  function selectTrip(id: string) {
+    const trip = catalog.trips.find((item) => item.id === id);
+    if (!trip) return;
+    restore(trip.snapshot);
+    const conversationId = trip.conversationIds.at(-1);
+    const conversation = catalog.conversations.find((item) => item.id === conversationId);
+    if (conversation) {
+      activeConversation.current = conversation.id;
+      setMessages(conversation.messages);
+      setInput(conversation.input);
+    }
+    setCatalog((current) =>
+      updateCatalog(current, {
+        activeTripId: id,
+        ...(conversationId ? { activeConversationId: conversationId } : {}),
+      }),
+    );
+    setMobileView("trip");
+  }
+  function newChat() {
+    active.current?.abort();
+    active.current = null;
+    const id = `conversation:${crypto.randomUUID()}`;
+    activeConversation.current = id;
+    setMessages([...seed]);
+    setInput("");
+    setActivity([]);
+    setError("");
+    const now = new Date().toISOString();
+    const nextSnapshot: Snapshot = {
+      version: 2,
+      id: id.replace(/^conversation:/, ""),
+      savedAt: now,
+      plan,
+      draft,
+      messages: [...seed],
+      input: "",
+      previousTotal,
+    };
+    setCatalog((current) => upsertCurrent(current, nextSnapshot, [...seed]));
+    setMobileView("chat");
+  }
+  function renameChat(id: string) {
+    const existing = catalog.conversations.find((item) => item.id === id);
+    if (!existing) return;
+    const title = window.prompt("Rename chat", existing.title)?.trim();
+    if (!title) return;
+    setCatalog((current) => ({
+      ...current,
+      conversations: current.conversations.map((item) =>
+        item.id === id
+          ? { ...item, title, renamed: true, updatedAt: new Date().toISOString() }
+          : item,
+      ),
+    }));
+  }
+  function deleteChat(id: string) {
+    const existing = catalog.conversations.find((item) => item.id === id);
+    if (!existing || !window.confirm(`Delete “${existing.title}”? The linked trip will be kept.`))
+      return;
+    setCatalog((current) => ({
+      ...current,
+      activeConversationId:
+        current.activeConversationId === id ? undefined : current.activeConversationId,
+      conversations: current.conversations.filter((item) => item.id !== id),
+      trips: current.trips.map((item) => ({
+        ...item,
+        conversationIds: item.conversationIds.filter((conversationId) => conversationId !== id),
+      })),
+    }));
+    if (activeConversation.current === id) newChat();
+  }
+  function resizePanel(kind: "preferences" | "trip", start: ReactPointerEvent) {
+    start.currentTarget.setPointerCapture(start.pointerId);
+    const origin = start.clientX;
+    const initial = kind === "preferences" ? preferencesWidth : tripWidth;
+    const move = (event: PointerEvent) => {
+      const delta = event.clientX - origin;
+      const width = Math.min(520, Math.max(220, initial + (kind === "trip" ? -delta : delta)));
+      if (kind === "preferences") setPreferencesWidth(width);
+      else setTripWidth(width);
+    };
+    const stop = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", stop);
+      window.dispatchEvent(new Event("resize"));
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", stop, { once: true });
+  }
+  function nudgePanel(kind: "preferences" | "trip", delta: number) {
+    if (kind === "preferences")
+      setPreferencesWidth((value) => Math.min(520, Math.max(220, value + delta)));
+    else setTripWidth((value) => Math.min(520, Math.max(220, value + delta)));
+  }
   const dialogTitle =
     dialog === "review"
       ? "Review plan"
@@ -384,54 +663,159 @@ function WorkspaceContent({
           </p>
         )}
       </div>
-      <TripEditor
-        plan={plan}
-        disabled={busy || !ready}
-        onPending={setEditPending}
-        onViewChange={setEditorView}
-        currentView={editorView}
-        onReview={() => setDialog("review")}
-        onSave={save}
-        onApply={(next) => {
-          active.current?.abort();
-          active.current = null;
-          setPreviousTotal(plan.estTotal);
-          setPlan(next);
-        }}
-      />
       <main
-        className="layout"
+        className="workspace-shell"
         aria-busy={busy}
-        style={editorView !== "overview" ? { display: "none" } : undefined}
+        data-preferences-open={preferencesOpen}
+        data-trip-open={tripOpen}
+        data-mobile-view={mobileView}
+        style={
+          {
+            "--preferences-width": `${preferencesWidth}px`,
+            "--trip-width": `${tripWidth}px`,
+            "--preferences-column": preferencesOpen ? `${preferencesWidth}px` : "44px",
+            "--trip-column": tripOpen ? `${tripWidth}px` : "44px",
+          } as CSSProperties
+        }
       >
-        <div ref={left} className="filter-container">
-          <FiltersPanel
-            draft={draft}
-            onChange={setDraft}
-            onSubmit={submit}
+        <nav className="workspace-mobile-nav" aria-label="Workspace views">
+          {(["history", "preferences", "chat", "map", "trip"] as const).map((view) => (
+            <button
+              key={view}
+              aria-pressed={mobileView === view}
+              onClick={() => setMobileView(view)}
+            >
+              {view[0]!.toUpperCase() + view.slice(1)}
+            </button>
+          ))}
+        </nav>
+        <WorkspaceSidebar
+          query={historyQuery}
+          onQuery={setHistoryQuery}
+          chats={historyChats}
+          trips={historyTrips}
+          onNewChat={newChat}
+          onOpenChat={selectConversation}
+          onOpenTrip={selectTrip}
+          onRenameChat={renameChat}
+          onDeleteChat={deleteChat}
+          saveState={saveState}
+        />
+        <section
+          className={`workspace-panel workspace-panel--preferences${preferencesOpen ? "" : " workspace-panel--collapsed"}`}
+          aria-label="Trip preferences panel"
+        >
+          <button
+            ref={preferencesToggle}
+            className="workspace-panel__toggle"
+            aria-label={preferencesOpen ? "Collapse trip preferences" : "Expand trip preferences"}
+            aria-expanded={preferencesOpen}
+            onClick={() => setPreferencesOpen((value) => !value)}
+          >
+            {preferencesOpen ? "‹" : "Preferences ›"}
+          </button>
+          {preferencesOpen && (
+            <div ref={left} className="filter-container">
+              <FiltersPanel
+                draft={draft}
+                onChange={setDraft}
+                onSubmit={submit}
+                busy={busy || !ready || editPending}
+                errors={errors}
+              />
+            </div>
+          )}
+          {preferencesOpen && (
+            <div
+              className="workspace-resizer"
+              role="separator"
+              aria-label="Resize trip preferences"
+              aria-orientation="vertical"
+              aria-valuemin={220}
+              aria-valuemax={520}
+              aria-valuenow={preferencesWidth}
+              tabIndex={0}
+              onDoubleClick={() => setPreferencesWidth(280)}
+              onPointerDown={(event) => resizePanel("preferences", event)}
+              onKeyDown={(event) => {
+                if (event.key === "ArrowLeft") nudgePanel("preferences", -16);
+                if (event.key === "ArrowRight") nudgePanel("preferences", 16);
+              }}
+            />
+          )}
+        </section>
+        <div className="workspace-panel workspace-panel--chat">
+          <ChatPanel
+            plan={plan}
+            messages={messages}
+            input={input}
+            onInput={setInput}
             busy={busy || !ready || editPending}
-            errors={errors}
+            activity={activity}
+            onSend={send}
+            onDecision={onDecision}
+            onEdit={edit}
           />
         </div>
-        <ChatPanel
-          plan={plan}
-          messages={messages}
-          input={input}
-          onInput={setInput}
-          busy={busy || !ready || editPending}
-          activity={activity}
-          onSend={send}
-          onDecision={onDecision}
-          onEdit={edit}
-        />
-        <TripPanel
-          plan={plan}
-          busy={busy || !ready || editPending}
-          onReview={() => setDialog("review")}
-          onDecision={onDecision}
-          onEdit={edit}
-          onSave={save}
-        />
+        <div className="workspace-panel workspace-panel--map">
+          <TripEditor
+            plan={plan}
+            disabled={busy || !ready}
+            onPending={setEditPending}
+            onViewChange={setEditorView}
+            currentView={editorView}
+            onReview={() => setDialog("review")}
+            onSave={save}
+            onApply={(next) => {
+              active.current?.abort();
+              active.current = null;
+              setPreviousTotal(plan.estTotal);
+              setPlan(next);
+            }}
+          />
+        </div>
+        <section
+          className={`workspace-panel workspace-panel--trip${tripOpen ? "" : " workspace-panel--collapsed"}`}
+          aria-label="Your trip panel"
+        >
+          <button
+            ref={tripToggle}
+            className="workspace-panel__toggle"
+            aria-label={tripOpen ? "Collapse your trip" : "Expand your trip"}
+            aria-expanded={tripOpen}
+            onClick={() => setTripOpen((value) => !value)}
+          >
+            {tripOpen ? "›" : "‹ Trip"}
+          </button>
+          {tripOpen && (
+            <TripPanel
+              plan={plan}
+              busy={busy || !ready || editPending}
+              onReview={() => setDialog("review")}
+              onDecision={onDecision}
+              onEdit={edit}
+              onSave={save}
+            />
+          )}
+          {tripOpen && (
+            <div
+              className="workspace-resizer"
+              role="separator"
+              aria-label="Resize your trip"
+              aria-orientation="vertical"
+              aria-valuemin={220}
+              aria-valuemax={520}
+              aria-valuenow={tripWidth}
+              tabIndex={0}
+              onDoubleClick={() => setTripWidth(390)}
+              onPointerDown={(event) => resizePanel("trip", event)}
+              onKeyDown={(event) => {
+                if (event.key === "ArrowLeft") nudgePanel("trip", 16);
+                if (event.key === "ArrowRight") nudgePanel("trip", -16);
+              }}
+            />
+          )}
+        </section>
       </main>
       {dialog && (
         <Dialog title={dialogTitle} onClose={() => setDialog(undefined)}>

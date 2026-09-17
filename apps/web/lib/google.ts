@@ -95,6 +95,7 @@ export type RouteResult = {
   mode: "WALK" | "TRANSIT";
   status: "ok" | "unavailable";
   durationMin?: number;
+  distanceMeters?: number;
   polyline?: string;
   fare?: { amount: number; currency: string };
   error?: string;
@@ -133,6 +134,51 @@ export async function googleRoute(
       status: "ok",
       durationMin,
       polyline: route.polyline?.encodedPolyline,
+      ...(fare?.currencyCode && Number.isFinite(amount) && amount >= 0
+        ? { fare: { amount, currency: fare.currencyCode } }
+        : {}),
+    };
+  } catch (error) {
+    return {
+      ...base,
+      status: "unavailable",
+      error: error instanceof Error ? error.message : "Route unavailable",
+    };
+  }
+}
+
+/** User-triggered route lookup. Coordinates are used only for this request and are never stored. */
+export async function googleRouteFromCoordinates(
+  origin: { latitude: number; longitude: number },
+  to: string,
+  mode: "WALK" | "TRANSIT",
+): Promise<RouteResult> {
+  const base = { from: "current-location", to, mode } as const;
+  try {
+    const data = await request(
+      "https://routes.googleapis.com/directions/v2:computeRoutes",
+      "routes.duration,routes.distanceMeters,routes.travelAdvisory.transitFare",
+      {
+        origin: { location: { latLng: origin } },
+        destination: { placeId: to },
+        travelMode: mode,
+        ...(mode === "TRANSIT" ? { departureTime: new Date().toISOString() } : {}),
+      },
+    );
+    const route = data.routes?.[0];
+    if (!route || !/^\d+(\.\d+)?s$/.test(route.duration))
+      throw new Error("No verified route was returned.");
+    const durationMin = Math.ceil(Number(route.duration.slice(0, -1)) / 60);
+    const distanceMeters = Number(route.distanceMeters);
+    if (!Number.isFinite(durationMin) || durationMin <= 0)
+      throw new Error("Invalid route duration.");
+    const fare = route.travelAdvisory?.transitFare;
+    const amount = Number(fare?.units ?? 0) + Number(fare?.nanos ?? 0) / 1e9;
+    return {
+      ...base,
+      status: "ok",
+      durationMin,
+      ...(Number.isFinite(distanceMeters) && distanceMeters >= 0 ? { distanceMeters } : {}),
       ...(fare?.currencyCode && Number.isFinite(amount) && amount >= 0
         ? { fare: { amount, currency: fare.currencyCode } }
         : {}),

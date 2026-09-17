@@ -24,6 +24,27 @@ const response = (plan: TripPlan) =>
     }),
   );
 describe("editor request lifecycle", () => {
+  it("resolves an activity without a place ID into runtime-only map data", async () => {
+    const plan = fixture();
+    const fetcher = vi.fn(async (_url: string | URL | Request) =>
+      Response.json({
+        places: [
+          {
+            id: "google-place",
+            displayName: { text: "Verified candidate" },
+            location: { latitude: -33.86, longitude: 151.21 },
+          },
+        ],
+      }),
+    );
+    vi.stubGlobal("fetch", fetcher);
+    render(<TripEditor plan={plan} disabled={false} onApply={vi.fn()} onPending={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Map" }));
+    await waitFor(() => expect(fetcher).toHaveBeenCalled());
+    expect(fetcher.mock.calls.some(([url]) => url === "/api/places/search")).toBe(true);
+    expect(plan.sections[0]!.proposal!.items[0]!.placeId).toBeUndefined();
+    vi.unstubAllGlobals();
+  });
   it("discards a late preview after workspace restore", async () => {
     let finish!: (response: Response) => void;
     vi.stubGlobal(

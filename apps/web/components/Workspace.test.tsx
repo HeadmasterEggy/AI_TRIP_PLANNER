@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { describe, it, expect, vi } from "vitest";
 import { Workspace } from "./Workspace";
 import { CURRENT_KEY, SAVED_KEY } from "@/lib/workspace";
+import { CATALOG_KEY, parseCatalog } from "@/lib/workspace-catalog";
 import { plan, snapshot } from "@/lib/test-fixtures";
 const complete = (destination: string) =>
   new Response(
@@ -12,6 +13,18 @@ const complete = (destination: string) =>
   );
 
 describe("Workspace interactions", () => {
+  it("collapses side panels and persists the accessible layout", async () => {
+    render(<Workspace initialPlan={plan} />);
+    fireEvent.click(screen.getByRole("button", { name: "Collapse trip preferences" }));
+    fireEvent.click(screen.getByRole("button", { name: "Collapse your trip" }));
+    expect(screen.getByRole("button", { name: "Expand trip preferences" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Expand your trip" })).toBeTruthy();
+    await waitFor(() => {
+      const catalog = parseCatalog(localStorage.getItem(CATALOG_KEY));
+      expect(catalog.layout.preferences.open).toBe(false);
+      expect(catalog.layout.trip.open).toBe(false);
+    });
+  });
   it("renders the shell before the demo resolves without persisting a placeholder", async () => {
     let finish!: (response: Response) => void;
     vi.stubGlobal(
