@@ -40,8 +40,11 @@ export type TripRecord = {
 };
 
 export type PanelLayout = {
-  /** Desktop sidebar preference. Older catalogs have no value and start expanded. */
-  sidebar: { collapsed: boolean };
+  /**
+   * Desktop sidebar preference. Older catalogs have no value and start expanded. `width` is only
+   * set once the user drags the edge; without it the stylesheet's responsive default applies.
+   */
+  sidebar: { collapsed: boolean; width?: number };
   preferences: { open: boolean; width: number };
   trip: { open: boolean; width: number };
   view: WorkspaceView;
@@ -57,6 +60,10 @@ export type WorkspaceCatalog = {
   trips: TripRecord[];
   layout: PanelLayout;
 };
+
+export const SIDEBAR_WIDTH = { min: 200, default: 240, max: 420 } as const;
+export const clampSidebarWidth = (width: number) =>
+  Math.round(Math.min(SIDEBAR_WIDTH.max, Math.max(SIDEBAR_WIDTH.min, width)));
 
 const DEFAULT_LAYOUT: PanelLayout = {
   sidebar: { collapsed: false },
@@ -113,7 +120,12 @@ function normalizeLayout(value: unknown): PanelLayout {
       ? layout.editorView
       : "map";
   return {
-    sidebar: { collapsed: sidebar.collapsed === true },
+    sidebar: {
+      collapsed: sidebar.collapsed === true,
+      ...(typeof sidebar.width === "number" && Number.isFinite(sidebar.width)
+        ? { width: clampSidebarWidth(sidebar.width) }
+        : {}),
+    },
     preferences: panel("preferences"),
     trip: panel("trip"),
     view,

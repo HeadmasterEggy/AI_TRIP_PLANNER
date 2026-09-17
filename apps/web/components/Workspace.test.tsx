@@ -49,6 +49,18 @@ const googlePlace = {
   location: { latitude: -33.8688, longitude: 151.2093 },
 };
 const sidebar = () => screen.getByRole("complementary", { name: "Chats and trips" });
+/** Only the narrow layout puts the sidebar inside a drawer. */
+const useNarrowLayout = () =>
+  vi.stubGlobal("matchMedia", (query: string) => ({
+    matches: query === "(max-width: 1000px)",
+    media: query,
+    onchange: null,
+    addEventListener: vi.fn(),
+    removeEventListener: vi.fn(),
+    addListener: vi.fn(),
+    removeListener: vi.fn(),
+    dispatchEvent: vi.fn(),
+  }));
 const historyButton = (name: RegExp) => within(sidebar()).getAllByRole("button", { name })[0]!;
 const withPlaceRequests = (...responses: (Response | ((init?: RequestInit) => Response))[]) => {
   let next = 0;
@@ -221,7 +233,8 @@ describe("Workspace interactions", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "New chat" }));
     const prompt = vi.spyOn(window, "prompt").mockReturnValue("Later ideas");
-    fireEvent.click(screen.getByRole("button", { name: "Rename New chat" }));
+    fireEvent.click(screen.getByRole("button", { name: "Actions for New chat" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Rename" }));
     prompt.mockRestore();
     await waitFor(() =>
       expect(
@@ -235,6 +248,85 @@ describe("Workspace interactions", () => {
       expect(catalog.conversations.map((item) => item.title)).toContain("Later ideas");
       expect(catalog.conversations.filter((item) => item.title === "New chat")).toHaveLength(0);
     });
+  });
+  it("keeps rename and delete behind a per-conversation overflow menu", async () => {
+    vi.stubGlobal("fetch", withPlaceRequests());
+    render(<Workspace initialPlan={plan} />);
+    await waitFor(() =>
+      expect(parseCatalog(localStorage.getItem(CATALOG_KEY)).trips).toHaveLength(1),
+    );
+    // The actions are not on the row until the trigger opens them.
+    expect(screen.queryByRole("menuitem")).toBeNull();
+    const trigger = screen.getByRole("button", { name: /^Actions for / });
+    expect(trigger.getAttribute("aria-haspopup")).toBe("menu");
+    expect(trigger.getAttribute("aria-expanded")).toBe("false");
+
+    fireEvent.click(trigger);
+    expect(trigger.getAttribute("aria-expanded")).toBe("true");
+    expect(screen.getAllByRole("menuitem").map((item) => item.textContent)).toEqual([
+      "Rename",
+      "Delete",
+    ]);
+
+    // Pressing the trigger again closes it instead of reopening.
+    fireEvent.click(trigger);
+    expect(screen.queryByRole("menuitem")).toBeNull();
+    expect(trigger.getAttribute("aria-expanded")).toBe("false");
+  });
+  it("closes the overflow menu on Escape and returns focus to its trigger", async () => {
+    vi.stubGlobal("fetch", withPlaceRequests());
+    render(<Workspace initialPlan={plan} />);
+    await waitFor(() =>
+      expect(parseCatalog(localStorage.getItem(CATALOG_KEY)).trips).toHaveLength(1),
+    );
+    const trigger = screen.getByRole("button", { name: /^Actions for / });
+    fireEvent.click(trigger);
+    // Opening moves focus into the menu so Escape and Tab act on it.
+    expect(document.activeElement).toBe(screen.getByRole("menuitem", { name: "Rename" }));
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.queryByRole("menuitem")).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+  });
+  it("closes the overflow menu when the user clicks outside it", async () => {
+    vi.stubGlobal("fetch", withPlaceRequests());
+    render(<Workspace initialPlan={plan} />);
+    await waitFor(() =>
+      expect(parseCatalog(localStorage.getItem(CATALOG_KEY)).trips).toHaveLength(1),
+    );
+    fireEvent.click(screen.getByRole("button", { name: /^Actions for / }));
+    expect(screen.getByRole("menuitem", { name: "Delete" })).toBeTruthy();
+    fireEvent.pointerDown(document.body);
+    expect(screen.queryByRole("menuitem")).toBeNull();
+  });
+  it("closes the menu on Escape without also closing the enclosing navigation drawer", async () => {
+    useNarrowLayout();
+    vi.stubGlobal("fetch", withPlaceRequests());
+    render(<Workspace initialPlan={plan} />);
+    await waitFor(() =>
+      expect(parseCatalog(localStorage.getItem(CATALOG_KEY)).trips).toHaveLength(1),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Open navigation" }));
+    const nav = document.querySelector<HTMLElement>(".workspace-drawer--nav")!;
+    await waitFor(() => expect(nav.getAttribute("aria-hidden")).toBe("false"));
+    const trigger = screen.getByRole("button", { name: /^Actions for / });
+    fireEvent.click(trigger);
+    expect(screen.getByRole("menuitem", { name: "Rename" })).toBeTruthy();
+    fireEvent.keyDown(window, { key: "Escape" });
+    // The menu closes, but the drawer the sidebar sits in stays open.
+    expect(screen.queryByRole("menuitem")).toBeNull();
+    expect(nav.getAttribute("aria-hidden")).toBe("false");
+    expect(document.activeElement).toBe(trigger);
+  });
+  it("offers no overflow menu on trips, which have no rename or delete", async () => {
+    vi.stubGlobal("fetch", withPlaceRequests());
+    render(<Workspace initialPlan={plan} />);
+    await waitFor(() =>
+      expect(parseCatalog(localStorage.getItem(CATALOG_KEY)).trips).toHaveLength(1),
+    );
+    fireEvent.click(screen.getByRole("button", { name: /^Trips/ }));
+    const sidebarSection = screen.getByRole("region", { name: "Trips" });
+    expect(within(sidebarSection).queryByRole("button", { name: /^Actions for / })).toBeNull();
+    expect(screen.queryByRole("menuitem")).toBeNull();
   });
   it("saves a blank conversation's form and input and restores it after reload", async () => {
     vi.stubGlobal("fetch", withPlaceRequests());
@@ -543,6 +635,51 @@ describe("Workspace navigation", () => {
     expect(screen.getByRole("button", { name: "Expand sidebar" })).toBeTruthy();
     fireEvent.click(within(sidebar()).getByRole("button", { name: "Search chats and trips" }));
     expect(document.activeElement).toBe(within(sidebar()).getByRole("searchbox"));
+  });
+
+  it("resizes the sidebar by dragging or keyboard, remembers it and resets on double-click", async () => {
+    const view = render(<Workspace />);
+    const app = () => document.querySelector<HTMLElement>(".workspace-app")!;
+    const handle = () => screen.getByRole("separator", { name: "Resize sidebar" });
+    // No stored width: the stylesheet's responsive default applies.
+    expect(app().style.getPropertyValue("--sidebar-width")).toBe("");
+
+    // A click without movement must not pin a width.
+    fireEvent.pointerDown(handle(), { button: 0, pointerId: 1, clientX: 240 });
+    fireEvent.pointerUp(handle(), { pointerId: 1 });
+    expect(app().style.getPropertyValue("--sidebar-width")).toBe("");
+
+    fireEvent.pointerDown(handle(), { button: 0, pointerId: 1, clientX: 240 });
+    expect(app().dataset.resizing).toBe("true");
+    fireEvent.pointerMove(handle(), { pointerId: 1, clientX: 331 });
+    expect(app().style.getPropertyValue("--sidebar-width")).toBe("331px");
+    fireEvent.pointerMove(handle(), { pointerId: 1, clientX: 900 });
+    fireEvent.pointerUp(handle(), { pointerId: 1 });
+    expect(app().dataset.resizing).toBeUndefined();
+    expect(app().style.getPropertyValue("--sidebar-width")).toBe("420px");
+    expect(handle().getAttribute("aria-valuenow")).toBe("420");
+
+    fireEvent.keyDown(handle(), { key: "ArrowLeft" });
+    expect(app().style.getPropertyValue("--sidebar-width")).toBe("404px");
+    fireEvent.keyDown(handle(), { key: "Home" });
+    expect(app().style.getPropertyValue("--sidebar-width")).toBe("200px");
+    await waitFor(() =>
+      expect(parseCatalog(localStorage.getItem(CATALOG_KEY)).layout.sidebar.width).toBe(200),
+    );
+
+    // Collapsed, there is no edge to drag; expanding restores the width.
+    fireEvent.click(screen.getByRole("button", { name: "Collapse sidebar" }));
+    expect(screen.queryByRole("separator", { name: "Resize sidebar" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Expand sidebar" }));
+    view.unmount();
+    render(<Workspace />);
+    expect(app().style.getPropertyValue("--sidebar-width")).toBe("200px");
+
+    fireEvent.doubleClick(handle());
+    expect(app().style.getPropertyValue("--sidebar-width")).toBe("");
+    await waitFor(() =>
+      expect(parseCatalog(localStorage.getItem(CATALOG_KEY)).layout.sidebar.width).toBeUndefined(),
+    );
   });
 
   it("falls back safely when the stored layout is corrupt", () => {

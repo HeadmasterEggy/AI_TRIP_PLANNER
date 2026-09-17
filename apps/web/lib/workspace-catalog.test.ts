@@ -213,5 +213,25 @@ describe("workspace catalog", () => {
     expect(catalog.layout.view).toBe("chat");
     const collapsed = updateCatalog(catalog, { layout: { sidebar: { collapsed: true } } });
     expect(parseCatalog(serializeCatalog(collapsed)).layout.sidebar.collapsed).toBe(true);
+    expect(catalog.layout.sidebar.width).toBeUndefined();
+  });
+
+  it("clamps a stored sidebar width, ignores invalid ones and can reset it", () => {
+    const layout = (sidebar: unknown) =>
+      parseCatalog({ version: 3, conversations: [], trips: [], layout: { sidebar } }).layout
+        .sidebar;
+    expect(layout({ width: 312.4 }).width).toBe(312);
+    expect(layout({ width: 20 }).width).toBe(200);
+    expect(layout({ width: 5000 }).width).toBe(420);
+    expect(layout({ width: "wide" }).width).toBeUndefined();
+    expect(layout({ width: Number.NaN })).toEqual({ collapsed: false });
+    const catalog = parseCatalog({ version: 3, conversations: [], trips: [] });
+    const wide = updateCatalog(catalog, { layout: { sidebar: { collapsed: false, width: 300 } } });
+    expect(parseCatalog(serializeCatalog(wide)).layout.sidebar.width).toBe(300);
+    // Collapsing keeps the width for when the sidebar is expanded again.
+    const collapsed = updateCatalog(wide, { layout: { sidebar: { collapsed: true } } });
+    expect(collapsed.layout.sidebar).toEqual({ collapsed: true, width: 300 });
+    const reset = updateCatalog(wide, { layout: { sidebar: { collapsed: false, width: undefined } } });
+    expect(reset.layout.sidebar).toEqual({ collapsed: false });
   });
 });

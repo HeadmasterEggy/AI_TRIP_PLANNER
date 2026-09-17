@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { TripPlan, type AgentProgressEvent, type ChatRequest } from "@trip/shared";
 import { FiltersPanel } from "./FiltersPanel";
 import { ChatPanel } from "./ChatPanel";
@@ -11,6 +11,7 @@ import { Dialog } from "./Dialog";
 import { Drawer } from "./Drawer";
 import { WorkspaceSkeleton } from "./WorkspaceSkeleton";
 import { WorkspaceSidebar, type SidebarSection } from "./WorkspaceSidebar";
+import { SidebarResizer } from "./SidebarResizer";
 import { MenuIcon, RouteIcon, SlidersIcon } from "./icons";
 import { useTripPlaces } from "./useTripPlaces";
 import type { RouteResult } from "@/lib/google";
@@ -151,6 +152,7 @@ function WorkspaceContent({ restored }: { restored: RestoredWorkspace }) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(
     restored.catalog.layout.sidebar.collapsed,
   );
+  const [sidebarWidth, setSidebarWidth] = useState(restored.catalog.layout.sidebar.width);
   const [section, setSection] = useState<SidebarSection>("chats");
   const [navOpen, setNavOpen] = useState(false);
   const narrow = useIsNarrow();
@@ -246,7 +248,7 @@ function WorkspaceContent({ restored }: { restored: RestoredWorkspace }) {
     setCatalog((current) =>
       updateCatalog(current, {
         layout: {
-          sidebar: { collapsed: sidebarCollapsed },
+          sidebar: { collapsed: sidebarCollapsed, width: sidebarWidth },
           preferences: { ...current.layout.preferences, open: preferencesOpen },
           trip: { ...current.layout.trip, open: tripOpen },
           view: mobileView,
@@ -254,7 +256,7 @@ function WorkspaceContent({ restored }: { restored: RestoredWorkspace }) {
         },
       }),
     );
-  }, [preferencesOpen, tripOpen, mobileView, tripTab, sidebarCollapsed]);
+  }, [preferencesOpen, tripOpen, mobileView, tripTab, sidebarCollapsed, sidebarWidth]);
 
   // Leaving the narrow layout closes its navigation drawer.
   useEffect(() => {
@@ -601,6 +603,11 @@ function WorkspaceContent({ restored }: { restored: RestoredWorkspace }) {
       className="workspace-app"
       data-sidebar-collapsed={!narrow && sidebarCollapsed}
       data-narrow={narrow}
+      style={
+        !narrow && sidebarWidth !== undefined
+          ? ({ "--sidebar-width": `${sidebarWidth}px` } as CSSProperties)
+          : undefined
+      }
     >
       {!narrow && (
         <WorkspaceSidebar
@@ -623,6 +630,9 @@ function WorkspaceContent({ restored }: { restored: RestoredWorkspace }) {
           onAccount={() => openDialog("account")}
           saveState={saveState}
         />
+      )}
+      {!narrow && !sidebarCollapsed && (
+        <SidebarResizer width={sidebarWidth} onChange={setSidebarWidth} />
       )}
       <div className="workspace-main">
         <header className="workspace-topbar">

@@ -1,10 +1,11 @@
 "use client";
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { BrandMark } from "./BrandMark";
 import {
   BookmarkIcon,
   ChatIcon,
   GlobeIcon,
+  MoreIcon,
   PlusIcon,
   SearchIcon,
   SidebarIcon,
@@ -54,6 +55,92 @@ function NavButton({
       {!collapsed && <span className="sidebar-nav__label">{label}</span>}
       {!collapsed && count !== undefined && <span className="sidebar-nav__count">{count}</span>}
     </button>
+  );
+}
+
+/**
+ * The per-conversation overflow menu. Rename and Delete used to sit on every row, which made the
+ * history noisy; they now open from one trigger. Escape closes the menu and hands focus back to the
+ * trigger, and it is handled in the capture phase so it cannot also close an enclosing drawer.
+ */
+function HistoryMenu({
+  title,
+  onRename,
+  onDelete,
+}: {
+  title: string;
+  onRename(): void;
+  onDelete(): void;
+}) {
+  const [open, setOpen] = useState(false);
+  const wrap = useRef<HTMLDivElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const firstItem = useRef<HTMLButtonElement>(null);
+
+  // Focus the first item so Escape and Tab start from inside the menu.
+  useEffect(() => {
+    if (open) firstItem.current?.focus({ preventScroll: true });
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const close = (restoreFocus: boolean) => {
+      setOpen(false);
+      if (restoreFocus) trigger.current?.focus({ preventScroll: true });
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      event.stopPropagation();
+      close(true);
+    };
+    const onPointerDown = (event: PointerEvent) => {
+      if (!wrap.current?.contains(event.target as Node)) close(false);
+    };
+    // Tabbing out of the menu closes it without stealing focus from wherever the user landed.
+    const onFocusOut = (event: FocusEvent) => {
+      if (!wrap.current?.contains(event.relatedTarget as Node | null)) close(false);
+    };
+    window.addEventListener("keydown", onKeyDown, true);
+    document.addEventListener("pointerdown", onPointerDown);
+    wrap.current?.addEventListener("focusout", onFocusOut);
+    const element = wrap.current;
+    return () => {
+      window.removeEventListener("keydown", onKeyDown, true);
+      document.removeEventListener("pointerdown", onPointerDown);
+      element?.removeEventListener("focusout", onFocusOut);
+    };
+  }, [open]);
+
+  const act = (run: () => void) => {
+    setOpen(false);
+    run();
+  };
+
+  return (
+    <div className="history-item__menu-wrap" ref={wrap}>
+      <button
+        ref={trigger}
+        type="button"
+        className="history-item__more"
+        aria-label={`Actions for ${title}`}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((current) => !current)}
+      >
+        <MoreIcon />
+      </button>
+      {open && (
+        <div className="history-item__menu" role="menu" aria-label={`Actions for ${title}`}>
+          <button ref={firstItem} type="button" role="menuitem" onClick={() => act(onRename)}>
+            Rename
+          </button>
+          <button type="button" role="menuitem" onClick={() => act(onDelete)}>
+            Delete
+          </button>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -225,20 +312,11 @@ export function WorkspaceSidebar({
                   </small>
                 </button>
                 {section === "chats" && (
-                  <div className="history-item__actions">
-                    <button
-                      aria-label={`Rename ${item.title}`}
-                      onClick={() => onRenameChat(item.id)}
-                    >
-                      Rename
-                    </button>
-                    <button
-                      aria-label={`Delete ${item.title}`}
-                      onClick={() => onDeleteChat(item.id)}
-                    >
-                      Delete
-                    </button>
-                  </div>
+                  <HistoryMenu
+                    title={item.title}
+                    onRename={() => onRenameChat(item.id)}
+                    onDelete={() => onDeleteChat(item.id)}
+                  />
                 )}
               </article>
             ))}

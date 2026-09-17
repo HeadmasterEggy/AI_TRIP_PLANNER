@@ -990,6 +990,8 @@ button:not(.section__row):not(.stay-option):not(.primary):not(.trip__cta) {
   --sidebar-collapsed-width: 64px;
   --drawer-ease: cubic-bezier(0.32, 0.72, 0, 1);
   --drawer-duration: 240ms;
+  /* Positions the sidebar resize handle on the column edge. */
+  position: relative;
   display: grid;
   grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
   height: 100dvh;
@@ -998,6 +1000,39 @@ button:not(.section__row):not(.stay-option):not(.primary):not(.trip__cta) {
   overflow: clip;
   background: var(--surface);
   transition: grid-template-columns 200ms var(--drawer-ease);
+}
+/* Dragging follows the pointer directly and must not text-select across the workspace. */
+.workspace-app[data-resizing="true"] {
+  cursor: col-resize;
+  user-select: none;
+  transition: none;
+}
+.sidebar-resizer {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  /* Centred on the sidebar's border so the grab area straddles both sides of the edge. */
+  left: calc(var(--sidebar-width) - 4px);
+  z-index: 6;
+  width: 8px;
+  cursor: col-resize;
+  touch-action: none;
+}
+.sidebar-resizer::after {
+  content: "";
+  position: absolute;
+  inset: 0 3px;
+  border-radius: 1px;
+  background: transparent;
+  transition: background-color 120ms ease;
+}
+.sidebar-resizer:hover::after,
+.sidebar-resizer:focus-visible::after,
+.workspace-app[data-resizing="true"] .sidebar-resizer::after {
+  background: var(--accent);
+}
+.sidebar-resizer:focus-visible {
+  box-shadow: none;
 }
 .workspace-app[data-sidebar-collapsed="true"] {
   grid-template-columns: var(--sidebar-collapsed-width) minmax(0, 1fr);
@@ -1253,13 +1288,15 @@ button:not(.section__row):not(.stay-option):not(.primary):not(.trip__cta) {
 }
 .history-list {
   display: grid;
+  /* An auto track grows to a long nowrap title and pushes rows past the sidebar edge. */
+  grid-template-columns: minmax(0, 1fr);
   gap: 7px;
   margin-top: 8px;
 }
 .history-item {
+  position: relative;
   border: 1px solid transparent;
   border-radius: var(--radius);
-  overflow: hidden;
 }
 .history-item--active {
   border-color: var(--accent);
@@ -1269,6 +1306,8 @@ button:not(.section__row):not(.stay-option):not(.primary):not(.trip__cta) {
   width: 100%;
   min-height: 0 !important;
   padding: 9px !important;
+  /* Keep the title clear of the overflow trigger, which occupies the last 32px. */
+  padding-right: 46px !important;
   border: 0 !important;
   background: transparent !important;
   text-align: left;
@@ -1285,15 +1324,65 @@ button:not(.section__row):not(.stay-option):not(.primary):not(.trip__cta) {
   color: var(--text-dim);
   font-size: 11px;
 }
-.history-item__actions {
-  display: flex;
-  gap: 4px;
-  padding: 0 8px 8px;
+.history-item__menu-wrap {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  /* No z-index: it would trap the open menu below the next row's trigger. */
 }
-.history-item__actions button {
-  min-height: 28px !important;
-  padding: 3px 6px !important;
-  font-size: 11px;
+.history-item__more {
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0 !important;
+  border-color: transparent !important;
+  border-radius: var(--radius-sm);
+  background: transparent !important;
+  color: var(--text-dim);
+  /* Revealed on hover and keyboard focus, like the chat lists this follows. */
+  opacity: 0;
+}
+.history-item:hover .history-item__more,
+.history-item__more:focus-visible,
+.history-item__more[aria-expanded="true"] {
+  opacity: 1;
+}
+.history-item__more:hover {
+  background: var(--surface) !important;
+  color: var(--text);
+}
+/* Without hover there is nothing to reveal it, so touch devices always show it. */
+@media (hover: none) {
+  .history-item__more {
+    opacity: 1;
+  }
+}
+.history-item__menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 5;
+  display: grid;
+  min-width: 132px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  box-shadow: var(--shadow-md);
+}
+.history-item__menu button {
+  min-height: 30px !important;
+  padding: 4px 8px !important;
+  border: 0 !important;
+  border-radius: var(--radius-sm);
+  background: transparent !important;
+  color: var(--text);
+  font-size: 12px;
+  text-align: left;
+}
+.history-item__menu button:hover {
+  background: var(--accent-bg) !important;
 }
 .save-state {
   color: var(--text-dim);
