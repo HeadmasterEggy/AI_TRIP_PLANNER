@@ -107,6 +107,14 @@ unset when only one end is given or the day and month cannot be told apart (`01/
 traveller is asked instead of planned a trip on a guessed month. Without a key, or when a model call
 fails, a small English/Chinese rule parser handles extraction instead; it only reads ISO dates.
 
+A blank conversation that has not stated everything needed to plan is a question, not a failure:
+`runTripChat` throws `IncompleteBriefError` carrying the fields understood so far and a follow-up
+question written by the reply model in the traveller's own language. `/api/chat` streams it as a
+`needs_info` frame, the client shows it as an assistant message, fills the preferences form with what
+was understood, and sends those fields back as `ChatRequest.known` with the next message, which is
+merged under that message's own extraction. So "悉尼三日游" is answered with a question about dates,
+travellers and budget, and the reply only has to supply those.
+
 When a key is missing, a model call fails or output is off-schema, the step falls back to validated
 deterministic output, so planning requests still complete. Schema, budget, schedule and route checks
 gate every proposal before aggregation.

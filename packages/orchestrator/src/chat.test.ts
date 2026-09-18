@@ -3,6 +3,7 @@ import type { MemoryStore, Specialist, ToolGateway, TripBrief } from "@trip/shar
 import {
   applyBriefPatch,
   extractBriefPatchLocally,
+  IncompleteBriefError,
   replyPrompt,
   runTripChat,
   type BriefExtractor,
@@ -171,6 +172,104 @@ describe("blank conversation start", () => {
       "include the start and end dates, number of travellers, total budget",
     );
     expect(extractor.extract).toHaveBeenCalledWith("I want to visit Lisbon", undefined);
+  });
+
+  it("asks for the missing fields in the traveller's own language and keeps what it heard", async () => {
+    const question = "悉尼听起来不错！你打算哪天出发、哪天回来？几个人一起去？预算大概多少？";
+    const generate = vi.fn(async (_prompt: string) => question);
+    const error = await runTripChat(
+      { tripId: "blank", mode: "start", message: "悉尼三日游" },
+      {
+        extractor: { extract: async () => ({ destination: "悉尼" }) },
+        replyGenerator: { generate },
+        specialists: [itinerary],
+        tools,
+        mem,
+      },
+    ).catch((failure: unknown) => failure);
+    expect(error).toBeInstanceOf(IncompleteBriefError);
+    const incomplete = error as IncompleteBriefError;
+    expect(incomplete.message).toBe(question);
+    expect(incomplete.known).toEqual({ destination: "悉尼" });
+    expect(incomplete.missing).toEqual([
+      "start and end dates",
+      "number of travellers",
+      "total budget",
+    ]);
+    expect(incomplete.needsInfo).toEqual({
+      type: "needs_info",
+      question: incomplete.message,
+      known: { destination: "悉尼" },
+    });
+    // The prompt carries what is known and what is missing, and asks for nothing else.
+    const prompt = generate.mock.calls[0]?.[0] ?? "";
+    expect(prompt).toContain("悉尼三日游");
+    expect(prompt).toContain('{"destination":"悉尼"}');
+    expect(prompt).toContain("start and end dates, number of travellers, total budget");
+  });
+
+  it("merges what earlier turns stated, so the traveller answers only the question", async () => {
+    const result = await runTripChat(
+      {
+        tripId: "blank",
+        mode: "start",
+        message: "2026-11-02 to 2026-11-06, 3 people, budget $2400",
+        known: { destination: "Lisbon" },
+      },
+      {
+        extractor: { extract: async (message) => extractBriefPatchLocally(message) },
+        replyGenerator: { generate: async () => "Lisbon is ready to review." },
+        specialists: [itinerary],
+        tools,
+        mem,
+      },
+    );
+    expect(result.plan.brief).toMatchObject({
+      destination: "Lisbon",
+      dates: ["2026-11-02", "2026-11-06"],
+      groupSize: 3,
+      budgetTotal: 2400,
+    });
+  });
+
+  it("prefers this message over what an earlier turn stated", async () => {
+    const result = await runTripChat(
+      {
+        tripId: "blank",
+        mode: "start",
+        message: "Lisbon, 2026-11-02 to 2026-11-06, 3 people, budget $2400",
+        known: { destination: "Sydney", groupSize: 8 },
+      },
+      {
+        extractor: { extract: async (message) => extractBriefPatchLocally(message) },
+        replyGenerator: { generate: async () => "Lisbon is ready to review." },
+        specialists: [itinerary],
+        tools,
+        mem,
+      },
+    );
+    expect(result.plan.brief).toMatchObject({ destination: "Lisbon", groupSize: 3 });
+  });
+
+  it("falls back to the plain list when no reply model is available", async () => {
+    const error = await runTripChat(
+      { tripId: "blank", mode: "start", message: "Sydney" },
+      {
+        extractor: { extract: async () => ({ destination: "Sydney" }) },
+        replyGenerator: {
+          generate: async () => {
+            throw new Error("model down");
+          },
+        },
+        specialists: [itinerary],
+        tools,
+        mem,
+      },
+    ).catch((failure: unknown) => failure);
+    expect((error as IncompleteBriefError).message).toContain(
+      "include the start and end dates, number of travellers, total budget",
+    );
+    expect((error as IncompleteBriefError).known).toEqual({ destination: "Sydney" });
   });
 
   it("plans only from the fields stated in the first message", async () => {

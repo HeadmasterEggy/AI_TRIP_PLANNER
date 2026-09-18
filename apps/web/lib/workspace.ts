@@ -1,4 +1,11 @@
-import { AgentProgressEvent, ChatResponse, TripBrief, TripPlan } from "@trip/shared";
+import {
+  AgentProgressEvent,
+  ChatNeedsInfo,
+  ChatResponse,
+  PartialTripBrief,
+  TripBrief,
+  TripPlan,
+} from "@trip/shared";
 
 export type Message = { role: "user" | "agent"; text: string };
 export type Draft = {
@@ -70,6 +77,36 @@ export function parseDraft(draft: Draft, current: Pick<TripBrief, "tripId"> & Pa
     },
   });
 }
+/**
+ * What the traveller has stated so far, read from the preferences form. A blank conversation sends
+ * this with every message, so answering a follow-up question does not mean repeating the rest. Only
+ * fields that are filled in and valid are sent; a half-typed number is not a stated fact.
+ */
+export function knownFromDraft(draft: Draft): PartialTripBrief {
+  const number = (value: string) => (value.trim() ? Number(value) : undefined);
+  const parsed = PartialTripBrief.safeParse({
+    destination: draft.destination.trim() || undefined,
+    dates: draft.start.trim() && draft.end.trim() ? [draft.start, draft.end] : undefined,
+    groupSize: number(draft.groupSize),
+    budgetTotal: number(draft.budgetTotal),
+    nationality: draft.nationality.trim() || undefined,
+  });
+  return parsed.success ? parsed.data : {};
+}
+
+/** Show what the assistant understood in the preferences form, without clearing anything else. */
+export function draftWithKnown(draft: Draft, known: PartialTripBrief): Draft {
+  return {
+    ...draft,
+    destination: known.destination ?? draft.destination,
+    start: known.dates?.[0] ?? draft.start,
+    end: known.dates?.[1] ?? draft.end,
+    groupSize: known.groupSize === undefined ? draft.groupSize : String(known.groupSize),
+    budgetTotal: known.budgetTotal === undefined ? draft.budgetTotal : String(known.budgetTotal),
+    nationality: known.nationality ?? draft.nationality,
+  };
+}
+
 export type Snapshot = {
   version: 1 | 2;
   id: string;
@@ -120,6 +157,17 @@ export function parseSaved(raw: string | null): Snapshot[] {
   return value.map(parseSnapshot);
 }
 
+/**
+ * The conversation has not stated enough to plan yet. It carries the assistant's question and
+ * everything understood so far, so the caller can ask in the chat rather than show a failure.
+ */
+export class NeedsInfoError extends Error {
+  constructor(readonly needsInfo: ChatNeedsInfo) {
+    super(needsInfo.question);
+    this.name = "NeedsInfoError";
+  }
+}
+
 /** One shared parser for form planning and chat. An incomplete stream is a retryable failure. */
 export async function readPlanStream(
   response: Response,
@@ -134,6 +182,7 @@ export async function readPlanStream(
   const decoder = new TextDecoder();
   let buffer = "";
   let result: ChatResponse | undefined;
+  let needsInfo: ChatNeedsInfo | undefined;
   let error: string | undefined;
   const frame = (line: string) => {
     if (!line.trim()) return;
@@ -148,6 +197,10 @@ export async function readPlanStream(
       const parsed = ChatResponse.safeParse(data.response);
       if (parsed.success) result = parsed.data;
       else error = "The returned plan was invalid. Please retry.";
+    } else if (data.type === "needs_info") {
+      const parsed = ChatNeedsInfo.safeParse(data);
+      if (parsed.success) needsInfo = parsed.data;
+      else error = "The assistant's question was invalid. Please retry.";
     } else if (data.type === "error")
       error = typeof data.error === "string" ? data.error : "Planning failed. Please retry.";
     else {
@@ -169,6 +222,7 @@ export async function readPlanStream(
     reader.releaseLock();
   }
   if (error) throw new Error(error);
+  if (needsInfo) throw new NeedsInfoError(needsInfo);
   if (!result) throw new Error("Connection ended before the plan was ready. Please retry.");
   return result;
 }

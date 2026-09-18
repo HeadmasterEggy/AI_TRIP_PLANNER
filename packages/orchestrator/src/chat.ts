@@ -5,7 +5,9 @@ import {
   TripBrief as TripBriefSchema,
   type ChatRequest,
   type ChatResponse,
+  type ChatNeedsInfo,
   type MemoryStore,
+  type PartialTripBrief,
   type TripBrief,
 } from "@trip/shared";
 import { z } from "zod/v4";
@@ -29,13 +31,29 @@ export interface BriefExtractor {
   extract(message: string, current: TripBrief | undefined): Promise<BriefPatch>;
 }
 
-/** A blank conversation did not state every field required to plan a trip. */
+/**
+ * A blank conversation did not state every field required to plan a trip.
+ *
+ * It carries the assistant's follow-up question and everything understood so far, so the client
+ * can ask for the rest in the chat and send the known fields back with the next message instead of
+ * making the traveller repeat themselves.
+ */
 export class IncompleteBriefError extends Error {
-  constructor(readonly missing: string[]) {
+  constructor(
+    readonly missing: string[],
+    readonly known: PartialTripBrief = {},
+    question?: string,
+  ) {
     super(
-      `To start planning, include the ${missing.join(", ")}. You can also fill in Trip preferences.`,
+      question ??
+        `To start planning, include the ${missing.join(", ")}. You can also fill in Trip preferences.`,
     );
     this.name = "IncompleteBriefError";
+  }
+
+  /** The frame the API sends in place of a plan. */
+  get needsInfo(): ChatNeedsInfo {
+    return { type: "needs_info", question: this.message, known: this.known };
   }
 }
 
@@ -307,21 +325,75 @@ function createReplyGenerator(): ReplyGenerator | undefined {
   };
 }
 
+export function followUpPrompt(
+  message: string,
+  known: PartialTripBrief,
+  missing: string[],
+): string {
+  return `You are the trip coordinator speaking directly to a traveler who wants to start planning but has not stated everything you need yet. Ask them for what is missing.
+
+Rules:
+- Detect the language of the traveler's message and reply in that exact same language.
+- Ask only for the missing details, in one or two short sentences. Never ask again for something already known.
+- Briefly acknowledge what they did tell you, so they can see it was understood.
+- Do not invent or suggest specific dates, budgets, group sizes or destinations, and do not plan anything yet.
+- Do not mention forms, fields, prompts, models or any implementation detail.
+
+Already known (JSON):
+${JSON.stringify(known)}
+
+Still missing:
+${missing.join(", ")}
+
+Traveler's message:
+${message}
+
+Return only the question text.`;
+}
+
+/** Ask for the missing fields in the traveller's own language, or fall back to the English list. */
+async function incompleteBriefError(
+  message: string,
+  known: PartialTripBrief,
+  missing: string[],
+  generator: ReplyGenerator | undefined,
+): Promise<IncompleteBriefError> {
+  if (generator) {
+    try {
+      const question = (await generator.generate(followUpPrompt(message, known, missing))).trim();
+      if (question) return new IncompleteBriefError(missing, known, question);
+    } catch (error) {
+      console.warn(
+        `[chat] follow-up question failed; using the plain list: ${
+          error instanceof Error ? error.message : "unknown reply error"
+        }`,
+      );
+    }
+  }
+  return new IncompleteBriefError(missing, known);
+}
+
 export async function runTripChat(
   request: ChatRequest,
   options: TripChatOptions = {},
 ): Promise<ChatResponse> {
   const { extractor, replyGenerator, ...orchestrationOptions } = options;
   if (request.mode === "plan" && !request.brief) throw new Error("A brief is required to plan.");
+  const generator = replyGenerator ?? createReplyGenerator();
   let current: TripBrief;
   let brief: TripBrief;
   if (request.mode === "start") {
-    // Never borrow fields from the demo or a previous trip for a blank conversation.
-    const patch = BriefPatchSchema.parse(await extractPatch(request.message, undefined, extractor));
+    // Never borrow fields from the demo or a previous trip for a blank conversation: `known` is
+    // only what the traveller themselves said in earlier turns of this one.
+    const patch = BriefPatchSchema.parse({
+      ...request.known,
+      ...(await extractPatch(request.message, undefined, extractor)),
+    });
     const missing = REQUIRED_START_FIELDS.filter(([key]) => patch[key] === undefined).map(
       ([, label]) => label,
     );
-    if (missing.length) throw new IncompleteBriefError(missing);
+    if (missing.length)
+      throw await incompleteBriefError(request.message, patch, missing, generator);
     brief = applyBriefPatch(
       TripBriefSchema.parse({ ...patch, tripId: request.tripId }),
       {},
@@ -347,7 +419,6 @@ export async function runTripChat(
     request.mode === "start"
       ? ["destination", "dates", "groupSize", "budgetTotal"]
       : changedFields(current, brief);
-  const generator = replyGenerator ?? createReplyGenerator();
   let reply = fallbackReplyFor(plan);
   if (generator) {
     try {
