@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
 import { IncompleteBriefError, runTripChat } from "@trip/orchestrator";
-import { ChatRequest, ChatResponse, type AgentProgressEvent } from "@trip/shared";
+import {
+  ChatRequest,
+  ChatResponse,
+  type AgentProgressEvent,
+  type ChatNeedsInfo,
+} from "@trip/shared";
 
 export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}));
@@ -19,6 +24,7 @@ export async function POST(req: Request) {
       const send = (
         event:
           | AgentProgressEvent
+          | ChatNeedsInfo
           | { type: "complete"; response: ChatResponse }
           | { type: "error"; error: string },
       ) => {
@@ -30,16 +36,19 @@ export async function POST(req: Request) {
         const response = ChatResponse.parse(await runTripChat(parsed.data, { onProgress: send }));
         send({ type: "complete", response });
       } catch (error) {
-        console.error("[chat] planning failed", error);
-        send({
-          type: "error",
-          error:
-            error instanceof IncompleteBriefError
-              ? error.message
-              : error instanceof Error && error.message.startsWith("No valid stays")
+        // A blank conversation that has not stated everything yet is a question, not a failure.
+        if (error instanceof IncompleteBriefError) {
+          send(error.needsInfo);
+        } else {
+          console.error("[chat] planning failed", error);
+          send({
+            type: "error",
+            error:
+              error instanceof Error && error.message.startsWith("No valid stays")
                 ? "No stays match your accommodation preferences. Lower the minimum rating or change cancellation preferences, then retry."
                 : "Unable to update this trip. Check the request and try again.",
-        });
+          });
+        }
       } finally {
         if (!cancelled) controller.close();
       }

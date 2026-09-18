@@ -40,5 +40,10 @@ export {
   type DiningDraft,
   type DiningGenerator,
 } from "./dining";
-export { MODEL_ROUTING, createRoutedChatModel, type RoutedModelTask } from "./models";
+export {
+  MODEL_ROUTING,
+  createRoutedChatModel,
+  createRoutedStructuredInvoker,
+  type RoutedModelTask,
+} from "./models";
 export { transportAgent, accommodationAgent };

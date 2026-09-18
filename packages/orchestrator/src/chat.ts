@@ -1,12 +1,13 @@
-import { ChatOpenAI } from "@langchain/openai";
-import { createRoutedChatModel } from "@trip/agents";
+import { createRoutedChatModel, createRoutedStructuredInvoker } from "@trip/agents";
 import { memory } from "@trip/services";
 import {
   ChatTurn,
   TripBrief as TripBriefSchema,
   type ChatRequest,
   type ChatResponse,
+  type ChatNeedsInfo,
   type MemoryStore,
+  type PartialTripBrief,
   type TripBrief,
 } from "@trip/shared";
 import { z } from "zod/v4";
@@ -30,19 +31,35 @@ export interface BriefExtractor {
   extract(message: string, current: TripBrief | undefined): Promise<BriefPatch>;
 }
 
-/** A blank conversation did not state every field required to plan a trip. */
+/**
+ * A blank conversation did not state every field required to plan a trip.
+ *
+ * It carries the assistant's follow-up question and everything understood so far, so the client
+ * can ask for the rest in the chat and send the known fields back with the next message instead of
+ * making the traveller repeat themselves.
+ */
 export class IncompleteBriefError extends Error {
-  constructor(readonly missing: string[]) {
+  constructor(
+    readonly missing: string[],
+    readonly known: PartialTripBrief = {},
+    question?: string,
+  ) {
     super(
-      `To start planning, include the ${missing.join(", ")}. You can also fill in Trip preferences.`,
+      question ??
+        `To start planning, include the ${missing.join(", ")}. You can also fill in Trip preferences.`,
     );
     this.name = "IncompleteBriefError";
+  }
+
+  /** The frame the API sends in place of a plan. */
+  get needsInfo(): ChatNeedsInfo {
+    return { type: "needs_info", question: this.message, known: this.known };
   }
 }
 
 const REQUIRED_START_FIELDS = [
   ["destination", "destination"],
-  ["dates", "start and end dates (YYYY-MM-DD)"],
+  ["dates", "start and end dates"],
   ["groupSize", "number of travellers"],
   ["budgetTotal", "total budget"],
 ] as const;
@@ -56,10 +73,10 @@ export interface TripChatOptions extends OrchestratorOptions {
   replyGenerator?: ReplyGenerator;
 }
 
-// OpenAI strict JSON Schema does not accept a tuple whose array items are
-// primitive values. Keep the public TripBrief contract unchanged and use two
-// scalar date fields only for the GPT wire format.
-const OpenAIModelPatchSchema = z.object({
+// The wire shape keeps the two dates as scalar fields rather than the `dates` tuple in
+// `TripBrief`: a model that states only one end of a range must not produce a half-applied patch,
+// and a nullable scalar says that more clearly than a tuple that can only be whole.
+const ModelPatchSchema = z.object({
   destination: z.string().trim().min(1).nullable(),
   startDate: z.string().regex(ISO_DATE).nullable(),
   endDate: z.string().regex(ISO_DATE).nullable(),
@@ -157,7 +174,9 @@ export function applyBriefPatch(current: TripBrief, patch: BriefPatch, tripId: s
   const parsedPatch = BriefPatchSchema.parse(patch);
   const next = TripBriefSchema.parse({ ...current, ...parsedPatch, tripId });
   if (!validDate(next.dates[0]) || !validDate(next.dates[1])) {
-    throw new Error("Trip dates must be real dates in YYYY-MM-DD format.");
+    throw new Error(
+      "Those trip dates are not real calendar dates. Please restate the start and end dates.",
+    );
   }
   if (Date.parse(next.dates[1]) <= Date.parse(next.dates[0])) {
     throw new Error("Trip end date must be after the start date.");
@@ -166,51 +185,39 @@ export function applyBriefPatch(current: TripBrief, patch: BriefPatch, tripId: s
 }
 
 function extractionPrompt(message: string, current: TripBrief | undefined): string {
-  return `Extract only explicit updates to the trip brief. Use null for every field the user did not specify. Do not infer dates, nationality, group size, destination, or budget. Budget is total USD. Dates must be YYYY-MM-DD.\n\nCurrent brief:\n${current ? JSON.stringify(current) : "None. This is a new conversation."}\n\nUser message:\n${message}`;
+  const today = new Date().toISOString().slice(0, 10);
+  return `Extract only explicit updates to the trip brief. Use null for every field the user did not specify. Do not infer a nationality, group size, destination or budget the user did not state. Budget is total USD.
+
+Dates: write the start and end date the user gave as YYYY-MM-DD, whatever shape they wrote them in ("Oct 1 2026", "2026年10月1日", "1 October 2026", "13/10/2026"). Converting a stated date is a format conversion, not an inference. Today is ${today}; a date written without a year is its next occurrence on or after today. Return null for both dates when the user gave only one end of the range, or when the day and month cannot be told apart because both are 12 or lower (such as "01/10/2026"), so the traveller is asked rather than planned a trip on a guessed month.
+
+Current brief:
+${current ? JSON.stringify(current) : "None. This is a new conversation."}
+
+User message:
+${message}`;
 }
 
-function createOpenAIExtractor(): BriefExtractor | undefined {
-  const apiKey = process.env.GPT_API_KEY || process.env.OPENAI_API_KEY;
-  if (!apiKey) return undefined;
+/** Fold the flat wire shape back into the public `dates` tuple. */
+function toBriefPatch(result: z.infer<typeof ModelPatchSchema>): BriefPatch {
+  const { startDate, endDate, ...fields } = result;
+  const patch: BriefPatch = {};
+  for (const [key, value] of Object.entries(fields)) {
+    if (value !== null) patch[key as keyof BriefPatch] = value as never;
+  }
+  if (startDate !== null && endDate !== null) patch.dates = [startDate, endDate];
+  return BriefPatchSchema.parse(patch);
+}
 
-  // GPT is used for short, high-precision intent extraction. `max` is accepted
-  // as a product-level setting and mapped to the API's highest supported effort.
-  const configuredEffort = (process.env.GPT_REASONING_EFFORT || "high").toLowerCase();
-  const allowed = new Set(["low", "medium", "high", "max"]);
-  const safeEffort = allowed.has(configuredEffort) ? configuredEffort : "high";
-  const reasoningEffort = safeEffort === "max" ? "high" : safeEffort;
-  const model = new ChatOpenAI({
-    apiKey,
-    model: process.env.GPT_MODEL || "gpt-5.6-luna",
-    reasoning: { effort: reasoningEffort as "low" | "medium" | "high" },
-    maxTokens: 512,
-    streamUsage: false,
-    configuration: {
-      baseURL: process.env.GPT_BASE_URL || "https://api.openai.com/v1",
-    },
-  });
-  const structured = model.withStructuredOutput(OpenAIModelPatchSchema, {
-    name: "TripBriefPatch",
-    method: "jsonSchema",
-    strict: true,
-  });
+function createModelExtractor(): BriefExtractor | undefined {
+  // The model reads dates in whatever shape people type them; without a key the local parser is
+  // used, and it only understands ISO dates.
+  const invoke = createRoutedStructuredInvoker("itinerary", ModelPatchSchema, "TripBriefPatch");
+  if (!invoke) return undefined;
   return {
     async extract(message, current) {
-      const result = await structured.invoke(extractionPrompt(message, current));
-      const { startDate, endDate, ...fields } = result;
-      const patch: BriefPatch = {};
-      for (const [key, value] of Object.entries(fields)) {
-        if (value !== null) patch[key as keyof BriefPatch] = value as never;
-      }
-      if (startDate !== null && endDate !== null) patch.dates = [startDate, endDate];
-      return BriefPatchSchema.parse(patch);
+      return toBriefPatch(await invoke(extractionPrompt(message, current)));
     },
   };
-}
-
-function createLangChainExtractor(): BriefExtractor | undefined {
-  // GPT handles chat/intent extraction; without a key the local parser is used.
-  return createOpenAIExtractor();
 }
 
 async function extractPatch(
@@ -218,12 +225,12 @@ async function extractPatch(
   current: TripBrief | undefined,
   extractor?: BriefExtractor,
 ): Promise<BriefPatch> {
-  const selected = extractor ?? createLangChainExtractor();
+  const selected = extractor ?? createModelExtractor();
   if (selected) {
     try {
       return await selected.extract(message, current);
     } catch {
-      console.warn("[chat] LangChain brief extraction failed; using the local parser.");
+      console.warn("[chat] model brief extraction failed; using the local parser.");
     }
   }
   return extractBriefPatchLocally(message);
@@ -318,21 +325,75 @@ function createReplyGenerator(): ReplyGenerator | undefined {
   };
 }
 
+export function followUpPrompt(
+  message: string,
+  known: PartialTripBrief,
+  missing: string[],
+): string {
+  return `You are the trip coordinator speaking directly to a traveler who wants to start planning but has not stated everything you need yet. Ask them for what is missing.
+
+Rules:
+- Detect the language of the traveler's message and reply in that exact same language.
+- Ask only for the missing details, in one or two short sentences. Never ask again for something already known.
+- Briefly acknowledge what they did tell you, so they can see it was understood.
+- Do not invent or suggest specific dates, budgets, group sizes or destinations, and do not plan anything yet.
+- Do not mention forms, fields, prompts, models or any implementation detail.
+
+Already known (JSON):
+${JSON.stringify(known)}
+
+Still missing:
+${missing.join(", ")}
+
+Traveler's message:
+${message}
+
+Return only the question text.`;
+}
+
+/** Ask for the missing fields in the traveller's own language, or fall back to the English list. */
+async function incompleteBriefError(
+  message: string,
+  known: PartialTripBrief,
+  missing: string[],
+  generator: ReplyGenerator | undefined,
+): Promise<IncompleteBriefError> {
+  if (generator) {
+    try {
+      const question = (await generator.generate(followUpPrompt(message, known, missing))).trim();
+      if (question) return new IncompleteBriefError(missing, known, question);
+    } catch (error) {
+      console.warn(
+        `[chat] follow-up question failed; using the plain list: ${
+          error instanceof Error ? error.message : "unknown reply error"
+        }`,
+      );
+    }
+  }
+  return new IncompleteBriefError(missing, known);
+}
+
 export async function runTripChat(
   request: ChatRequest,
   options: TripChatOptions = {},
 ): Promise<ChatResponse> {
   const { extractor, replyGenerator, ...orchestrationOptions } = options;
   if (request.mode === "plan" && !request.brief) throw new Error("A brief is required to plan.");
+  const generator = replyGenerator ?? createReplyGenerator();
   let current: TripBrief;
   let brief: TripBrief;
   if (request.mode === "start") {
-    // Never borrow fields from the demo or a previous trip for a blank conversation.
-    const patch = BriefPatchSchema.parse(await extractPatch(request.message, undefined, extractor));
+    // Never borrow fields from the demo or a previous trip for a blank conversation: `known` is
+    // only what the traveller themselves said in earlier turns of this one.
+    const patch = BriefPatchSchema.parse({
+      ...request.known,
+      ...(await extractPatch(request.message, undefined, extractor)),
+    });
     const missing = REQUIRED_START_FIELDS.filter(([key]) => patch[key] === undefined).map(
       ([, label]) => label,
     );
-    if (missing.length) throw new IncompleteBriefError(missing);
+    if (missing.length)
+      throw await incompleteBriefError(request.message, patch, missing, generator);
     brief = applyBriefPatch(
       TripBriefSchema.parse({ ...patch, tripId: request.tripId }),
       {},
@@ -358,7 +419,6 @@ export async function runTripChat(
     request.mode === "start"
       ? ["destination", "dates", "groupSize", "budgetTotal"]
       : changedFields(current, brief);
-  const generator = replyGenerator ?? createReplyGenerator();
   let reply = fallbackReplyFor(plan);
   if (generator) {
     try {

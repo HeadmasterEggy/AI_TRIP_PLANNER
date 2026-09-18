@@ -9,7 +9,7 @@ workflow owns the planning control flow; LangChain agents do role-specific reaso
 flowchart TB
     U[User] --> UI[Next.js workspace]
     UI -->|POST /api/chat, NDJSON progress| CHAT[runTripChat]
-    CHAT -->|explicit brief updates| EX[GPT structured extraction]
+    CHAT -->|explicit brief updates| EX[Model structured extraction]
     EX -.->|no key or invalid output| LP[Local rule parser]
     CHAT --> WF[LangGraph workflow]
     WF --> DISPATCH[dispatch_specialists / revise_conflicts]
@@ -95,12 +95,25 @@ Transport and accommodation wrap calculators so models cannot invent prices, rou
 
 Model routing (`MODEL_ROUTING` in `packages/agents/src/models.ts` and `chat.ts`):
 
-- **GPT** (`GPT_API_KEY`, or `OPENAI_API_KEY`): structured extraction of brief updates. Without a
-  key, or when extraction fails, a conservative English/Chinese rule parser is used.
-- **DeepSeek** (`DEEPSEEK_API_KEY`): all five specialists, the supervisor and the natural-language
-  chat reply, through LangChain's OpenAI-compatible adapter.
+- **DeepSeek** (`DEEPSEEK_API_KEY`): everything that runs a model — brief extraction from chat, all
+  five specialists, the supervisor, the revision supervisor and the natural-language chat reply —
+  through LangChain's OpenAI-compatible adapter.
 - **MiniMax**: configured but not routed; it was too slow for page-level planning. See
   `.env.example` for its account caveats.
+
+Dates are read by the model, not by patterns: extraction converts whatever shape the traveller writes
+into `YYYY-MM-DD`, takes the next occurrence for a date written without a year, and leaves the dates
+unset when only one end is given or the day and month cannot be told apart (`01/10/2026`), so the
+traveller is asked instead of planned a trip on a guessed month. Without a key, or when a model call
+fails, a small English/Chinese rule parser handles extraction instead; it only reads ISO dates.
+
+A blank conversation that has not stated everything needed to plan is a question, not a failure:
+`runTripChat` throws `IncompleteBriefError` carrying the fields understood so far and a follow-up
+question written by the reply model in the traveller's own language. `/api/chat` streams it as a
+`needs_info` frame, the client shows it as an assistant message, fills the preferences form with what
+was understood, and sends those fields back as `ChatRequest.known` with the next message, which is
+merged under that message's own extraction. So "悉尼三日游" is answered with a question about dates,
+travellers and budget, and the reply only has to supply those.
 
 When a key is missing, a model call fails or output is off-schema, the step falls back to validated
 deterministic output, so planning requests still complete. Schema, budget, schedule and route checks

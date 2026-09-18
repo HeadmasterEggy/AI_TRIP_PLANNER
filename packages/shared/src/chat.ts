@@ -1,15 +1,36 @@
 import { z } from "zod";
-import { AGENT_NAMES, TripBrief } from "./contracts";
+import { AGENT_NAMES, isTripDate, TripBrief } from "./contracts";
 import { TripPlan } from "./plan";
 
 // The contract between the web client and POST /api/chat.
 // Progress is streamed as NDJSON; the final frame contains one ChatResponse.
 // Optional request modes preserve existing chat clients.
 
+// What a blank conversation has stated so far, before it is complete enough to plan.
+// The fields are restated rather than picked from TripBrief: TripBrief's whole-brief check (an end
+// date after the start, a night per destination) cannot run on a brief that is still being built.
+export const PartialTripBrief = z.object({
+  destination: z.string().trim().min(1).optional(),
+  dates: z
+    .tuple([
+      z.string().refine(isTripDate, "Enter a real date"),
+      z.string().refine(isTripDate, "Enter a real date"),
+    ])
+    .optional(),
+  groupSize: z.number().int().positive().optional(),
+  budgetTotal: z.number().min(0.01).optional(),
+  nationality: z.string().optional(),
+});
+export type PartialTripBrief = z.infer<typeof PartialTripBrief>;
+
 // Client -> server
 export const ChatRequest = z.object({
   tripId: z.string(),
   message: z.string().min(1),
+  // What earlier turns of a blank conversation already stated. The server merges
+  // this turn's message onto it, so the traveller answers a follow-up question
+  // instead of repeating everything.
+  known: PartialTripBrief.optional(),
   // Optional for backward compatibility. The browser sends the latest brief so
   // serverless requests can apply incremental edits without sticky process state.
   brief: TripBrief.optional(),
@@ -25,6 +46,15 @@ export const ChatResponse = z.object({
   plan: TripPlan, // the fresh aggregated plan for the right-hand panel
 });
 export type ChatResponse = z.infer<typeof ChatResponse>;
+
+// Sent instead of a plan when a blank conversation is still missing required
+// fields: the assistant's question, plus everything understood so far.
+export const ChatNeedsInfo = z.object({
+  type: z.literal("needs_info"),
+  question: z.string(),
+  known: PartialTripBrief,
+});
+export type ChatNeedsInfo = z.infer<typeof ChatNeedsInfo>;
 
 // Progress frames emitted while the orchestrator delegates work. The final
 // ChatResponse remains unchanged; clients can render these frames as optional

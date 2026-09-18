@@ -107,6 +107,35 @@
 - `TripBrief` 契约、`packages/shared`、其余包零改动
 - `pnpm typecheck && pnpm test && pnpm build` 全过
 
+### 已落地的做法与计划的差异
+
+原计划是“在 `extractBriefPatchLocally` 里加一个支持 12 种格式的 `parseNaturalDate()`”。实际做法不同，原因值得记下：
+
+**真正的 bug 在 prompt，不在解析器。** 旧 prompt 里这两句互相矛盾：
+
+```
+Do not infer dates, nationality, group size, destination, or budget.
+Dates must be YYYY-MM-DD.
+```
+
+模型看到 `Oct 1 2026` 会判为“用户给了日期、但格式不合要求、而我又被禁止推断”→ 返回 `null`。所以模型路径需要的是
+**改 prompt**。
+
+**本地根本没走模型。** 当时 `.env.local` 里没有 `GPT_API_KEY`/`OPENAI_API_KEY`，
+`createOpenAIExtractor()` 直接返回 `undefined`，提取实际由规则解析器承担。两个环境要修的不是同一件事。
+
+**决定：只用 DeepSeek。** 提取改走 `createRoutedStructuredInvoker("itinerary", ...)`（与 specialist、supervisor
+同一套），删掉 GPT 提取器、`@langchain/openai` 直接依赖和 `GPT_*` 环境变量。实测 DeepSeek 对
+`Oct 1 to Oct 5 2026`、`2026年10月1日到10月5日`、`01/10/2026`、`~`、`two people` 全部处理正确（5/5，约 1.0–1.2s/次）。
+
+**不写日期解析器。** 理解日期格式本来就是模型的事，正则只能覆盖列举到的几种写法，列得越多误判越多（曾实测出
+`2个城市` 被当成人数、`你好，东京` 把"你好"当目的地）。所以本地规则解析器保持原样，只认 ISO 日期，仅作无 key
+时的兜底。
+
+**信息不全或有歧义就追问，不猜。** prompt 里给出今天的日期：不写年份的日期取下一次出现；只给了一端、或日和月都
+≤12 分不清顺序（`01/10/2026`）时返回 `null`，`start` 模式下由 `IncompleteBriefError` 让用户补充。`13/10/2026`、
+`10/13/2026` 这种能定序的照常读。实测 12 种输入 × 2 轮全部符合预期，约 1.1–1.5s/次。
+
 ---
 
 ## 2. 货币与地区格式化

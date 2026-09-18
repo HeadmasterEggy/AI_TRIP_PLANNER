@@ -21,11 +21,14 @@ import {
   SAVED_KEY,
   blankDraft,
   draftFor,
+  draftWithKnown,
+  knownFromDraft,
   money,
   parseDraft,
   parseSaved,
   parseSnapshot,
   readPlanStream,
+  NeedsInfoError,
   type Message,
   type Snapshot,
 } from "@/lib/workspace";
@@ -410,6 +413,15 @@ function WorkspaceContent({ restored }: { restored: RestoredWorkspace }) {
       if (task.kind === "decision" && task.decision.action === "reject") edit();
     } catch (failure) {
       if (active.current !== controller || controller.signal.aborted) return;
+      // Not enough to plan yet: the assistant asks for the rest in the chat, and what it already
+      // understood goes into the preferences form and travels with the next message.
+      if (failure instanceof NeedsInfoError) {
+        setMessages((current) => [...current, { role: "agent", text: failure.needsInfo.question }]);
+        setDraft((current) => draftWithKnown(current, failure.needsInfo.known));
+        setInput("");
+        setActivity([]);
+        return;
+      }
       setError(
         failure instanceof Error ? failure.message : "Unable to update the trip. Please retry.",
       );
@@ -449,7 +461,12 @@ function WorkspaceContent({ restored }: { restored: RestoredWorkspace }) {
       kind: "chat",
       request: plan
         ? { tripId: plan.tripId, message, brief: plan.brief }
-        : { tripId: freshTripId.current, mode: "start", message },
+        : {
+            tripId: freshTripId.current,
+            mode: "start",
+            message,
+            known: knownFromDraft(draft),
+          },
     });
   }
   const onDecision = (decision: Decision) => {
