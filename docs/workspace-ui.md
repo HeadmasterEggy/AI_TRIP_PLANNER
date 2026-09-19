@@ -166,6 +166,23 @@ first render; without a browser key the map shows a fallback and the itinerary s
 Real booking and payments, multi-user collaboration and on-trip mode. Mock places and bookings must
 never be presented as real supplier data.
 
+## Visual verification matrix
+
+Use this checklist for each visual change. It supplements, and does not change, the layout and drawer behavior described above.
+
+| Dimension | Required checks |
+| --- | --- |
+| Viewports | 1600×900, near the 1000 px responsive boundary, and 375×812 |
+| Theme | Light and dark at each relevant viewport |
+| Motion | Default and `prefers-reduced-motion: reduce` |
+| Input | Mouse and full keyboard navigation, including visible focus |
+| Workspace | Sidebar resize/collapse, Chat/Map switch, and no horizontal overflow |
+| Drawers | Navigation, Preferences, and Trip drawers; close, Escape, and focus return |
+| Content | Empty chat/map, planning and failure states, long messages, and available map places |
+| Native controls | Date, select, checkbox, and scrollbar follow the active color scheme |
+
+Keep light and dark screenshots for desktop (1600×900) and narrow (375×812) acceptance. Verify body and supporting text contrast with a contrast tool; status must retain a textual or graphical cue when color is unavailable.
+
 ## Verification
 
 `pnpm typecheck`, `pnpm lint`, `pnpm test` and `pnpm build` must pass. Component tests cover drawers,
