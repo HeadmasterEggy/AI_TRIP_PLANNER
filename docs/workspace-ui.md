@@ -73,6 +73,10 @@ now. Implementation history and browser acceptance for each phase are in the
   - Planning progress is a flat, text-and-symbol status list for the coordinator and specialists.
     Per-agent and coordinator event details remain native, collapsed `<details>` controls; unknown
     states remain neutral rather than complete.
+  - Messages retain their conversation order in a `role="log"`; each has one visible, spoken-once
+    speaker label (You or Travel planning assistant). Bubbles use alignment, surface, border and
+    corner shape as well as the label, and long URLs or mixed Chinese/English text wrap within the
+    chat column.
   - Submitting Preferences sends `mode: "plan"` with the brief.
   - A first chat message sends `mode: "start"`, and the server reports any missing destination,
     dates, travellers or budget instead of borrowing values.

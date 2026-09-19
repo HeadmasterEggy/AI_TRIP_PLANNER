@@ -112,7 +112,10 @@ export function ChatPanel({
         <div role="log" aria-live="polite">
           {messages.map((m, i) => (
             <div key={i} className={`msg msg--${m.role}`}>
-              {m.text}
+              <span className="msg__speaker">
+                {m.role === "user" ? "You" : "Travel planning assistant"}
+              </span>
+              <div className="msg__content">{m.text}</div>
             </div>
           ))}
         </div>

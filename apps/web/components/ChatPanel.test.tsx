@@ -90,6 +90,35 @@ describe("ChatPanel", () => {
     }
   });
 
+  it("labels messages once, in conversation order, without changing long content", () => {
+    const longUrl = `https://example.test/${"very-long-path/".repeat(20)}旅行计划`;
+    render(
+      <ChatPanel
+        messages={[
+          { role: "user", text: "Plan Kyoto" },
+          { role: "agent", text: longUrl },
+        ]}
+        input=""
+        onInput={vi.fn()}
+        busy={false}
+        activity={[]}
+        onSend={vi.fn()}
+        onDecision={vi.fn()}
+        onEdit={vi.fn()}
+      />,
+    );
+
+    const log = screen.getByRole("log");
+    expect(Array.from(log.children).map((message) => message.textContent)).toEqual([
+      "YouPlan Kyoto",
+      `Travel planning assistant${longUrl}`,
+    ]);
+    expect(within(log).getByText("You")).toBeTruthy();
+    expect(within(log).getByText("Travel planning assistant")).toBeTruthy();
+    expect(within(log).getByText(longUrl).classList.contains("msg__content")).toBe(true);
+    expect(log.querySelectorAll("[aria-label]")).toHaveLength(0);
+  });
+
   it.each([
     ["agent_started", "Running"],
     ["agent_completed", "Complete"],

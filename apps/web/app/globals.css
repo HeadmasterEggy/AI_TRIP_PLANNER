@@ -213,13 +213,28 @@ button {
   padding-bottom: 12px;
 }
 .msg {
+  align-self: flex-start;
   max-width: min(80%, 60ch);
+  min-width: 0;
   padding: 10px var(--space-3);
+  border: 1px solid var(--border);
   border-radius: var(--radius-lg);
+  background: var(--surface-2);
   font-size: 13px;
   line-height: 1.55;
-  white-space: pre-wrap;
   animation: msg-in 200ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+.msg__speaker {
+  display: block;
+  margin-bottom: 2px;
+  color: var(--text-mut);
+  font-size: var(--font-size-meta);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.msg__content {
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
 }
 /* Flatten the corner on the side the bubble is anchored to, so the column
    reads as a conversation rather than a stack of identical pills. */
@@ -230,9 +245,7 @@ button {
   color: var(--text);
 }
 .msg--agent {
-  align-self: flex-start;
   border-bottom-left-radius: var(--radius-sm);
-  background: var(--surface-2);
 }
 @keyframes msg-in {
   from {
@@ -888,7 +901,7 @@ button:not(.section__row):not(.stay-option):not(.primary):not(.trip__cta) {
     margin-left: auto;
   }
   .msg {
-    max-width: 95%;
+    max-width: min(92%, 60ch);
   }
   .trip__budget {
     flex-wrap: wrap;
