@@ -183,6 +183,8 @@ Use this checklist for each visual change. It supplements, and does not change, 
 
 Keep light and dark screenshots for desktop (1600×900) and narrow (375×812) acceptance. Verify body and supporting text contrast with a contrast tool; status must retain a textual or graphical cue when color is unavailable.
 
+The root layout loads the self-hosted Fraunces display font through `next/font`; it is limited to destination, Trip, and empty-state headings. Body copy and controls retain the system sans stack, with serif fallbacks for display headings. `color-scheme: light dark` keeps native controls aligned with the active theme.
+
 ## Verification
 
 `pnpm typecheck`, `pnpm lint`, `pnpm test` and `pnpm build` must pass. Component tests cover drawers,

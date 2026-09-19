@@ -1,11 +1,19 @@
 /* Design tokens. Owner: E — tweak freely, keep names stable. */
 :root {
+  color-scheme: light dark;
+  --font-display: Georgia, "Times New Roman", serif;
+  --font-size-title: 1.25rem;
+  --font-size-body: 0.875rem;
+  --font-size-meta: 0.75rem;
+  --line-height-title: 1.3;
+  --line-height-body: 1.5;
   --page: #fbfbfc;
   --surface: #ffffff;
   --surface-2: #f4f4f6;
   --text: #18181b;
-  --text-dim: #6b7280;
-  --text-mut: #9ca3af;
+  --text-dim: #626975;
+  --text-mut: #626975;
+  --on-accent: #fff;
   --border: #e5e7eb;
   --accent: #4f46e5;
   --accent-bg: #eef2ff;
@@ -39,7 +47,8 @@
     --surface-2: #1f1f24;
     --text: #e8e8ea;
     --text-dim: #9ca3af;
-    --text-mut: #6b7280;
+    --text-mut: #9ca3af;
+    --on-accent: #0e0e11;
     --border: #2a2a31;
     --accent: #8b83f0;
     --accent-bg: #201d3d;
@@ -70,7 +79,7 @@ body {
   background: var(--page);
   color: var(--text);
   font:
-    14px/1.5 -apple-system,
+    var(--font-size-body) / var(--line-height-body) -apple-system,
     BlinkMacSystemFont,
     "Segoe UI",
     system-ui,
@@ -297,7 +306,7 @@ button {
   border: none;
   border-radius: var(--radius-sm);
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
   font-weight: 500;
   transition:
     filter var(--transition),
@@ -546,7 +555,7 @@ button {
   border: none;
   border-radius: var(--radius-sm);
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
   font-weight: 500;
   box-shadow: var(--shadow-sm);
   transition:
@@ -672,7 +681,7 @@ button:not(.section__row):not(.stay-option):not(.primary):not(.trip__cta) {
 }
 .primary {
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
   border: 0;
   border-radius: var(--radius-sm);
   padding: 9px 14px;
@@ -899,8 +908,8 @@ button:not(.section__row):not(.stay-option):not(.primary):not(.trip__cta) {
   margin: 24px auto;
   padding: 24px;
   max-width: 1400px;
-  background: #fff;
-  border: 1px solid #deded7;
+  background: var(--surface);
+  border: 1px solid var(--border);
   border-radius: 16px;
   overflow-wrap: anywhere;
 }
@@ -914,17 +923,17 @@ button:not(.section__row):not(.stay-option):not(.primary):not(.trip__cta) {
 .trip-editor input {
   padding: 8px 12px;
   margin: 4px;
-  border: 1px solid #c6cec6;
+  border: 1px solid var(--border);
   border-radius: 6px;
   max-width: 100%;
 }
 .trip-editor button[aria-pressed="true"] {
-  background: #dce8df;
+  background: var(--accent-bg);
 }
 .trip-editor button:focus-visible,
 .trip-editor input:focus-visible,
 .trip-editor select:focus-visible {
-  outline: 3px solid #37664c;
+  outline: 3px solid var(--accent);
   outline-offset: 2px;
 }
 .editor-columns {
@@ -933,14 +942,14 @@ button:not(.section__row):not(.stay-option):not(.primary):not(.trip__cta) {
   gap: 24px;
 }
 .editor-activity {
-  border-bottom: 1px solid #ddd;
+  border-bottom: 1px solid var(--border);
   padding: 16px 0;
 }
 .google-map {
   height: 480px;
   min-width: 0;
   border-radius: 12px;
-  background: #edf0e9;
+  background: var(--surface-2);
 }
 .trip-map-controls {
   display: flex;
@@ -1140,21 +1149,18 @@ button:not(.section__row):not(.stay-option):not(.primary):not(.trip__cta) {
   background: var(--surface) !important;
 }
 .sidebar-nav__item--create {
-  --tone: #fff;
+  --tone: var(--on-accent);
   --tone-bg: var(--accent);
   font-weight: 600;
 }
-.sidebar-nav__item--chats {
-  --tone: #2563eb;
-  --tone-bg: #dbeafe;
-}
+.sidebar-nav__item--chats,
 .sidebar-nav__item--trips {
-  --tone: #7c3aed;
-  --tone-bg: #ede9fe;
+  --tone: var(--accent);
+  --tone-bg: var(--accent-bg);
 }
 .sidebar-nav__item--saved {
-  --tone: #b45309;
-  --tone-bg: #fef3c7;
+  --tone: var(--warn);
+  --tone-bg: var(--warn-bg);
 }
 .sidebar-nav__icon {
   display: grid;
@@ -1195,7 +1201,7 @@ button:not(.section__row):not(.stay-option):not(.primary):not(.trip__cta) {
 }
 .sidebar-nav__item.is-current .sidebar-nav__icon {
   background: var(--tone);
-  color: #fff;
+  color: var(--on-accent);
 }
 .sidebar-search {
   padding-right: 4px !important;
@@ -1413,8 +1419,9 @@ button:not(.section__row):not(.stay-option):not(.primary):not(.trip__cta) {
 .topbar-title {
   margin: 0;
   overflow: hidden;
-  font-size: 16px;
-  line-height: 1.3;
+  font-family: var(--font-display), Georgia, "Times New Roman", serif;
+  font-size: var(--font-size-title);
+  line-height: var(--line-height-title);
   white-space: nowrap;
   text-overflow: ellipsis;
 }
@@ -1422,7 +1429,7 @@ button:not(.section__row):not(.stay-option):not(.primary):not(.trip__cta) {
   margin: 0;
   overflow: hidden;
   color: var(--text-dim);
-  font-size: 12px;
+  font-size: var(--font-size-meta);
   white-space: nowrap;
   text-overflow: ellipsis;
 }
@@ -1452,7 +1459,7 @@ button:not(.section__row):not(.stay-option):not(.primary):not(.trip__cta) {
   place-items: center;
   border-radius: var(--radius-pill);
   background: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
   font-size: 11px;
 }
 .topbar-views {
@@ -1515,7 +1522,9 @@ button:not(.section__row):not(.stay-option):not(.primary):not(.trip__cta) {
 .chat-empty h3 {
   margin: 0 0 6px;
   color: var(--text);
-  font-size: 18px;
+  font-family: var(--font-display), Georgia, "Times New Roman", serif;
+  font-size: var(--font-size-title);
+  line-height: var(--line-height-title);
 }
 .skeleton--map {
   height: 100%;
@@ -1635,7 +1644,9 @@ button:not(.section__row):not(.stay-option):not(.primary):not(.trip__cta) {
 .map-placeholder h2 {
   margin: 4px 0 0;
   color: var(--text);
-  font-size: 17px;
+  font-family: var(--font-display), Georgia, "Times New Roman", serif;
+  font-size: var(--font-size-title);
+  line-height: var(--line-height-title);
 }
 .map-placeholder p {
   margin: 0;
@@ -1728,6 +1739,9 @@ button:not(.section__row):not(.stay-option):not(.primary):not(.trip__cta) {
   font-size: 20px;
   line-height: 1.25;
   overflow-wrap: anywhere;
+}
+.workspace-drawer--trip .drawer__title h2 {
+  font-family: var(--font-display), Georgia, "Times New Roman", serif;
 }
 .drawer__close {
   display: grid;
@@ -1927,7 +1941,7 @@ button:not(.section__row):not(.stay-option):not(.primary):not(.trip__cta) {
   }
 }
 .edit-preview {
-  background: #f1f5ed;
+  background: var(--surface-2);
   padding: 16px;
   border-radius: 12px;
 }
