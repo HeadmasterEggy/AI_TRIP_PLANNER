@@ -10,6 +10,41 @@ const labels = {
   "destination-guide": "Destination guide",
   dining: "Food & dining",
 };
+const suggestions = [
+  "Plan a week in Paris with food, museums and day trips.",
+  "Build a relaxed long weekend in Lisbon for two.",
+  "Plan a family-friendly five days in Vancouver.",
+  "Create a train-focused week through northern Italy.",
+];
+
+type ActivityStatus =
+  "queued" | "running" | "revising" | "completed" | "failed" | "interrupted" | "unknown";
+const statusLabels: Record<ActivityStatus, string> = {
+  queued: "Queued",
+  running: "Running",
+  revising: "Revising",
+  completed: "Complete",
+  failed: "Needs attention",
+  interrupted: "Interrupted",
+  unknown: "Unknown status",
+};
+const statusSymbols: Record<ActivityStatus, string> = {
+  queued: "○",
+  running: "↻",
+  revising: "↻",
+  completed: "✓",
+  failed: "!",
+  interrupted: "■",
+  unknown: "?",
+};
+
+function agentStatus(event: AgentProgressEvent | undefined, busy: boolean): ActivityStatus {
+  if (!event) return busy ? "queued" : "interrupted";
+  if (event.type === "agent_failed") return "failed";
+  if (event.type === "agent_completed") return "completed";
+  if (event.type === "agent_started") return event.round > 1 ? "revising" : "running";
+  return "unknown";
+}
 export function ChatPanel({
   plan,
   messages,
@@ -36,6 +71,7 @@ export function ChatPanel({
   onStart?: () => void;
 }) {
   const stream = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
     stream.current?.scrollTo({ top: stream.current.scrollHeight });
   }, [messages]);
@@ -50,6 +86,21 @@ export function ChatPanel({
               Describe your destination, travel dates, number of travellers and total budget, or
               fill in the preferences form.
             </p>
+            <div className="chat-empty__suggestions" aria-label="Example trip suggestions">
+              {suggestions.map((suggestion) => (
+                <button
+                  key={suggestion}
+                  type="button"
+                  onClick={() => {
+                    onInput(suggestion);
+                    inputRef.current?.focus();
+                  }}
+                >
+                  {suggestion}
+                </button>
+              ))}
+            </div>
+            <p className="chat-empty__input-hint">Choose a suggestion or write your own below.</p>
             {onStart && (
               <button type="button" onClick={onStart}>
                 Fill in trip preferences
@@ -65,15 +116,70 @@ export function ChatPanel({
           ))}
         </div>
         {activity.length > 0 && (
-          <div className="agent-activity">
-            <h3>Planning progress</h3>
-            <details>
-              <summary>
-                Coordinator ·{" "}
-                {activity.filter((e) => e.type === "coordinator").at(-1)?.type === "coordinator"
-                  ? "View stages"
-                  : "Assigning tasks"}
-              </summary>
+          <section className="agent-activity" aria-label="Planning progress">
+            <h3 className="agent-activity__title">Planning progress</h3>
+            <div className="agent-activity__list" role="list">
+              <div
+                className="agent-activity__row"
+                role="listitem"
+                aria-label={`Coordinator ${busy ? "Running" : "Complete"}`}
+              >
+                <span>Coordinator</span>
+                <span
+                  className={`agent-activity__status agent-activity__status--${busy ? "running" : "completed"}`}
+                >
+                  <span className="agent-activity__indicator" aria-hidden="true">
+                    {statusSymbols[busy ? "running" : "completed"]}
+                  </span>
+                  {busy ? "Running" : "Complete"}
+                </span>
+              </div>
+              {AGENT_NAMES.map((agent) => {
+                const events = activity.filter((e) => "agent" in e && e.agent === agent);
+                const status = agentStatus(events.at(-1), busy);
+                return (
+                  <div
+                    className="agent-activity__row"
+                    key={agent}
+                    role="listitem"
+                    aria-label={`${labels[agent]} ${statusLabels[status]}`}
+                  >
+                    <span>{labels[agent]}</span>
+                    <span className={`agent-activity__status agent-activity__status--${status}`}>
+                      <span className="agent-activity__indicator" aria-hidden="true">
+                        {statusSymbols[status]}
+                      </span>
+                      {statusLabels[status]}
+                    </span>
+                    <details aria-label={`${labels[agent]} details`}>
+                      <summary>View details</summary>
+                      {events.length ? (
+                        events.map((event, i) => (
+                          <div key={i}>
+                            <strong>Round {event.round}</strong>
+                            {"summary" in event && <p>{event.summary}</p>}
+                            {"constraints" in event && event.constraints?.length ? (
+                              <ul>
+                                {event.constraints.map((c, j) => (
+                                  <li key={j}>{c}</li>
+                                ))}
+                              </ul>
+                            ) : null}
+                            {event.type === "agent_failed" && (
+                              <p className="error-text">{event.error}</p>
+                            )}
+                          </div>
+                        ))
+                      ) : (
+                        <p>Waiting for assignment.</p>
+                      )}
+                    </details>
+                  </div>
+                );
+              })}
+            </div>
+            <details aria-label="Coordinator details">
+              <summary>Coordinator details</summary>
               {activity
                 .filter((e) => e.type === "coordinator")
                 .map(
@@ -95,51 +201,7 @@ export function ChatPanel({
                     ),
                 )}
             </details>
-            {AGENT_NAMES.map((agent) => {
-              const events = activity.filter((e) => "agent" in e && e.agent === agent);
-              const last = events.at(-1);
-              const status = !last
-                ? busy
-                  ? "Queued"
-                  : "Not run"
-                : last.type === "agent_failed"
-                  ? "Needs attention"
-                  : last.type === "agent_completed"
-                    ? "Complete"
-                    : busy
-                      ? last.round > 1
-                        ? "Revising"
-                        : "Running"
-                      : "Interrupted";
-              return (
-                <details key={agent}>
-                  <summary>
-                    {labels[agent]} <span className="progress-label">{status}</span>
-                  </summary>
-                  {events.length ? (
-                    events.map((event, i) => (
-                      <div key={i}>
-                        <strong>Round {event.round}</strong>
-                        {"summary" in event && <p>{event.summary}</p>}
-                        {"constraints" in event && event.constraints?.length ? (
-                          <ul>
-                            {event.constraints.map((c, j) => (
-                              <li key={j}>{c}</li>
-                            ))}
-                          </ul>
-                        ) : null}
-                        {event.type === "agent_failed" && (
-                          <p className="error-text">{event.error}</p>
-                        )}
-                      </div>
-                    ))
-                  ) : (
-                    <p>Waiting for assignment.</p>
-                  )}
-                </details>
-              );
-            })}
-          </div>
+          </section>
         )}
         {plan && (
           <CheckpointCards plan={plan} busy={busy} onDecision={onDecision} onEdit={onEdit} />
@@ -153,6 +215,7 @@ export function ChatPanel({
         }}
       >
         <input
+          ref={inputRef}
           className="field"
           aria-label="Message AI Trip Planner"
           placeholder={

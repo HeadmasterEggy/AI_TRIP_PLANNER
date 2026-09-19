@@ -10,7 +10,7 @@ now. Implementation history and browser acceptance for each phase are in the
 | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------- |
 | Sidebar                 | Logo, New chat, search, Chats and Trips history with counts, Saved trips, Language, Local account                              | `WorkspaceSidebar`, `BrandMark`, `icons.tsx` |
 | Top bar                 | Destination with days, travellers and budget (real plan values only); Preferences; Trip with pending-decision count, rightmost | `Workspace`                                  |
-| Chat                    | Conversation, planning progress, decision cards; a starter prompt in a blank chat                                              | `ChatPanel`                                  |
+| Chat                    | Conversation, planning progress, decision cards; starter suggestions in a blank chat                                           | `ChatPanel`                                  |
 | Map                     | Only the map, numbered markers, a place list, map status, View all places and Show my location                                 | `TripMapCanvas`, `TripMap`                   |
 | Your Trip drawer        | Budget; Overview (sections, stay choices, confirmations); Timeline & routes (editor); Review plan and Save trip                | `Drawer`, `TripPanel`, `TripEditor`          |
 | Trip Preferences drawer | Structured brief form: destination, dates, travellers, budget, nationality, accommodation                                      | `Drawer`, `FiltersPanel`                     |
@@ -68,6 +68,11 @@ now. Implementation history and browser acceptance for each phase are in the
   created and linked (`tripId`) only when a plan is produced; the chat title then becomes the
   destination and dates.
 - **Starting to plan.**
+  - A blank chat offers example trip suggestions. Selecting one replaces and focuses the message input;
+    it never sends a message or starts a request.
+  - Planning progress is a flat, text-and-symbol status list for the coordinator and specialists.
+    Per-agent and coordinator event details remain native, collapsed `<details>` controls; unknown
+    states remain neutral rather than complete.
   - Submitting Preferences sends `mode: "plan"` with the brief.
   - A first chat message sends `mode: "start"`, and the server reports any missing destination,
     dates, travellers or budget instead of borrowing values.
