@@ -49,6 +49,7 @@ describe("ChatPanel", () => {
     render(<EmptyChat />);
 
     const log = screen.getByRole("log");
+    expect(screen.getByRole("heading", { name: "Where to next?" })).toBeTruthy();
     expect(within(log).queryByText(/.+/)).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: /week in paris/i }));
 

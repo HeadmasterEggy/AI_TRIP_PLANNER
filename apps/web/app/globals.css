@@ -204,6 +204,7 @@ button {
 }
 .chat__stream {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
@@ -1523,6 +1524,8 @@ button:not(.section__row):not(.stay-option):not(.primary):not(.trip__cta) {
   max-height: none;
 }
 .chat-empty {
+  flex: none;
+  min-width: 0;
   margin: auto 0;
   padding: var(--space-5);
   border: 1px solid var(--border);
