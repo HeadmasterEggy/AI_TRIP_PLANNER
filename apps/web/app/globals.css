@@ -491,18 +491,32 @@ button {
   display: block;
 }
 .section__body {
-  padding: 0 0 12px 0;
+  padding: 0 0 var(--space-4);
+}
+.section__body > .source-note {
+  margin: 0 0 var(--space-2);
+  padding: var(--space-2) 0 var(--space-2) var(--space-3);
+  border-left: 2px solid var(--border);
+  border-radius: 0;
+  background: transparent;
 }
 .proposal-items {
   display: grid;
-  gap: 8px;
+  gap: 0;
+}
+.proposal-items > * + * {
+  border-top: 1px solid var(--border);
+}
+.proposal-day {
+  padding-block: var(--space-3);
+}
+.proposal-day h3 {
+  margin: 0 0 var(--space-2);
+  font-size: 13px;
 }
 .proposal-item {
-  border: 1px solid var(--border);
-  border-left: 3px solid var(--accent);
-  border-radius: var(--radius-sm);
-  padding: var(--space-2) 10px;
-  background: var(--surface-2);
+  padding: var(--space-3) 0;
+  background: transparent;
 }
 .proposal-item__meta {
   display: flex;
@@ -999,6 +1013,38 @@ button:not(.section__row):not(.stay-option):not(.primary):not(.trip__cta) {
 .trip-map-place-list button[aria-pressed="true"] {
   border-color: var(--accent) !important;
   background: var(--accent-bg) !important;
+  box-shadow: inset 3px 0 0 var(--accent);
+  font-weight: 600;
+}
+.trip-map-marker {
+  --marker-size: 1.75rem;
+  display: grid;
+  width: var(--marker-size);
+  height: var(--marker-size);
+  place-items: center;
+  border: 2px solid white;
+  border-radius: var(--radius-pill);
+  background: var(--marker-color);
+  color: white;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 35%);
+  font-weight: 700;
+}
+.trip-map-marker.is-selected {
+  --marker-size: 2rem;
+  border-width: 3px;
+  outline: 2px solid var(--text);
+  outline-offset: 1px;
+}
+.trip-map-user-marker {
+  display: grid;
+  width: 1.25rem;
+  height: 1.25rem;
+  place-items: center;
+  border: 3px solid #2563eb;
+  border-radius: var(--radius-pill);
+  background: white;
+  color: #2563eb;
+  box-shadow: 0 1px 5px rgb(0 0 0 / 40%);
 }
 .trip-map-fallback,
 .map-empty {
@@ -1610,6 +1656,10 @@ button:not(.section__row):not(.stay-option):not(.primary):not(.trip__cta) {
   background: color-mix(in srgb, var(--surface) 94%, transparent);
   box-shadow: var(--shadow-sm);
 }
+.trip-map-canvas .trip-map-controls button,
+.trip-map-canvas .trip-map-place-list button {
+  box-shadow: none;
+}
 .trip-map-canvas .trip-map-controls {
   top: 14px;
   left: 14px;
@@ -1689,6 +1739,11 @@ button:not(.section__row):not(.stay-option):not(.primary):not(.trip__cta) {
   justify-items: center;
   gap: var(--space-2);
   max-width: 38ch;
+  padding: var(--space-5);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
   color: var(--text-dim);
   text-align: center;
 }
@@ -1820,6 +1875,26 @@ button:not(.section__row):not(.stay-option):not(.primary):not(.trip__cta) {
   flex-direction: column;
   min-height: 100%;
   padding: 16px 20px 0;
+}
+.trip-panel > .trip__sub {
+  margin-top: 0;
+}
+.trip-panel__budget-summary {
+  margin-top: var(--space-2);
+  padding: var(--space-3) 0;
+  border-block: 1px solid var(--border);
+}
+.trip-panel__budget-summary .trip__budget {
+  margin: 0;
+}
+.trip-panel__budget-summary .bar {
+  margin-top: var(--space-2);
+}
+.trip-panel__budget-summary .trip__budget-delta {
+  margin-bottom: 0;
+}
+.trip-panel .section:first-child {
+  border-top: 0;
 }
 .trip-tabs {
   display: flex;

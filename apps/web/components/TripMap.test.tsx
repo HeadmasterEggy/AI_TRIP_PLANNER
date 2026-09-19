@@ -14,7 +14,27 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe("TripMap device location", () => {
+describe("TripMap", () => {
+  it("keeps the selected place available as a pressed list button", () => {
+    render(
+      <TripMap
+        places={[
+          {
+            id: "place-1",
+            displayName: { text: "Museum" },
+            location: { latitude: -33.87, longitude: 151.2 },
+          },
+        ]}
+        selected="place-1"
+        routes={[]}
+        onSelect={() => {}}
+      />,
+    );
+    expect(
+      screen.getByRole("button", { name: "1. Museum", pressed: true }),
+    ).toBeTruthy();
+  });
+
   it("requests location only after the user clicks and reports success", async () => {
     const getCurrentPosition = vi.fn<Geolocation["getCurrentPosition"]>((success) => {
       success({ coords: { latitude: -33.86, longitude: 151.21 } } as GeolocationPosition);

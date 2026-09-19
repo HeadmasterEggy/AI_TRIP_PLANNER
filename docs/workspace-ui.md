@@ -132,7 +132,11 @@ now. Implementation history and browser acceptance for each phase are in the
   - No Google map is created before there is somewhere to show; a neutral placeholder is shown
     instead. Container resizes keep the centre.
 - **Selection.** Selecting a marker or list item selects the activity in the timeline and jumps to its
-  day, and the reverse also works.
+  day, and the reverse also works. Selected markers add a larger outlined shape, while selected place-list
+  buttons add a leading inset line and weight alongside `aria-pressed`; color is not the sole cue.
+- **Trip drawer.** The reading order is heading and summary, budget, sections, then expanded detail.
+  Missing or zero budgets state that no budget is set; invalid totals never render `NaN`, a negative bar,
+  or a bar wider than its container.
 - **Location.** Show my location runs only on request and handles denied, unavailable, timeout and
   unsupported cases. The position stays in component memory and is never saved or written into the
   plan. Route from my location requests a verified duration and distance for the selected place.

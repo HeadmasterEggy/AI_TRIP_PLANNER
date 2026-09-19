@@ -39,9 +39,10 @@ export function TripPanel({
   onEdit: () => void;
   onSave: () => void;
 }) {
-  const pct =
-    plan.budgetTotal > 0 ? Math.min(100, Math.round((plan.estTotal / plan.budgetTotal) * 100)) : 0;
-  const delta = plan.budgetTotal - plan.estTotal;
+  const estimated = Number.isFinite(plan.estTotal) && plan.estTotal >= 0 ? plan.estTotal : undefined;
+  const budget = Number.isFinite(plan.budgetTotal) && plan.budgetTotal > 0 ? plan.budgetTotal : undefined;
+  const pct = budget && estimated !== undefined ? Math.min(100, Math.round((estimated / budget) * 100)) : 0;
+  const delta = budget && estimated !== undefined ? budget - estimated : undefined;
   const tabs: [TripTab, string][] = [
     ["overview", "Overview"],
     ["timeline", "Timeline & routes"],
@@ -52,16 +53,20 @@ export function TripPanel({
         {plan.brief.destination} · {plan.brief.dates.join(" – ")} · {plan.brief.groupSize}{" "}
         {plan.brief.groupSize === 1 ? "traveller" : "travellers"}
       </p>
-      <div className="trip__budget">
-        <span>Estimated total</span>
-        <strong>{money(plan.estTotal)}</strong>
-      </div>
-      <div className={`bar${delta < 0 ? " bar--over" : ""}`}>
-        <span style={{ width: `${pct}%` }} />
-      </div>
-      <p className={`trip__budget-delta${delta < 0 ? " trip__budget-delta--over" : ""}`}>
-        {money(Math.abs(delta))} {delta < 0 ? "over" : "under"} the {money(plan.budgetTotal)} budget
-      </p>
+      <section className="trip-panel__budget-summary" aria-label="Trip budget">
+        <div className="trip__budget">
+          <span>Estimated total</span>
+          <strong>{estimated === undefined ? "Estimate unavailable" : money(estimated)}</strong>
+        </div>
+        <div className={`bar${delta !== undefined && delta < 0 ? " bar--over" : ""}`}>
+          <span style={{ width: `${pct}%` }} />
+        </div>
+        <p className={`trip__budget-delta${delta !== undefined && delta < 0 ? " trip__budget-delta--over" : ""}`}>
+          {delta === undefined
+            ? "Budget not set"
+            : `${money(Math.abs(delta))} ${delta < 0 ? "over" : "under"} the ${money(budget!)} budget`}
+        </p>
+      </section>
       <div className="trip-tabs" role="tablist" aria-label="Trip views">
         {tabs.map(([id, label]) => (
           <button

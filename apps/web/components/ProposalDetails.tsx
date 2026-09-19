@@ -106,7 +106,7 @@ export function ProposalDetails({
     return (
       <div className={`proposal-items proposal-items--${section.id}`}>
         {days.map((day) => (
-          <div key={day ?? "unscheduled"}>
+          <section className="proposal-day" key={day ?? "unscheduled"}>
             <h3>{day === undefined ? "Unscheduled suggestions" : `Day ${day}`}</h3>
             <div className="proposal-items">
               {proposal.items
@@ -116,7 +116,7 @@ export function ProposalDetails({
                   <ItemCard key={index} item={item} />
                 ))}
             </div>
-          </div>
+          </section>
         ))}
       </div>
     );
