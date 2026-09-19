@@ -136,21 +136,12 @@ button {
 
 /* ---- shell ---- */
 
-.layout {
-  display: grid;
-  grid-template-columns: 300px minmax(0, 1fr) 380px;
-  height: calc(100vh - 56px);
-}
 .panel {
   overflow-y: auto;
   padding: 20px;
 }
 .panel--left {
   border-right: 1px solid var(--border);
-}
-.panel--right {
-  border-left: 1px solid var(--border);
-  background: var(--surface);
 }
 .panel h2 {
   font-size: 15px;
@@ -186,14 +177,6 @@ button {
   gap: 8px;
   padding: 4px 0;
   color: var(--text-dim);
-}
-.todo {
-  font-size: 12px;
-  color: var(--text-mut);
-  border: 1px dashed var(--border);
-  border-radius: 8px;
-  padding: 8px 10px;
-  margin: 10px 0;
 }
 
 /* ---- chat ---- */
@@ -350,15 +333,6 @@ button {
 }
 
 /* ---- trip panel ---- */
-.trip__head {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  gap: var(--space-3);
-}
-.trip__head h2 {
-  margin: 0;
-}
 .trip__meta {
   font-size: 12px;
   color: var(--text-mut);
@@ -369,12 +343,6 @@ button {
   justify-content: space-between;
   font-size: 13px;
   margin-bottom: var(--space-1);
-}
-.trip__budget-label {
-  color: var(--text-dim);
-}
-.trip__budget-total {
-  color: var(--text-mut);
 }
 .trip__sub {
   font-size: 12px;
@@ -420,26 +388,6 @@ button {
 .chat__form input:disabled {
   opacity: 0.6;
   cursor: not-allowed;
-}
-.field[readonly] {
-  cursor: default;
-  color: var(--text-dim);
-}
-.field[readonly]:focus {
-  outline: none;
-  border-color: var(--border);
-}
-.banner {
-  display: flex;
-  gap: var(--space-2);
-  align-items: flex-start;
-  background: var(--warn-bg);
-  color: var(--warn);
-  border-left: 3px solid var(--warn-strong);
-  border-radius: var(--radius-sm);
-  padding: 10px var(--space-3);
-  margin: var(--space-4) 0;
-  font-size: 13px;
 }
 .section {
   border-top: 1px solid var(--border);
@@ -588,34 +536,6 @@ button {
   font-weight: 500;
   white-space: nowrap;
 }
-.trip__cta {
-  width: 100%;
-  margin-top: var(--space-4);
-  padding: 10px;
-  border: none;
-  border-radius: var(--radius-sm);
-  background: var(--accent);
-  color: var(--on-accent);
-  font-weight: 500;
-  box-shadow: var(--shadow-sm);
-  transition:
-    filter var(--transition),
-    transform var(--transition),
-    box-shadow var(--transition);
-}
-.trip__cta:hover:not(:disabled) {
-  filter: brightness(1.1);
-  box-shadow: var(--shadow-md);
-}
-.trip__cta:active:not(:disabled) {
-  transform: translateY(1px);
-  box-shadow: var(--shadow-sm);
-}
-.trip__cta:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-  box-shadow: none;
-}
 .disclaimer {
   text-align: center;
   color: var(--text-mut);
@@ -633,14 +553,6 @@ button {
 .skeleton--line {
   height: 10px;
   margin: 10px 0;
-}
-.skeleton--field {
-  height: 34px;
-  margin: 0 0 18px;
-}
-.skeleton--bar {
-  height: 6px;
-  margin: 6px 0 20px;
 }
 .skeleton__section {
   padding: 14px 0;
@@ -683,11 +595,6 @@ button:not(.section__row):not(.stay-option):not(.primary):not(.trip__cta) {
   border-radius: var(--radius-sm);
   background: var(--surface);
   padding: 6px 10px;
-}
-.layout {
-  height: auto;
-  min-height: calc(100dvh - 72px);
-  grid-template-columns: minmax(250px, 290px) minmax(300px, 1fr) minmax(360px, 430px);
 }
 .panel {
   min-width: 0;
@@ -847,9 +754,6 @@ button:not(.section__row):not(.stay-option):not(.primary):not(.trip__cta) {
 .msg--user {
   margin-left: auto;
 }
-.trip__head {
-  flex-wrap: wrap;
-}
 .trip__meta {
   white-space: normal;
 }
@@ -868,24 +772,7 @@ button:not(.section__row):not(.stay-option):not(.primary):not(.trip__cta) {
 .proposal-items--destination-guide .proposal-item {
   border-left-color: var(--text-dim);
 }
-@media (max-width: 1100px) {
-  .layout {
-    grid-template-columns: minmax(230px, 280px) minmax(0, 1fr);
-  }
-  .panel--right {
-    grid-column: 1 / -1;
-    max-height: none;
-    border-top: 1px solid var(--border);
-    border-left: 0;
-  }
-  .panel--right > .checkpoints {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
 @media (max-width: 680px) {
-  .layout {
-    display: block;
-  }
   .panel {
     padding: 16px;
     max-height: none;
@@ -901,9 +788,6 @@ button:not(.section__row):not(.stay-option):not(.primary):not(.trip__cta) {
   .chat__stream {
     max-height: 75dvh;
     min-height: 240px;
-  }
-  .panel--right > .checkpoints {
-    grid-template-columns: 1fr;
   }
   .section__row {
     flex-wrap: wrap;
@@ -952,11 +836,6 @@ button:not(.section__row):not(.stay-option):not(.primary):not(.trip__cta) {
   border: 1px solid var(--border);
   border-radius: 16px;
   overflow-wrap: anywhere;
-}
-.trip-editor nav {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 16px;
 }
 .trip-editor button,
 .trip-editor select,
@@ -1046,8 +925,7 @@ button:not(.section__row):not(.stay-option):not(.primary):not(.trip__cta) {
   color: #2563eb;
   box-shadow: 0 1px 5px rgb(0 0 0 / 40%);
 }
-.trip-map-fallback,
-.map-empty {
+.trip-map-fallback {
   min-height: 220px;
   display: grid;
   align-content: center;
