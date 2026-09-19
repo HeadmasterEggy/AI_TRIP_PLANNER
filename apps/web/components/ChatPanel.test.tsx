@@ -62,6 +62,34 @@ describe("ChatPanel", () => {
     expect(onSend).not.toHaveBeenCalled();
   });
 
+  it("does not scroll an empty chat above its heading", () => {
+    const scrollTo = vi.fn();
+    const previous = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "scrollTo");
+    Object.defineProperty(HTMLElement.prototype, "scrollTo", {
+      configurable: true,
+      value: scrollTo,
+    });
+    try {
+      render(
+        <ChatPanel
+          messages={[]}
+          input=""
+          onInput={vi.fn()}
+          busy={false}
+          activity={[]}
+          onSend={vi.fn()}
+          onDecision={vi.fn()}
+          onEdit={vi.fn()}
+        />,
+      );
+      expect(screen.getByRole("heading", { name: "Where to next?" })).toBeTruthy();
+      expect(scrollTo).not.toHaveBeenCalled();
+    } finally {
+      if (previous) Object.defineProperty(HTMLElement.prototype, "scrollTo", previous);
+      else delete (HTMLElement.prototype as { scrollTo?: unknown }).scrollTo;
+    }
+  });
+
   it.each([
     ["agent_started", "Running"],
     ["agent_completed", "Complete"],

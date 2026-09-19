@@ -73,8 +73,9 @@ export function ChatPanel({
   const stream = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
-    stream.current?.scrollTo({ top: stream.current.scrollHeight });
-  }, [messages]);
+    if (messages.length || activity.length)
+      stream.current?.scrollTo({ top: stream.current.scrollHeight });
+  }, [messages, activity]);
   return (
     <section className="panel chat" aria-labelledby="chat-title">
       <h2 id="chat-title">Plan together</h2>
