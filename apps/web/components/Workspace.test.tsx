@@ -182,7 +182,7 @@ describe("Workspace interactions", () => {
       "Start date",
       "End date",
       "Travellers",
-      "Total budget (USD)",
+      "Total budget (AUD)",
     ])
       expect((screen.getByLabelText(label) as HTMLInputElement).value).toBe("");
     fireEvent.click(screen.getByRole("button", { name: "Open your trip" }));
@@ -532,7 +532,7 @@ describe("Workspace interactions", () => {
     vi.stubGlobal("fetch", withPlaceRequests());
     const view = render(<Workspace initialPlan={plan} />);
     openPreferences();
-    fireEvent.change(screen.getByLabelText("Total budget (USD)"), { target: { value: "" } });
+    fireEvent.change(screen.getByLabelText("Total budget (AUD)"), { target: { value: "" } });
     fireEvent.change(screen.getByLabelText("Message AI Trip Planner"), {
       target: { value: "unfinished request" },
     });
@@ -554,7 +554,7 @@ describe("Workspace interactions", () => {
       "unfinished request",
     );
     openPreferences();
-    expect((screen.getByLabelText("Total budget (USD)") as HTMLInputElement).value).toBe("");
+    expect((screen.getByLabelText("Total budget (AUD)") as HTMLInputElement).value).toBe("");
     fireEvent.click(screen.getByRole("button", { name: /^Trips\s*1$/ }));
     expect(historyButton(/^Sydney · 2026-10-01/).getAttribute("aria-current")).toBe("true");
   });
@@ -773,7 +773,7 @@ describe("Workspace navigation", () => {
     localStorage.setItem(
       CATALOG_KEY,
       JSON.stringify({
-        version: 3,
+        version: 4,
         conversations: [],
         trips: [],
         layout: { sidebar: "yes", view: 7 },
@@ -796,7 +796,7 @@ describe("Workspace navigation", () => {
       within(map).queryByRole("button", { name: /Open (your trip|trip preferences)/ }),
     ).toBeNull();
     expect(within(topbar).getByRole("heading", { name: "Sydney" })).toBeTruthy();
-    expect(topbar.textContent).toMatch(/4 days · 2 travellers · USD\s2,000\.00 budget/);
+    expect(topbar.textContent).toMatch(/4 days · 2 travellers · AUD\s2,000\.00 budget/);
     expect(shell.contains(topbar)).toBe(false);
     expect(shell.contains(drawer("trip"))).toBe(true);
     expect(shell.contains(drawer("preferences"))).toBe(true);

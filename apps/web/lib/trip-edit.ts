@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { TripPlan, type ProposalItem } from "@trip/shared";
-import { detectConflicts, checkpointsFor } from "@trip/orchestrator";
+import { detectConflicts, checkpointsFor, rollUpCost } from "@trip/orchestrator";
 import { googleRoute, placeDetails, timeZone, localInstant, type RouteResult } from "./google";
 
 const clock = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/);
@@ -264,9 +264,10 @@ export async function previewEdit(
   plan.sections.forEach((s) => {
     if (s.proposal) s.estCost = s.proposal.items.reduce((sum, i) => sum + (i.estCost ?? 0), 0);
   });
-  plan.estTotal = plan.sections.reduce((sum, s) => sum + s.estCost, 0);
   plan.budgetTotal = plan.brief.budgetTotal;
-  plan.overrunPct = (plan.estTotal / plan.budgetTotal - 1) * 100;
+  // Share the orchestrator's calculator rather than keeping a float copy of it here. The two
+  // already disagreed by float dust, and converted budgets make fractional cents routine.
+  Object.assign(plan, rollUpCost(plan.sections, plan.budgetTotal));
   const previousDecisions = new Map(plan.hitl.map((h) => [h.id, h.status]));
   plan.hitl = checkpointsFor(plan).map((h) => ({
     ...h,

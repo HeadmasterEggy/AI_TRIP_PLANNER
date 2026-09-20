@@ -51,9 +51,11 @@ const dependencies = () => ({
   ),
 });
 describe("P3 edit boundary", () => {
-  it("migrates v1 and preserves IDs across repeated serialization and reordering", () => {
+  it("preserves IDs across repeated serialization and reordering", () => {
+    // Migration from older snapshots is gone: they carry the pre-AUD `pricePerNightUsd`
+    // field and USD amounts, so parseSnapshot rejects them outright.
     const migrated = parseSnapshot(snapshot);
-    expect(migrated.version).toBe(2);
+    expect(migrated.version).toBe(3);
     const id = migrated.plan.sections[0]!.proposal!.items[0]!.id;
     expect(id).toBeTruthy();
     expect(

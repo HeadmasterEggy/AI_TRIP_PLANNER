@@ -29,7 +29,7 @@ describe("human decisions", () => {
     const plan = await initial();
     const stay = plan.sections[0]!.proposal!.stays![0]!;
     const choice = stay.candidates.find((c) => c.name.includes("Economy"))!;
-    choice.pricePerNightUsd = 1;
+    choice.pricePerNight = 1;
     stay.rooms = 99;
     stay.nights = 99;
     plan.estTotal = 1;

@@ -1,7 +1,10 @@
 import { describe, it, expect } from "vitest";
 import {
+  budgetHint,
+  draftFor,
   draftWithKnown,
   knownFromDraft,
+  money,
   NeedsInfoError,
   parseDraft,
   parseSnapshot,
@@ -33,11 +36,13 @@ describe("workspace boundaries", () => {
   it("round-trips unfinished forms while rejecting corrupt or incompatible snapshots", () => {
     const unfinished = { ...snapshot, draft: { ...snapshot.draft, budgetTotal: "" } };
     expect(parseSnapshot(JSON.parse(JSON.stringify(unfinished)))).toMatchObject({
-      version: 2,
+      version: 3,
       draft: unfinished.draft,
     });
     for (const invalid of [
-      { ...snapshot, version: 3 },
+      // Pre-AUD snapshots: their amounts meant USD and their stay candidates carry the
+      // old pricePerNightUsd field, so they are rejected rather than migrated.
+      { ...snapshot, version: 2 },
       { ...snapshot, plan: {} },
       { ...snapshot, messages: [{ role: "system", text: "bad" }] },
       { ...snapshot, draft: {} },
@@ -119,5 +124,30 @@ describe("workspace boundaries", () => {
     await expect(
       readPlanStream(new Response('{"type":"complete","response":{}}'), () => {}),
     ).rejects.toThrow("invalid");
+  });
+});
+
+describe("budget display", () => {
+  it("formats amounts in the base currency", () => {
+    expect(money(2000)).toMatch(/AUD\s*2,000\.00/);
+  });
+
+  it("explains a converted budget, and says nothing when there is nothing to explain", () => {
+    expect(budgetHint({ budgetSource: { amount: 3000, currency: "CNY" } })).toMatch(/¥3,000/);
+    expect(budgetHint({})).toBe("");
+    // Stated in the base currency: converting it back would be noise.
+    expect(budgetHint({ budgetSource: { amount: 3000, currency: "AUD" } })).toBe("");
+  });
+
+  it("drops the minor unit for a currency that has none", () => {
+    expect(budgetHint({ budgetSource: { amount: 50000, currency: "JPY" } })).not.toMatch(/\./);
+  });
+
+  it("does not carry a stale source past a form edit", () => {
+    // The preferences form is base-currency only, so a budget typed there has no source.
+    const current = { ...plan.brief, budgetSource: { amount: 3000, currency: "CNY" as const } };
+    const parsed = parseDraft({ ...draftFor(current), budgetTotal: "900" }, current);
+    expect(parsed.success && parsed.data.budgetSource).toBeUndefined();
+    expect(parsed.success && parsed.data.budgetTotal).toBe(900);
   });
 });

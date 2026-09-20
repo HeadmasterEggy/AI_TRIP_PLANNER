@@ -53,7 +53,7 @@ export type PanelLayout = {
 };
 
 export type WorkspaceCatalog = {
-  version: 3;
+  version: 4;
   activeConversationId?: string;
   activeTripId?: string;
   conversations: ConversationRecord[];
@@ -162,7 +162,7 @@ function tripFrom(snapshot: Snapshot, conversationId?: string): TripRecord {
 export function createCatalog(current?: Snapshot, saved: Snapshot[] = []): WorkspaceCatalog {
   const snapshots = [current, ...saved].filter((item): item is Snapshot => item !== undefined);
   const catalog: WorkspaceCatalog = {
-    version: 3,
+    version: 4,
     conversations: [],
     trips: [],
     layout: clone(DEFAULT_LAYOUT),
@@ -207,11 +207,11 @@ export function parseCatalog(
       value.map((item) => parseSnapshot(item)),
     );
   if (!isObject(value)) throw new Error("Workspace catalog is invalid.");
-  if (value.version !== 3) {
-    if (value.version === 1 || value.version === 2)
-      return createCatalog(undefined, [parseSnapshot(value)]);
-    throw new Error("Workspace catalog version is invalid.");
-  }
+  // Version 4 is the AUD base-currency catalog. Earlier versions held plans whose stay
+  // candidates carry the old `pricePerNightUsd` field and whose amounts meant USD, so
+  // they cannot be parsed and there is no honest rate to migrate them with. They are
+  // rejected here rather than half-read further down.
+  if (value.version !== 4) throw new Error("Workspace catalog version is invalid.");
   if (!Array.isArray(value.conversations) || !Array.isArray(value.trips))
     throw new Error("Workspace catalog records are invalid.");
   const trips = value.trips.map(parseTrip);
@@ -232,7 +232,7 @@ export function parseCatalog(
   )
     throw new Error("Workspace catalog active conversation is invalid.");
   return {
-    version: 3,
+    version: 4,
     ...(value.activeTripId === undefined ? {} : { activeTripId: value.activeTripId as string }),
     ...(value.activeConversationId === undefined
       ? {}

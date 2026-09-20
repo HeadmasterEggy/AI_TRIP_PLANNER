@@ -25,7 +25,7 @@ function context(durationMin = 30): AgentContext {
                 { name: "Garden", category: "neighborhood" },
               ]),
         ]),
-        route: vi.fn(async () => [{ mode: "transit" as const, durationMin, priceUsd: 5 }]),
+        route: vi.fn(async () => [{ mode: "transit" as const, durationMin, price: 5 }]),
       },
       booking: { searchStays: vi.fn(async () => []), searchFlights: vi.fn(async () => []) },
     },

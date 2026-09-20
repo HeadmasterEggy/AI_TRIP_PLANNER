@@ -63,7 +63,7 @@ async function buildStayProposal(
     selections.reduce((sum, stay) => sum + Math.round(stay.initialCost * 100), 0) / 100;
   const savings = Math.round((initialTotal - total) * 100) / 100;
   const assumptions = [
-    "Booking mock convention: USD per room per night; at most 2 guests per room; availability is simulated.",
+    "Booking mock convention: AUD per room per night; at most 2 guests per room; availability is simulated.",
     `${prefs.roomAllocation} allocation: ${rooms} room(s) for ${brief.groupSize} guest(s); check-out day is not charged.`,
     "Only selected stays contribute to estCost. Taxes/fees are assumed included in mock rates.",
     "Initial selection prefers rating >=8/10 and free cancellation; confirmed preferences remain mandatory during revisions.",
@@ -74,7 +74,7 @@ async function buildStayProposal(
         options
           .map(
             (option) =>
-              `${option.name} (USD ${stayCost(option, segment.nights, rooms).toFixed(2)} total, ${option.rating}/10, ${option.freeCancellation ? "free cancellation" : "no free cancellation"})`,
+              `${option.name} (AUD ${stayCost(option, segment.nights, rooms).toFixed(2)} total, ${option.rating}/10, ${option.freeCancellation ? "free cancellation" : "no free cancellation"})`,
           )
           .join("; ") +
         ". Only the selected option is charged.",
@@ -91,7 +91,7 @@ async function buildStayProposal(
     );
     assumptions.push(
       budgetRevision
-        ? `Selected the cheapest eligible stays; saved USD ${savings.toFixed(2)} against the initial selection for these inputs. Dates, guest count and confirmed preferences are unchanged.`
+        ? `Selected the cheapest eligible stays; saved AUD ${savings.toFixed(2)} against the initial selection for these inputs. Dates, guest count and confirmed preferences are unchanged.`
         : "No supported price revision was requested; the initial selection is retained. Time/geography changes require an updated brief.",
     );
     if (budgetRevision) {
@@ -101,7 +101,7 @@ async function buildStayProposal(
       if (match && Number(match[1]) >= 0 && Number(match[1]) <= 100) {
         const target = Math.round(initialTotal * (1 - Number(match[1]) / 100) * 100) / 100;
         assumptions.push(
-          `Requested target: USD ${target.toFixed(2)} or less. ${total <= target ? "Target met." : "Target cannot be met by eligible candidates; further budget decisions belong to the orchestrator."}`,
+          `Requested target: AUD ${target.toFixed(2)} or less. ${total <= target ? "Target met." : "Target cannot be met by eligible candidates; further budget decisions belong to the orchestrator."}`,
         );
       }
       if (savings === 0)
@@ -126,12 +126,12 @@ async function buildStayProposal(
         id: `stay-${segment.day}-${index}`,
       })),
     })),
-    summary: `${rooms} room(s), ${segments.reduce((sum, segment) => sum + segment.nights, 0)} nights in ${segments.map((segment) => segment.city).join(" & ")} · USD ${total.toFixed(2)}${budgetRevision ? " (lowest eligible cost)" : ""}`,
+    summary: `${rooms} room(s), ${segments.reduce((sum, segment) => sum + segment.nights, 0)} nights in ${segments.map((segment) => segment.city).join(" & ")} · AUD ${total.toFixed(2)}${budgetRevision ? " (lowest eligible cost)" : ""}`,
     items: selections.map(({ segment, chosen, cost }) => ({
       kind: "hotel",
       day: segment.day,
       estCost: cost,
-      detail: `${chosen.name} — ${chosen.area}; ${segment.checkIn} to ${segment.checkOut}; ${rooms} room(s) × ${segment.nights} night(s) × USD ${chosen.pricePerNightUsd.toFixed(2)} per room/night = USD ${cost.toFixed(2)}; rating ${chosen.rating}/10; ${chosen.freeCancellation ? "free cancellation" : "no free cancellation"}.`,
+      detail: `${chosen.name} — ${chosen.area}; ${segment.checkIn} to ${segment.checkOut}; ${rooms} room(s) × ${segment.nights} night(s) × AUD ${chosen.pricePerNight.toFixed(2)} per room/night = AUD ${cost.toFixed(2)}; rating ${chosen.rating}/10; ${chosen.freeCancellation ? "free cancellation" : "no free cancellation"}.`,
     })),
     assumptions,
     conflictsWith: [],

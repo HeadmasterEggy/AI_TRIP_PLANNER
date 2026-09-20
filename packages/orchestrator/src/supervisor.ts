@@ -46,7 +46,7 @@ export function createSupervisorTools(
     tool(
       async ({ objective }) => {
         options.onProgress?.({
-          summary: `${options.brief.destination} · ${options.brief.dates.join(" to ")} · ${options.brief.groupSize} people · USD ${options.brief.budgetTotal}`,
+          summary: `${options.brief.destination} · ${options.brief.dates.join(" to ")} · ${options.brief.groupSize} people · AUD ${options.brief.budgetTotal}`,
           type: "agent_started",
           agent: specialist.name,
           round: options.context.round,
@@ -98,7 +98,7 @@ export function createRevisionTools(
       tool(
         async ({ objective }) => {
           options.onProgress?.({
-            summary: `${options.brief.destination} · ${options.brief.dates.join(" to ")} · ${options.brief.groupSize} people · USD ${options.brief.budgetTotal}`,
+            summary: `${options.brief.destination} · ${options.brief.dates.join(" to ")} · ${options.brief.groupSize} people · AUD ${options.brief.budgetTotal}`,
             type: "agent_started",
             constraints: request.constraints,
             agent: specialist.name,

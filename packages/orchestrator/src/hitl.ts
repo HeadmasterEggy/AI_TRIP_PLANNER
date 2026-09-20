@@ -10,7 +10,7 @@ export function checkpointsFor(plan: TripPlan): HitlCheckpoint[] {
       id: "confirm-brief",
       type: "confirm_brief",
       title: "Confirm your trip basics",
-      detail: `${plan.brief.destination} · ${plan.brief.dates.join(" to ")} · ${plan.brief.groupSize} people · USD ${plan.brief.budgetTotal}`,
+      detail: `${plan.brief.destination} · ${plan.brief.dates.join(" to ")} · ${plan.brief.groupSize} people · AUD ${plan.brief.budgetTotal}`,
       status: "pending",
     },
   ];
@@ -34,7 +34,7 @@ export function checkpointsFor(plan: TripPlan): HitlCheckpoint[] {
       detail: [
         ...new Set(plan.conflicts?.map((c) => c.reason) ?? []),
         ...(plan.overrunPct > 0
-          ? [`USD ${(plan.estTotal - plan.budgetTotal).toFixed(2)} over budget.`]
+          ? [`AUD ${(plan.estTotal - plan.budgetTotal).toFixed(2)} over budget.`]
           : []),
       ].join(" "),
       status: "pending",
@@ -85,8 +85,8 @@ function recalculate(plan: TripPlan) {
           kind: "hotel",
           day: stay.day,
           location: choice.name,
-          estCost: Math.round(choice.pricePerNightUsd * stay.nights * stay.rooms * 100) / 100,
-          detail: `${choice.area} · ${stay.checkIn} to ${stay.checkOut} · ${stay.rooms} room(s) × ${stay.nights} nights × USD ${choice.pricePerNightUsd.toFixed(2)} · ${choice.rating}/10 · ${choice.freeCancellation ? "Free cancellation" : "No free cancellation"}`,
+          estCost: Math.round(choice.pricePerNight * stay.nights * stay.rooms * 100) / 100,
+          detail: `${choice.area} · ${stay.checkIn} to ${stay.checkOut} · ${stay.rooms} room(s) × ${stay.nights} nights × AUD ${choice.pricePerNight.toFixed(2)} · ${choice.rating}/10 · ${choice.freeCancellation ? "Free cancellation" : "No free cancellation"}`,
         };
       });
       proposal.summary = proposal.stays

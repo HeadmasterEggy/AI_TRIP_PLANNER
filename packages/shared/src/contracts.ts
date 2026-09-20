@@ -69,7 +69,7 @@ export type TripBrief = z.infer<typeof TripBrief>;
 
 // ---------------------------------------------------------------------------
 // AgentProposal — what every specialist agent returns for one round.
-// The `estCost` rule (currency = USD, whole trip not per-person) is frozen by A.
+// The `estCost` rule (currency = AUD, whole trip not per-person) is frozen by A.
 // ---------------------------------------------------------------------------
 const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
 
@@ -122,7 +122,7 @@ export const StayCandidate = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
   area: z.string(),
-  pricePerNightUsd: z.number().positive(),
+  pricePerNight: z.number().positive(),
   rating: z.number().min(0).max(10),
   freeCancellation: z.boolean(),
 });

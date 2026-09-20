@@ -33,7 +33,7 @@ describe("B route provider boundaries", () => {
     expect(await route(q)).toEqual([
       expect.objectContaining({
         durationMin: 2,
-        priceUsd: 0,
+        price: 0,
         note: expect.stringContaining("fare unavailable"),
       }),
     ]);

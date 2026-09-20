@@ -70,7 +70,7 @@ export function CheckpointCards({
                         {choice.freeCancellation ? "Free cancellation" : "No free cancellation"}
                       </span>
                       <span>
-                        {money(choice.pricePerNightUsd * stay.rooms * stay.nights)} total ·{" "}
+                        {money(choice.pricePerNight * stay.rooms * stay.nights)} total ·{" "}
                         {stay.rooms} room(s) × {stay.nights} nights
                       </span>
                       <small>

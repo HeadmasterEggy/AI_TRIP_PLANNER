@@ -135,7 +135,7 @@ export function createOrchestratorGraph(options: OrchestratorOptions = {}) {
       type: "agent_started",
       agent: specialist.name,
       round: request.context.round,
-      summary: `${request.brief.destination} · ${request.brief.dates.join(" to ")} · ${request.brief.groupSize} people · USD ${request.brief.budgetTotal}`,
+      summary: `${request.brief.destination} · ${request.brief.dates.join(" to ")} · ${request.brief.groupSize} people · AUD ${request.brief.budgetTotal}`,
       constraints: request.revision?.constraints,
     });
     try {

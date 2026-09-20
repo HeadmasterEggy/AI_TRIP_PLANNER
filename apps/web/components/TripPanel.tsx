@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import type { TripPlan } from "@trip/shared";
 import { TripSection } from "./TripSection";
 import { CheckpointCards, type Decision } from "./CheckpointCards";
-import { money } from "@/lib/workspace";
+import { budgetHint, money } from "@/lib/workspace";
 
 export type TripTab = "overview" | "timeline";
 
@@ -69,7 +69,7 @@ export function TripPanel({
         >
           {delta === undefined
             ? "Budget not set"
-            : `${money(Math.abs(delta))} ${delta < 0 ? "over" : "under"} the ${money(budget!)} budget`}
+            : `${money(Math.abs(delta))} ${delta < 0 ? "over" : "under"} the ${money(budget!)}${budgetHint(plan.brief)} budget`}
         </p>
       </section>
       <div className="trip-tabs" role="tablist" aria-label="Trip views">

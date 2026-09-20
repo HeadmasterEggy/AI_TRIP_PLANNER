@@ -91,8 +91,8 @@ export function eligibleOptions(options: StayOption[], prefs: StayPreferences): 
         option.name.trim().length > 0 &&
         typeof option.area === "string" &&
         option.area.trim().length > 0 &&
-        Number.isFinite(option.pricePerNightUsd) &&
-        option.pricePerNightUsd > 0 &&
+        Number.isFinite(option.pricePerNight) &&
+        option.pricePerNight > 0 &&
         Number.isFinite(option.rating) &&
         option.rating >= prefs.minRating &&
         option.rating <= 10 &&
@@ -101,9 +101,7 @@ export function eligibleOptions(options: StayOption[], prefs: StayPreferences): 
     )
     .sort(
       (a, b) =>
-        a.pricePerNightUsd - b.pricePerNightUsd ||
-        b.rating - a.rating ||
-        a.name.localeCompare(b.name),
+        a.pricePerNight - b.pricePerNight || b.rating - a.rating || a.name.localeCompare(b.name),
     );
 }
 
@@ -115,7 +113,7 @@ export function chooseInitial(options: StayOption[]): StayOption {
 
 /** Price rooms × nights using cents to avoid floating-point drift. */
 export function stayCost(option: StayOption, nights: number, rooms: number): number {
-  const nightlyCents = Math.round((option.pricePerNightUsd + Number.EPSILON) * 100);
+  const nightlyCents = Math.round((option.pricePerNight + Number.EPSILON) * 100);
   const cents = nightlyCents * nights * rooms;
   if (!Number.isSafeInteger(cents) || nightlyCents <= 0)
     throw new Error("Accommodation estimate exceeds supported precision.");

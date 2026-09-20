@@ -109,13 +109,13 @@ async function buildTransportProposal(
   ctx.signal?.throwIfAborted();
 
   const validFlights = flightOptions.filter(
-    (option) => Number.isFinite(option.priceUsd) && option.priceUsd >= 0 && option.carrier.trim(),
+    (option) => Number.isFinite(option.price) && option.price >= 0 && option.carrier.trim(),
   );
   if (origin.toLowerCase() !== destinations[0]!.toLowerCase() && !validFlights.length)
     conflicts.push("Required flight has no valid fare; transport estimate is incomplete.");
   const flight = validFlights.length
     ? budgetRevision
-      ? [...validFlights].sort((left, right) => left.priceUsd - right.priceUsd)[0]
+      ? [...validFlights].sort((left, right) => left.price - right.price)[0]
       : (validFlights.find((option) => /flex/i.test(option.carrier)) ?? validFlights[0])
     : undefined;
   const routeStart = scheduleRevision ? 6 * 60 : 9 * 60;
@@ -151,7 +151,7 @@ async function buildTransportProposal(
         endTime,
         location: `${query.from} → ${query.to}`,
         detail: `${leg.mode} from ${query.from} to ${query.to} on ${query.date}; ${durationMin} minutes${leg.note ? `; ${leg.note}` : ""}.`,
-        ...(unknownFare ? {} : { estCost: leg.priceUsd }),
+        ...(unknownFare ? {} : { estCost: leg.price }),
       };
     });
   });
@@ -163,7 +163,7 @@ async function buildTransportProposal(
             day: 1,
             location: `${origin} → ${destinations[0]}`,
             detail: `${flight.carrier}: ${origin} to ${destinations[0]}, returning ${brief.dates[1]}; whole-group fare${flight.note ? `; ${flight.note}` : ""}.`,
-            estCost: flight.priceUsd,
+            estCost: flight.price,
           },
         ]
       : []),
@@ -172,10 +172,10 @@ async function buildTransportProposal(
   const total = items.reduce((sum, item) => sum + (item.estCost ?? 0), 0);
   return {
     agent: "transport",
-    summary: `${items.length} transport option(s) for ${origin} ↔ ${destinations.join(" → ")} · known estimate USD ${total.toFixed(2)}${conflicts.length ? " (incomplete/unverified)" : ""}`,
+    summary: `${items.length} transport option(s) for ${origin} ↔ ${destinations.join(" → ")} · known estimate AUD ${total.toFixed(2)}${conflicts.length ? " (incomplete/unverified)" : ""}`,
     items,
     assumptions: [
-      "Route arrays are consecutive legs; calculator preserves adapter USD amounts as group totals, matching the current integration. Per-person providers must normalize fares before returning them.",
+      "Route arrays are consecutive legs; calculator preserves adapter AUD amounts as group totals, matching the current integration. Per-person providers must normalize fares before returning them.",
       "Inter-city route dates follow their scheduled day. Unsupported driving-only estimates cannot verify public transport.",
       `Origin defaults to Sydney unless long-term preference "transport.origin" is set; current origin: ${origin}.`,
       "Injected booking and maps results are treated as estimates, not reservations or live availability.",

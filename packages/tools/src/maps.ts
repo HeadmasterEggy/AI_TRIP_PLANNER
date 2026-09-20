@@ -196,7 +196,7 @@ async function departureForGoogle(q: RouteQuery): Promise<string> {
 
 export async function route(q: RouteQuery): Promise<RouteLeg[]> {
   if (mockEnabled()) {
-    return [{ mode: "train", durationMin: 140, priceUsd: 90, note: `mock ${q.from} -> ${q.to}` }];
+    return [{ mode: "train", durationMin: 140, price: 90, note: `mock ${q.from} -> ${q.to}` }];
   }
   if (provider() === "osm") {
     const [from, to] = await Promise.all([geocode(q.from), geocode(q.to)]);
@@ -213,7 +213,7 @@ export async function route(q: RouteQuery): Promise<RouteLeg[]> {
       {
         mode: "transit",
         durationMin: Math.max(1, Math.ceil(candidate.duration! / 60)),
-        priceUsd: 0,
+        price: 0,
         note: `OSRM driving-only estimate, not verified public transport; ${Math.round(candidate.distance ?? 0)}m; fare unavailable`,
       },
     ];
@@ -245,7 +245,7 @@ export async function route(q: RouteQuery): Promise<RouteLeg[]> {
     {
       mode: "transit",
       durationMin: Math.max(1, Math.ceil(seconds / 60)),
-      priceUsd: 0,
+      price: 0,
       note: `Google Maps route${route.distanceMeters ? `; ${Math.round(route.distanceMeters)}m` : ""}; fare unavailable`,
     },
   ];

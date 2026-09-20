@@ -33,8 +33,8 @@ export function routeProblem(legs: RouteLeg[]): string | undefined {
         !["train", "flight", "bus", "walk", "transit"].includes(leg.mode) ||
         !Number.isFinite(leg.durationMin) ||
         leg.durationMin <= 0 ||
-        !Number.isFinite(leg.priceUsd) ||
-        leg.priceUsd < 0,
+        !Number.isFinite(leg.price) ||
+        leg.price < 0,
     )
   )
     return "invalid route duration, fare or mode";

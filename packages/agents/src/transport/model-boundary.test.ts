@@ -44,7 +44,7 @@ const context: AgentContext = {
   tools: {
     maps: { route: async () => [], places: async () => [] },
     booking: {
-      searchFlights: async () => [{ carrier: "Evidence Air", priceUsd: 500 }],
+      searchFlights: async () => [{ carrier: "Evidence Air", price: 500 }],
       searchStays: async () => [],
     },
   },
