@@ -21,12 +21,15 @@ The web production code is grouped by responsibility and all tests are separated
   including their tests.
 - Upstream PR #31 makes specialist degradation visible; upstream PR #32 adds durable storage and its
   clean-workspace dependency fix; upstream PR #33 adds the weather provider and 14-day forecast/climate
-  boundary. These PRs are intentionally open and stacked; none should be merged automatically.
+  boundary; upstream PR #34 adds provider provenance; the current branch is implementing the AI progress
+  UI for the next stacked PR. These PRs are intentionally open and stacked; none should be merged
+  automatically.
 
 ## In progress / not yet committed
 
-- The current working tree is on the stacked provider-provenance branch. It contains structured provider
-  metadata for SerpApi, Google Places estimates, and mock booking candidates plus source-label tests.
+- The current working tree is on the stacked AI progress UI branch. It contains the high-level planning
+  stage strip, answer placeholder, stop action, and browser tests; earlier provider metadata is in the
+  parent branch. Preserve unrelated `.gitignore` and `output/` changes.
   Preserve unrelated `.gitignore` and `output/` changes.
 
 ## Next recommended actions

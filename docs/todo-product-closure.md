@@ -150,6 +150,11 @@ Idle → Submitting → Thinking → Calling tools → Drafting answer → Compl
 优先移植：思考步骤列表、流式回答占位、状态文字切换、完成 badge、失败状态卡、tool chips 和
 轻量 panel reveal。避免持续旋转、全屏 loading 和会干扰阅读的装饰动画。
 
+实现记录（`feature/ai-progress-ui`）：现有 NDJSON agent 事件已映射为不暴露内部推理的高层阶段
+`Submitting → Thinking → Calling tools → Drafting answer → Complete`；ChatPanel 增加当前 agent、
+结构化回答生成占位、失败/重试提示和 Stop 操作。保留现有 `<details>` 结构、ARIA live region、
+键盘焦点和 `prefers-reduced-motion`，并为阶段、占位回答和取消操作补浏览器回归测试。
+
 ## P1：五个 UI 站点的取舍与移植策略
 
 ### Beautiful UI：主参考
