@@ -1,7 +1,19 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { AgentContext, AgentProposal, TripBrief } from "@trip/shared";
+import type { AgentContext, TripBrief } from "@trip/shared";
 
-const behavior = vi.hoisted(() => ({ skipTool: false, fail: false }));
+type Evidence = {
+  planningDays: number;
+  flights: { flightId: string; carrier: string; totalCost: number }[];
+  hops: { hopId: string; from: string; to: string }[];
+};
+type Tool = () => Promise<Evidence>;
+
+const behavior = vi.hoisted(() => ({
+  respond: (_evidence: Evidence): unknown => ({ schedule: [] }),
+  skipTool: false,
+  fail: false,
+}));
+
 vi.mock("../models", () => ({
   createRoutedChatModel: () => ({}),
   readStructuredResponse: (
@@ -11,25 +23,19 @@ vi.mock("../models", () => ({
   ) => schema.parse(result.structuredResponse),
 }));
 vi.mock("langchain", () => ({
-  tool: (calculate: () => Promise<AgentProposal>) => calculate,
-  createAgent: ({ tools }: { tools: Array<() => Promise<AgentProposal>> }) => ({
+  tool: (search: Tool) => search,
+  createAgent: ({ tools }: { tools: Tool[] }) => ({
     invoke: async () => {
       if (behavior.fail) throw new Error("provider failure");
-      const evidence = behavior.skipTool
-        ? { agent: "transport", summary: "invented", items: [], assumptions: [], conflictsWith: [] }
-        : await tools[0]!();
-      return {
-        structuredResponse: {
-          ...evidence,
-          summary: "rewritten",
-          items: [{ kind: "transport", detail: "Invented free flight", estCost: 0 }],
-          conflictsWith: [],
-        },
-      };
+      if (behavior.skipTool) return { structuredResponse: { schedule: [] } };
+      const evidence = await tools[0]!();
+      return { structuredResponse: behavior.respond(evidence) };
     },
   }),
 }));
+
 import { transportAgent } from "./index";
+
 const brief: TripBrief = {
   tripId: "boundary",
   userId: "test",
@@ -42,9 +48,15 @@ const context: AgentContext = {
   tripId: brief.tripId,
   round: 1,
   tools: {
-    maps: { route: async () => [], places: async () => [] },
+    maps: {
+      route: async () => [{ mode: "train", durationMin: 140, price: 120, note: "Shinkansen" }],
+      places: async () => [],
+    },
     booking: {
-      searchFlights: async () => [{ carrier: "Evidence Air", price: 500 }],
+      searchFlights: async () => [
+        { carrier: "Evidence Air", price: 500 },
+        { carrier: "Flex Air", price: 900 },
+      ],
       searchStays: async () => [],
     },
   },
@@ -56,26 +68,91 @@ const context: AgentContext = {
     promote: async () => {},
   },
 };
+
+/** A well-formed selection: pick a flight by carrier and put every hop on a given day/time. */
+const choose = (carrier: string, day: number, startTime: string) => (evidence: Evidence) => ({
+  flightId: evidence.flights.find((flight) => flight.carrier === carrier)!.flightId,
+  schedule: evidence.hops.map((hop) => ({ hopId: hop.hopId, day, startTime })),
+  guidance: [`Leaving at ${startTime} keeps the afternoon free.`],
+});
+
 beforeEach(() => {
   behavior.skipTool = false;
   behavior.fail = false;
+  behavior.respond = choose("Flex Air", 2, "09:00");
 });
-describe("transport model trust boundary", () => {
-  it("does not accept schema-valid model edits to prices, routes or conflicts", async () => {
+
+describe("the model's transport choices are load-bearing", () => {
+  it("takes the flight the model chose, not the one the heuristic prefers", async () => {
+    // The heuristic picks the carrier whose name matches /flex/; the model picks the cheaper one.
+    behavior.respond = choose("Evidence Air", 2, "09:00");
     const result = await transportAgent.invoke({ brief, context });
-    expect(result.items[0]!.estCost).toBe(500);
-    expect(result.items[0]!.detail).toContain("Evidence Air");
-    expect(result.conflictsWith.join(" ")).toContain("no route returned");
+    const flight = result.items.find((item) => item.detail.includes("Evidence Air"));
+    expect(flight?.estCost).toBe(500);
+    expect(result.items.some((item) => item.detail.includes("Flex Air"))).toBe(false);
+  });
+
+  it("schedules hops on the day and time the model chose", async () => {
+    behavior.respond = choose("Flex Air", 3, "06:30");
+    const result = await transportAgent.invoke({ brief, context });
+    const hop = result.items.find((item) => item.kind === "transport" && item.startTime);
+    expect(hop?.day).toBe(3);
+    expect(hop?.startTime).toBe("06:30");
+    expect(hop?.endTime).toBe("08:50");
+    // The date in the detail has to follow the chosen day, not the day the hop was
+    // searched on; the trip starts 2026-10-01, so day 3 is 2026-10-03.
+    expect(hop?.detail).toContain("2026-10-03");
+  });
+
+  it("carries the model's guidance through to the traveller", async () => {
+    behavior.respond = choose("Flex Air", 2, "07:15");
+    const result = await transportAgent.invoke({ brief, context });
+    expect(result.assumptions.join(" ")).toContain("keeps the afternoon free");
+  });
+
+  it("cannot be made to state a fare of its own", async () => {
+    // The selection schema has no money field, so an invented fare is dropped by parsing
+    // rather than reaching estCost. That is the point of choosing by id.
+    behavior.respond = (evidence) => ({
+      ...choose("Evidence Air", 2, "09:00")(evidence),
+      estCost: 0,
+      items: [{ kind: "transport", detail: "Invented free flight", estCost: 0 }],
+      summary: "rewritten",
+    });
+    const result = await transportAgent.invoke({ brief, context });
+    expect(result.items.find((item) => item.detail.includes("Evidence Air"))?.estCost).toBe(500);
+    expect(JSON.stringify(result)).not.toContain("Invented free flight");
     expect(result.summary).not.toBe("rewritten");
   });
+
+  it.each([
+    [
+      "an unknown flight id",
+      (e: Evidence) => ({ ...choose("Flex Air", 2, "09:00")(e), flightId: "flight-99" }),
+    ],
+    ["a day outside the trip", (e: Evidence) => choose("Flex Air", 99, "09:00")(e)],
+    ["an unreadable time", (e: Evidence) => choose("Flex Air", 2, "half past nine")(e)],
+    [
+      "an unscheduled hop",
+      (e: Evidence) => ({ ...choose("Flex Air", 2, "09:00")(e), schedule: [] }),
+    ],
+  ])("falls back whole on %s", async (_label, respond) => {
+    behavior.respond = respond;
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const result = await transportAgent.invoke({ brief, context });
+    // The heuristic's flight and its 09:00 default, not a partly-applied selection.
+    expect(result.items.find((item) => item.detail.includes("Flex Air"))?.estCost).toBe(900);
+    expect(result.assumptions.join(" ")).not.toContain("keeps the afternoon free");
+    warning.mockRestore();
+  });
+
   it.each(["skipTool", "fail"] as const)(
     "uses the deterministic calculator when model behavior is %s",
     async (key) => {
       behavior[key] = true;
       const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
       const result = await transportAgent.invoke({ brief, context });
-      expect(result.items[0]!.estCost).toBe(500);
-      expect(result.conflictsWith.length).toBeGreaterThan(0);
+      expect(result.items.find((item) => item.detail.includes("Flex Air"))?.estCost).toBe(900);
       warning.mockRestore();
     },
   );

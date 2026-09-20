@@ -34,12 +34,40 @@ function clock(totalMinutes: number): string {
   return `${String(Math.floor(totalMinutes / 60)).padStart(2, "0")}:${String(totalMinutes % 60).padStart(2, "0")}`;
 }
 
-/** Search fares/routes and build a deterministic proposal for the trip. */
-async function buildTransportProposal(
+interface RouteQuery {
+  localTime: string;
+  from: string;
+  to: string;
+  date: string;
+  day: number;
+}
+
+interface TransportEvidence {
+  brief: TripBrief;
+  origin: string;
+  destinations: string[];
+  days: number;
+  budgetRevision: boolean;
+  scheduleRevision: boolean;
+  flights: { carrier: string; price: number; note?: string }[];
+  routed: { query: RouteQuery; legs: RouteLeg[] }[];
+  conflicts: string[];
+}
+
+/**
+ * Run the provider searches once and return what they gave back, undecided.
+ *
+ * Note the day and departure time are inputs to the route query, so this searches at the
+ * deterministic default. A caller that reassigns a hop to another day or hour keeps these
+ * durations; for the mock and OSRM adapters they do not vary by departure time, but a real transit
+ * provider's would. That approximation is the price of letting the schedule be chosen after the
+ * search rather than before it.
+ */
+async function gatherTransportEvidence(
   briefInput: TripBrief,
   ctx: AgentContext,
   revision?: RevisionRequest,
-): Promise<AgentProposal> {
+): Promise<TransportEvidence> {
   ctx.signal?.throwIfAborted();
   const brief = TripBriefSchema.parse(briefInput);
   const destinations = cities(brief.destination);
@@ -53,7 +81,7 @@ async function buildTransportProposal(
     /budget|cost|cheaper|overrun/i.test([revision.reason, ...revision.constraints].join(" "));
   const scheduleRevision = revision !== undefined && /time|overlap|schedule/i.test(revision.reason);
 
-  const routeQueries = destinations.slice(1).map((destination, index) => ({
+  const routeQueries: RouteQuery[] = destinations.slice(1).map((destination, index) => ({
     localTime: scheduleRevision ? "06:00" : "09:00",
     from: destinations[index]!,
     to: destination,
@@ -108,62 +136,101 @@ async function buildTransportProposal(
   ]);
   ctx.signal?.throwIfAborted();
 
-  const validFlights = flightOptions.filter(
+  const flights = flightOptions.filter(
     (option) => Number.isFinite(option.price) && option.price >= 0 && option.carrier.trim(),
   );
-  if (origin.toLowerCase() !== destinations[0]!.toLowerCase() && !validFlights.length)
+  if (origin.toLowerCase() !== destinations[0]!.toLowerCase() && !flights.length)
     conflicts.push("Required flight has no valid fare; transport estimate is incomplete.");
-  const flight = validFlights.length
-    ? budgetRevision
-      ? [...validFlights].sort((left, right) => left.price - right.price)[0]
-      : (validFlights.find((option) => /flex/i.test(option.carrier)) ?? validFlights[0])
-    : undefined;
-  const routeStart = scheduleRevision ? 6 * 60 : 9 * 60;
-  // Convert each returned map leg into sequential, same-day transport items.
-  const routeItems: ProposalItem[] = routed.flatMap(({ query, legs }) => {
-    const problem = routeProblem(legs);
-    if (problem) {
+
+  return {
+    brief,
+    origin,
+    destinations,
+    days,
+    budgetRevision,
+    scheduleRevision,
+    flights,
+    routed,
+    conflicts,
+  };
+}
+
+/**
+ * Lay one hop's consecutive legs out from `startMinutes` on `day`, costing each from the leg's own
+ * fare. Returns nothing and records a conflict when the hop cannot be scheduled -- an unroutable or
+ * overlong hop is a gap in the plan, not a free one.
+ */
+function layOutHop(
+  query: RouteQuery,
+  legs: RouteLeg[],
+  day: number,
+  startMinutes: number,
+  tripStart: string,
+  conflicts: string[],
+): ProposalItem[] {
+  // The date has to follow the day that was chosen, not the day this hop happened to be
+  // searched on. Reporting the search date next to a reassigned day is simply wrong.
+  const date = dateForDay(tripStart, day);
+  const problem = routeProblem(legs);
+  if (problem) {
+    conflicts.push(`geography conflict on day ${day}: ${query.from} → ${query.to}: ${problem}`);
+    return [];
+  }
+  let cursor = startMinutes;
+  if (cursor + legs.reduce((sum, leg) => sum + Math.ceil(leg.durationMin), 0) >= 1440) {
+    conflicts.push(`time conflict on day ${day}: route cannot fit inside one planning day`);
+    return [];
+  }
+  return legs.map((leg) => {
+    const startTime = clock(cursor);
+    const durationMin = Math.ceil(leg.durationMin);
+    cursor += durationMin;
+    const endTime = clock(cursor);
+    const unknownFare = fareUnavailable(leg);
+    if (unknownFare) {
       conflicts.push(
-        `geography conflict on day ${query.day}: ${query.from} → ${query.to}: ${problem}`,
+        `Transport fare unavailable on day ${day}: budget total is incomplete, not a free trip.`,
       );
-      return [];
     }
-    let cursor = routeStart;
-    if (cursor + legs.reduce((sum, leg) => sum + Math.ceil(leg.durationMin), 0) >= 1440) {
-      conflicts.push(`time conflict on day ${query.day}: route cannot fit inside one planning day`);
-      return [];
-    }
-    return legs.map((leg) => {
-      const startTime = clock(cursor);
-      const durationMin = Math.ceil(leg.durationMin);
-      cursor += durationMin;
-      const endTime = clock(cursor);
-      const unknownFare = fareUnavailable(leg);
-      if (unknownFare) {
-        conflicts.push(
-          `Transport fare unavailable on day ${query.day}: budget total is incomplete, not a free trip.`,
-        );
-      }
-      return {
-        kind: "transport",
-        day: query.day,
-        startTime,
-        endTime,
-        location: `${query.from} → ${query.to}`,
-        detail: `${leg.mode} from ${query.from} to ${query.to} on ${query.date}; ${durationMin} minutes${leg.note ? `; ${leg.note}` : ""}.`,
-        ...(unknownFare ? {} : { estCost: leg.price }),
-      };
-    });
+    return {
+      kind: "transport",
+      day,
+      startTime,
+      endTime,
+      location: `${query.from} → ${query.to}`,
+      detail: `${leg.mode} from ${query.from} to ${query.to} on ${date}; ${durationMin} minutes${leg.note ? `; ${leg.note}` : ""}.`,
+      ...(unknownFare ? {} : { estCost: leg.price }),
+    };
+  });
+}
+
+interface TransportPlan {
+  flight?: { carrier: string; price: number; note?: string };
+  /** One entry per routed hop, in the order they were searched. */
+  schedule: { day: number; startMinutes: number }[];
+  extraAssumptions: string[];
+}
+
+/** Turn a chosen flight and schedule into the costed proposal. */
+function assembleTransportProposal(
+  evidence: TransportEvidence,
+  plan: TransportPlan,
+): AgentProposal {
+  const { origin, destinations, brief, budgetRevision, scheduleRevision } = evidence;
+  const conflicts = [...evidence.conflicts];
+  const routeItems = evidence.routed.flatMap(({ query, legs }, index) => {
+    const slot = plan.schedule[index] ?? { day: query.day, startMinutes: 9 * 60 };
+    return layOutHop(query, legs, slot.day, slot.startMinutes, brief.dates[0], conflicts);
   });
   const items = [
-    ...(flight
+    ...(plan.flight
       ? [
           {
             kind: "transport",
             day: 1,
             location: `${origin} → ${destinations[0]}`,
-            detail: `${flight.carrier}: ${origin} to ${destinations[0]}, returning ${brief.dates[1]}; whole-group fare${flight.note ? `; ${flight.note}` : ""}.`,
-            estCost: flight.price,
+            detail: `${plan.flight.carrier}: ${origin} to ${destinations[0]}, returning ${brief.dates[1]}; whole-group fare${plan.flight.note ? `; ${plan.flight.note}` : ""}.`,
+            estCost: plan.flight.price,
           },
         ]
       : []),
@@ -181,41 +248,113 @@ async function buildTransportProposal(
       "Injected booking and maps results are treated as estimates, not reservations or live availability.",
       ...(budgetRevision ? ["Budget revision selected the lowest returned flight fare."] : []),
       ...(scheduleRevision ? ["Schedule revision moved routed legs to an early departure."] : []),
+      ...plan.extraAssumptions,
     ],
     conflictsWith: [...new Set(conflicts)].sort((a, b) => a.localeCompare(b)),
   };
 }
+
+/** The deterministic choice: kept as the no-key path and as the fallback from the model path. */
+function deterministicPlan(evidence: TransportEvidence): TransportPlan {
+  const { flights, budgetRevision, scheduleRevision, routed } = evidence;
+  const flight = flights.length
+    ? budgetRevision
+      ? [...flights].sort((left, right) => left.price - right.price)[0]
+      : (flights.find((option) => /flex/i.test(option.carrier)) ?? flights[0])
+    : undefined;
+  const startMinutes = scheduleRevision ? 6 * 60 : 9 * 60;
+  return {
+    flight,
+    schedule: routed.map(({ query }) => ({ day: query.day, startMinutes })),
+    extraAssumptions: [],
+  };
+}
+
+/** Search fares/routes and build a deterministic proposal for the trip. */
+async function buildTransportProposal(
+  briefInput: TripBrief,
+  ctx: AgentContext,
+  revision?: RevisionRequest,
+): Promise<AgentProposal> {
+  const evidence = await gatherTransportEvidence(briefInput, ctx, revision);
+  return assembleTransportProposal(evidence, deterministicPlan(evidence));
+}
+
+/**
+ * What the specialist decides: which flight, and when each hop runs. No money field anywhere --
+ * fares come from the candidate the model named, so an invented price has nowhere to land.
+ */
+const TransportSelection = z.object({
+  flightId: z
+    .string()
+    .nullish()
+    .describe("One of the offered flight ids, or null when none were offered"),
+  schedule: z
+    .array(
+      z.object({
+        hopId: z.string().describe("One of the offered hop ids"),
+        day: z.number().int().describe("Planning day, starting at 1"),
+        startTime: z.string().describe("Local departure time as HH:mm"),
+      }),
+    )
+    .describe("One entry per offered hop"),
+  guidance: z
+    .array(z.string())
+    .max(4)
+    .optional()
+    .describe("Short traveller-facing notes about the schedule"),
+});
+
+const HHMM = /^([01]\d|2[0-3]):([0-5]\d)$/;
+const minutesOf = (value: string): number | undefined => {
+  const match = HHMM.exec(value.trim());
+  return match ? Number(match[1]) * 60 + Number(match[2]) : undefined;
+};
 
 async function planTransport(
   brief: TripBrief,
   ctx: AgentContext,
   revision?: RevisionRequest,
 ): Promise<AgentProposal> {
-  // Prefer the model only as a narrator; all evidence, selections and costs are
-  // produced by buildTransportProposal and exposed through one calculator tool.
   const model = createRoutedChatModel("transport");
   if (!model) return buildTransportProposal(brief, ctx, revision);
 
-  let evidence: AgentProposal | undefined;
-  const calculate = tool(
+  let evidence: TransportEvidence | undefined;
+  const search = tool(
     async () => {
-      evidence = AgentProposalSchema.parse(await buildTransportProposal(brief, ctx, revision));
-      return evidence;
+      evidence = await gatherTransportEvidence(brief, ctx, revision);
+      return {
+        planningDays: evidence.days,
+        origin: evidence.origin,
+        flights: evidence.flights.map((option, index) => ({
+          flightId: `flight-${index}`,
+          carrier: option.carrier,
+          totalCost: option.price,
+          note: option.note,
+        })),
+        hops: evidence.routed.map(({ query, legs }, index) => ({
+          hopId: `hop-${index}`,
+          from: query.from,
+          to: query.to,
+          totalMinutes: legs.reduce((sum, leg) => sum + Math.ceil(leg.durationMin), 0),
+          modes: [...new Set(legs.map((leg) => leg.mode))],
+        })),
+      };
     },
     {
-      name: "calculate_transport_options",
+      name: "search_transport_evidence",
       description:
-        "Search the injected booking/maps ports and calculate a validated transport proposal for this trip and revision.",
+        "Search the injected booking and maps ports and return the flight candidates and inter-city hops for this trip, with their ids and real durations and fares. It does not choose.",
       schema: z.object({}),
     },
   );
   const specialist = createAgent({
     name: "transport_specialist",
     model,
-    tools: [calculate],
+    tools: [search],
     systemPrompt:
-      "You are the transport specialist. Always call calculate_transport_options. Return its proposal unchanged: do not invent carriers, routes, prices, schedules or availability. The calculator owns all selection, costing and revision rules. Return the requested structured AgentProposal.",
-    responseFormat: AgentProposalSchema,
+      "You are the transport specialist. Call search_transport_evidence, then decide two things: which flight candidate to take, and which planning day and local departure time each hop should run at. You own those choices -- weigh cost against the traveller's budget, and schedule hops so they leave enough of the day to be worth arriving for. A budget revision means prefer the cheapest flight; a schedule revision means move departures earlier. Refer to flights and hops only by the ids you were given. Never state a fare, a duration or a carrier of your own. Return the requested structured selection.",
+    responseFormat: TransportSelection,
   });
   try {
     const result = await specialist.invoke({
@@ -223,25 +362,58 @@ async function planTransport(
         {
           role: "user",
           content: JSON.stringify({
-            task: "Return the calculated transport proposal.",
+            task: "Choose the flight and schedule every hop.",
             tripId: brief.tripId,
-            revision: revision?.reason,
+            brief: {
+              destination: brief.destination,
+              dates: brief.dates,
+              groupSize: brief.groupSize,
+              budgetTotal: brief.budgetTotal,
+            },
+            revision: revision && { reason: revision.reason, constraints: revision.constraints },
           }),
         },
       ],
     });
-    const proposal = readStructuredResponse("transport", AgentProposalSchema, result);
-    if (proposal.agent !== "transport" || !evidence) {
-      throw new Error("Transport specialist returned the wrong proposal type or skipped its tool.");
-    }
-    // A valid schema does not prove that prices/routes still match the calculator.
-    // Keep all tool-owned fields authoritative, even if the model rewrites them.
-    return evidence;
+    const selection = readStructuredResponse("transport", TransportSelection, result);
+    if (!evidence) throw new Error("Transport specialist skipped its search tool.");
+    const gathered = evidence;
+
+    // Resolve the whole selection before using any of it: a half-understood answer should fall
+    // back to the deterministic plan rather than mix a model day with a heuristic flight.
+    const flightIndex = selection.flightId
+      ? Number(/^flight-(\d+)$/.exec(selection.flightId)?.[1] ?? NaN)
+      : -1;
+    if (selection.flightId && !gathered.flights[flightIndex])
+      throw new Error(`Transport specialist chose an unknown flight ${selection.flightId}.`);
+    if (!selection.flightId && gathered.flights.length)
+      throw new Error("Transport specialist declined to choose among offered flights.");
+
+    const schedule = gathered.routed.map(({ query }, index) => {
+      const entry = selection.schedule.find((slot) => slot.hopId === `hop-${index}`);
+      const startMinutes = entry ? minutesOf(entry.startTime) : undefined;
+      if (!entry || startMinutes === undefined)
+        throw new Error(`Transport specialist did not schedule hop-${index}.`);
+      if (!Number.isInteger(entry.day) || entry.day < 1 || entry.day > gathered.days)
+        throw new Error(`Transport specialist scheduled hop-${index} outside the trip.`);
+      void query;
+      return { day: entry.day, startMinutes };
+    });
+
+    return assembleTransportProposal(gathered, {
+      flight: flightIndex >= 0 ? gathered.flights[flightIndex] : undefined,
+      schedule,
+      extraAssumptions: (selection.guidance ?? [])
+        .map((note) => note.trim())
+        .filter((note) => note.length > 0),
+    });
   } catch (error) {
     ctx.signal?.throwIfAborted();
     const reason = error instanceof Error ? error.message : "unknown model error";
     console.warn(`[transport] Specialist failed; using a safe local plan: ${reason}`);
-    return evidence ?? buildTransportProposal(brief, ctx, revision);
+    return evidence
+      ? assembleTransportProposal(evidence, deterministicPlan(evidence))
+      : buildTransportProposal(brief, ctx, revision);
   }
 }
 

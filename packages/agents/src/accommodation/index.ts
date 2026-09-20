@@ -6,18 +6,34 @@ import {
   type AgentContext,
   type RevisionRequest,
   type Specialist,
+  type StayOption,
 } from "@trip/shared";
 import { createAgent, tool } from "langchain";
 import { z } from "zod/v4";
 import { createRoutedChatModel, readStructuredResponse } from "../models";
 import { chooseInitial, eligibleOptions, readPreferences, splitStay, stayCost } from "./planning";
 
-/** Build the grounded lodging proposal that remains correct without an LLM. */
-async function buildStayProposal(
+/** A stay's candidate id, as published on the proposal: `stay-{day}-{index}`. */
+const candidateId = (day: number, index: number) => `stay-${day}-${index}`;
+
+interface StayEvidence {
+  segments: ReturnType<typeof splitStay>;
+  rooms: number;
+  roomAllocation: string;
+  groupSize: number;
+  budgetRevision: boolean;
+  searched: { segment: ReturnType<typeof splitStay>[number]; options: StayOption[] }[];
+}
+
+/**
+ * Search every city once. Kept separate from assembly so the model's choice and the deterministic
+ * choice cost the same single round of booking queries.
+ */
+async function gatherStayEvidence(
   brief: TripBrief,
   ctx: AgentContext,
   revision?: RevisionRequest,
-): Promise<AgentProposal> {
+): Promise<StayEvidence> {
   ctx.signal?.throwIfAborted();
   const segments = splitStay(brief);
   const prefs = brief.accommodation ?? readPreferences(await ctx.mem.getLongTerm(brief.userId));
@@ -29,7 +45,7 @@ async function buildStayProposal(
     /budget|cost|cheaper|overrun/i.test([revision.reason, ...revision.constraints].join(" "));
   // Search and filter each city independently; a multi-city trip is charged
   // only for the selected stay in each segment.
-  const selections = await Promise.all(
+  const searched = await Promise.all(
     segments.map(async (segment) => {
       const options = eligibleOptions(
         await ctx.tools.booking.searchStays({
@@ -47,24 +63,50 @@ async function buildStayProposal(
           `No valid stays in ${segment.city} match the confirmed accommodation preferences.`,
         );
       }
-      const initial = chooseInitial(options);
-      const chosen = budgetRevision ? options[0]! : initial;
-      return {
-        segment,
-        options,
-        chosen,
-        initialCost: stayCost(initial, segment.nights, rooms),
-        cost: stayCost(chosen, segment.nights, rooms),
-      };
+      return { segment, options };
     }),
   );
+  return {
+    segments,
+    rooms,
+    roomAllocation: prefs.roomAllocation,
+    groupSize: brief.groupSize,
+    budgetRevision,
+    searched,
+  };
+}
+
+/**
+ * Turn searched candidates into a costed proposal.
+ *
+ * `pick` decides which candidate each segment gets. The deterministic rules are the default; the
+ * model supplies one instead when it has chosen. Either way the cost is computed here from the
+ * candidate's own rate — the chooser only ever names an option.
+ */
+function assembleStayProposal(
+  evidence: StayEvidence,
+  revision: RevisionRequest | undefined,
+  pick: (segmentDay: number, options: StayOption[]) => StayOption,
+): AgentProposal {
+  const { segments, rooms, roomAllocation, groupSize, budgetRevision, searched } = evidence;
+  const selections = searched.map(({ segment, options }) => {
+    const initial = chooseInitial(options);
+    const chosen = pick(segment.day, options);
+    return {
+      segment,
+      options,
+      chosen,
+      initialCost: stayCost(initial, segment.nights, rooms),
+      cost: stayCost(chosen, segment.nights, rooms),
+    };
+  });
   const total = selections.reduce((sum, stay) => sum + Math.round(stay.cost * 100), 0) / 100;
   const initialTotal =
     selections.reduce((sum, stay) => sum + Math.round(stay.initialCost * 100), 0) / 100;
   const savings = Math.round((initialTotal - total) * 100) / 100;
   const assumptions = [
     "Booking mock convention: AUD per room per night; at most 2 guests per room; availability is simulated.",
-    `${prefs.roomAllocation} allocation: ${rooms} room(s) for ${brief.groupSize} guest(s); check-out day is not charged.`,
+    `${roomAllocation} allocation: ${rooms} room(s) for ${groupSize} guest(s); check-out day is not charged.`,
     "Only selected stays contribute to estCost. Taxes/fees are assumed included in mock rates.",
     "Initial selection prefers rating >=8/10 and free cancellation; confirmed preferences remain mandatory during revisions.",
     "Trip budget covers every agent; no accommodation budget allocation is assumed. Orchestrator checks the combined cost.",
@@ -120,10 +162,10 @@ async function buildStayProposal(
       id: `stay-${segment.day}`,
       ...segment,
       rooms,
-      selectedId: `stay-${segment.day}-${options.indexOf(chosen)}`,
+      selectedId: candidateId(segment.day, options.indexOf(chosen)),
       candidates: options.map((option, index) => ({
         ...option,
-        id: `stay-${segment.day}-${index}`,
+        id: candidateId(segment.day, index),
       })),
     })),
     summary: `${rooms} room(s), ${segments.reduce((sum, segment) => sum + segment.nights, 0)} nights in ${segments.map((segment) => segment.city).join(" & ")} · AUD ${total.toFixed(2)}${budgetRevision ? " (lowest eligible cost)" : ""}`,
@@ -138,7 +180,38 @@ async function buildStayProposal(
   };
 }
 
-/** Let the specialist narrate the calculator's proposal, with a safe fallback. */
+/** The grounded lodging proposal that remains correct without an LLM. */
+async function buildStayProposal(
+  brief: TripBrief,
+  ctx: AgentContext,
+  revision?: RevisionRequest,
+): Promise<AgentProposal> {
+  const evidence = await gatherStayEvidence(brief, ctx, revision);
+  return assembleStayProposal(evidence, revision, (_day, options) =>
+    evidence.budgetRevision ? options[0]! : chooseInitial(options),
+  );
+}
+
+/**
+ * What the specialist is allowed to decide: which candidate each city gets, and how to describe
+ * the result. There is no money field anywhere in this schema, so a hallucinated rate has nowhere
+ * to land — the cost is always computed from the candidate the model named.
+ */
+const StaySelection = z.object({
+  choices: z
+    .array(
+      z.object({
+        stayId: z.string().describe("The stay id, e.g. stay-1"),
+        candidateId: z.string().describe("One of that stay's candidate ids, e.g. stay-1-2"),
+        because: z.string().describe("One short sentence on why this candidate, for the traveller"),
+      }),
+    )
+    .describe("One entry per stay. Every stay must be chosen."),
+});
+// No summary field on purpose. The proposal's summary states the authoritative total, and a free
+// text field the model can write a number into is exactly the hole the id-only design closes.
+
+/** Let the specialist choose the stay, with a safe fallback. */
 async function planStays(
   brief: TripBrief,
   ctx: AgentContext,
@@ -147,28 +220,44 @@ async function planStays(
   const model = createRoutedChatModel("accommodation");
   if (!model) return buildStayProposal(brief, ctx, revision);
 
-  let evidence: AgentProposal | undefined;
-  // Expose the deterministic calculator as the only tool so the model cannot
-  // invent properties, rates, availability or revision outcomes.
-  const calculate = tool(
+  let evidence: StayEvidence | undefined;
+  // The tool hands over candidates and their real rates. It does not decide.
+  const search = tool(
     async () => {
-      evidence = AgentProposalSchema.parse(await buildStayProposal(brief, ctx, revision));
-      return evidence;
+      evidence = await gatherStayEvidence(brief, ctx, revision);
+      return {
+        stays: evidence.searched.map(({ segment, options }) => ({
+          stayId: `stay-${segment.day}`,
+          city: segment.city,
+          checkIn: segment.checkIn,
+          checkOut: segment.checkOut,
+          nights: segment.nights,
+          rooms: evidence!.rooms,
+          candidates: options.map((option, index) => ({
+            candidateId: candidateId(segment.day, index),
+            name: option.name,
+            area: option.area,
+            rating: option.rating,
+            freeCancellation: option.freeCancellation,
+            totalCost: stayCost(option, segment.nights, evidence!.rooms),
+          })),
+        })),
+      };
     },
     {
-      name: "calculate_accommodation_options",
+      name: "search_accommodation_candidates",
       description:
-        "Search the injected booking port, apply confirmed preferences and calculate a validated lodging proposal for this trip and revision.",
+        "Search the injected booking port and return the eligible stay candidates for each city, with their ids and real total costs. It does not choose.",
       schema: z.object({}),
     },
   );
   const specialist = createAgent({
     name: "accommodation_specialist",
     model,
-    tools: [calculate],
+    tools: [search],
     systemPrompt:
-      "You are the accommodation specialist. Always call calculate_accommodation_options. Return its proposal unchanged: do not invent properties, prices, ratings, availability or policies. The calculator owns preference filtering, room allocation, costing and revision rules. Return the requested structured AgentProposal.",
-    responseFormat: AgentProposalSchema,
+      "You are the accommodation specialist. Call search_accommodation_candidates, then choose one candidate for every stay it returns. You own that choice: weigh rating, free cancellation and total cost against the traveller's brief and any revision. A budget revision means prefer the cheapest eligible candidate. Refer to candidates only by the ids you were given -- never invent a property, a rate, a rating or a policy, and never state a price yourself. Return the requested structured selection.",
+    responseFormat: StaySelection,
   });
   try {
     const result = await specialist.invoke({
@@ -176,24 +265,60 @@ async function planStays(
         {
           role: "user",
           content: JSON.stringify({
-            task: "Return the calculated accommodation proposal.",
+            task: "Choose one candidate for every stay.",
             tripId: brief.tripId,
-            revision: revision?.reason,
+            brief: {
+              destination: brief.destination,
+              dates: brief.dates,
+              groupSize: brief.groupSize,
+              budgetTotal: brief.budgetTotal,
+              accommodation: brief.accommodation,
+            },
+            revision: revision && { reason: revision.reason, constraints: revision.constraints },
           }),
         },
       ],
     });
-    const proposal = readStructuredResponse("accommodation", AgentProposalSchema, result);
-    if (proposal.agent !== "accommodation" || !evidence) {
-      throw new Error(
-        "Accommodation specialist returned the wrong proposal type or skipped its tool.",
-      );
+    const selection = readStructuredResponse("accommodation", StaySelection, result);
+    if (!evidence) throw new Error("Accommodation specialist skipped its search tool.");
+    const gathered = evidence;
+
+    // A schema-valid selection still has to name candidates that exist. Resolve every stay before
+    // using any of them, so a partly-understood answer falls back whole rather than mixing the
+    // model's choice for one city with a heuristic for the next.
+    const chosen = new Map<number, StayOption>();
+    for (const { segment, options } of gathered.searched) {
+      const choice = selection.choices.find((entry) => entry.stayId === `stay-${segment.day}`);
+      const index = choice
+        ? options.findIndex((_, i) => candidateId(segment.day, i) === choice.candidateId)
+        : -1;
+      if (index < 0)
+        throw new Error(
+          `Accommodation specialist did not choose a valid stay for ${segment.city}.`,
+        );
+      chosen.set(segment.day, options[index]!);
     }
-    return { ...proposal, stays: evidence.stays, source: evidence.source, items: evidence.items };
+    const proposal = assembleStayProposal(
+      gathered,
+      revision,
+      (day, options) => chosen.get(day) ?? chooseInitial(options),
+    );
+    const because = selection.choices
+      .map((entry) => entry.because?.trim())
+      .filter((text): text is string => Boolean(text));
+    return {
+      ...proposal,
+      assumptions: [...proposal.assumptions, ...because],
+    };
   } catch (error) {
+    ctx.signal?.throwIfAborted();
     const reason = error instanceof Error ? error.message : "unknown model error";
     console.warn(`[accommodation] Specialist failed; using a safe local plan: ${reason}`);
-    return evidence ?? buildStayProposal(brief, ctx, revision);
+    return evidence
+      ? assembleStayProposal(evidence, revision, (_day, options) =>
+          evidence!.budgetRevision ? options[0]! : chooseInitial(options),
+        )
+      : buildStayProposal(brief, ctx, revision);
   }
 }
 

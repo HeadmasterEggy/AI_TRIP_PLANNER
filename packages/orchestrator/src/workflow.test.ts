@@ -195,6 +195,37 @@ describe("LangGraph orchestrator workflow", () => {
     expect(rescheduleConstraint).toContain("without changing trip dates");
   });
 
+  it("asks only the itinerary to move when an activity collides with transport", () => {
+    // A deliberate asymmetry, and load-bearing now that transport chooses its own
+    // departure times: a train leaves when it leaves, a museum visit does not. Making
+    // this symmetric asks both sides to reschedule around each other, which can burn
+    // every remaining round without converging.
+    const at = (agent: AgentName, kind: string, startTime: string, endTime: string) => ({
+      ...proposal(agent, 100),
+      items: [{ kind, detail: kind, day: 2, startTime, endTime, location: kind, estCost: 100 }],
+    });
+    const requests = detectConflicts(
+      [
+        at("itinerary", "activity", "10:00", "12:00"),
+        at("transport", "transport", "11:00", "13:00"),
+      ],
+      { ...brief, budgetTotal: 100000 },
+    );
+    expect(requests.map((request) => request.targetAgent)).toEqual(["itinerary"]);
+  });
+
+  it("asks both sides to move when neither is the itinerary", () => {
+    const at = (agent: AgentName, kind: string, startTime: string, endTime: string) => ({
+      ...proposal(agent, 100),
+      items: [{ kind, detail: kind, day: 2, startTime, endTime, location: kind, estCost: 100 }],
+    });
+    const requests = detectConflicts(
+      [at("transport", "transport", "10:00", "12:00"), at("dining", "meal", "11:00", "13:00")],
+      { ...brief, budgetTotal: 100000 },
+    );
+    expect(requests.map((request) => request.targetAgent).sort()).toEqual(["dining", "transport"]);
+  });
+
   it("ends at the configured round limit and marks unresolved sections", async () => {
     const accommodation = agent("accommodation", 1200);
     const plan = await runOrchestrator(brief, {
