@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { AGENT_NAMES, isTripDate, TripBrief } from "./contracts";
+import { Currency } from "./money";
 import { TripPlan } from "./plan";
 
 // The contract between the web client and POST /api/chat.
@@ -18,7 +19,10 @@ export const PartialTripBrief = z.object({
     ])
     .optional(),
   groupSize: z.number().int().positive().optional(),
-  budgetTotal: z.number().min(0.01).optional(),
+  budgetTotal: z.number().min(0.01).optional(), // always BASE_CURRENCY; see ./money
+  // Travels with `budgetTotal` so a half-built brief can still explain the
+  // conversion it came from. See TripBrief.budgetSource.
+  budgetSource: z.object({ amount: z.number().positive(), currency: Currency }).optional(),
   nationality: z.string().optional(),
 });
 export type PartialTripBrief = z.infer<typeof PartialTripBrief>;

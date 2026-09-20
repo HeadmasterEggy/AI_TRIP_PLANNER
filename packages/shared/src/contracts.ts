@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { Currency } from "./money";
 
 // ---------------------------------------------------------------------------
 // The five specialist agents. `name` is the stable id used as the section id
@@ -40,7 +41,12 @@ export const TripBrief = z
       z.string().refine(isTripDate, "Enter a real date"),
     ]), // [start, end] ISO date
     groupSize: z.number().int().positive(),
-    budgetTotal: z.number().min(0.01),
+    budgetTotal: z.number().min(0.01), // always BASE_CURRENCY; see ./money
+    // What the traveller actually said, kept only so the UI can show "A$630
+    // (≈ ¥3,000)". Absent means they stated the budget in the base currency, so
+    // there is nothing to explain. Optional on purpose: every brief saved before
+    // this field existed still parses.
+    budgetSource: z.object({ amount: z.number().positive(), currency: Currency }).optional(),
     nationality: z.string().optional(),
     accommodation: AccommodationPreferences.optional(),
   })
