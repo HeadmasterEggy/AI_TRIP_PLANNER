@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { GoogleRequestError, placeDetails } from "@/lib/google";
+import { GoogleRequestError, placeDetails } from "@/lib/integrations/google";
 
 const DetailsRequest = z.object({ placeId: z.string().min(1).max(300) });
 

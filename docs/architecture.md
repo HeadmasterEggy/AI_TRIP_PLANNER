@@ -131,7 +131,8 @@ Shared contracts live in `packages/shared/src/`:
 Agents receive `ctx.tools` (`ToolGateway`) and `ctx.mem` (`MemoryStore`) through `AgentContext`. Do
 not import the singletons; take them from `ctx` so tests can pass fakes. The tool gateway
 (`packages/tools/src/gateway.ts`) chooses in-process fixtures (`USE_MOCK_TOOLS=true`) or the real
-OpenStreetMap and Google maps adapters; booking is fictional mock data. `MemoryStore`
+OpenStreetMap and Google maps adapters; booking routes through SerpApi Google Hotels/Flights when
+configured, with Google Places estimates or fixtures as explicitly labelled fallbacks. `MemoryStore`
 (`packages/services/src/memory`) is still an in-process `Map`.
 
 Do not change `packages/shared` without telling the team; every package depends on it.

@@ -50,7 +50,15 @@ Environment variables, Google Maps setup, the optional mock server, Docker and t
 
 ```text
 apps/web/                 Next.js workspace UI and API routes
+  components/{workspace,chat,trip,map,preferences,ui}
+                          UI grouped by feature and shared primitives
+  lib/{integrations,map,planning,trip,workspace}
+                          integrations and domain rules grouped by responsibility
+  tests/{app,components,lib,fixtures}
+                          web tests kept separate from production code
 packages/agents/          Five specialist LangChain agents, model routing and fallbacks
+  src/                    production agent code by domain
+  tests/                  agent tests by domain
 packages/orchestrator/    LangGraph workflow, supervisor, chat intake, budget, conflicts, HITL
 packages/shared/          Zod contracts, plan types and ports
 packages/services/        memory (in-process MemoryStore), notify and auth adapters
@@ -67,14 +75,15 @@ docs/                     Project documentation
 | [Development](docs/development.md)     | Setup, environment variables, Docker, verification          |
 | [Workspace UI](docs/workspace-ui.md)   | Current UI behaviour, storage, map and editing rules        |
 | [Roadmap](docs/roadmap.md)             | MVP sequence and status                                     |
+| [Product closure TODO](docs/todo-product-closure.md) | Real providers, weather, UI polish and persistence |
 | [Team workflow](docs/team-workflow.md) | Ownership, branches, reviews and session logs               |
+| [UI guidelines](docs/design/ui-guidelines.md) | Visual tokens, layout and component design rules        |
 
 Also in `docs/`:
 
-- [`modules/`](docs/modules/): handoff notes from module owners (itinerary and transport reliability,
-  accommodation and budget).
 - [`design/`](docs/design/class-diagram.md): the ELEC5620 UML design model and SVG diagrams.
-- [`archive/`](docs/archive/): dated plans and audits kept for history; not current documentation.
+- [Shared project brain](.ai/README.md): compact cross-agent state, decisions and backlog.
+- [`archive/`](docs/archive/): dated plans, audits and historical module handoffs; not current documentation.
 - [`session-logs/`](docs/session-logs/README.md): one note per AI-assisted session, indexed by phase.
 
 ## Scope
