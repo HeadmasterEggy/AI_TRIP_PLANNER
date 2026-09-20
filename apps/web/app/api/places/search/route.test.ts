@@ -1,0 +1,62 @@
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { GoogleRequestError } from "@/lib/google";
+import { POST } from "./route";
+
+vi.mock("@/lib/google", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/google")>("@/lib/google");
+  return { ...actual, searchPlaces: vi.fn() };
+});
+
+function request(body: unknown) {
+  return new Request("http://localhost/api/places/search", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+afterEach(() => vi.clearAllMocks());
+
+describe("POST /api/places/search", () => {
+  it("rejects a blank query before calling Google", async () => {
+    const { searchPlaces } = await import("@/lib/google");
+    const response = await POST(request({ text: "" }));
+
+    expect(response.status).toBe(400);
+    expect(searchPlaces).not.toHaveBeenCalled();
+  });
+
+  it("passes text and destination through and returns Google's places", async () => {
+    const { searchPlaces } = await import("@/lib/google");
+    vi.mocked(searchPlaces).mockResolvedValue([{ id: "p1" }]);
+
+    const response = await POST(request({ text: "temple", destination: "Kyoto" }));
+
+    expect(searchPlaces).toHaveBeenCalledWith("temple", "Kyoto");
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
+    await expect(response.json()).resolves.toEqual({ places: [{ id: "p1" }] });
+  });
+
+  it("maps a 429 from Google to a retryable 429, not a generic 502", async () => {
+    const { searchPlaces } = await import("@/lib/google");
+    vi.mocked(searchPlaces).mockRejectedValue(new GoogleRequestError(429));
+
+    const response = await POST(request({ text: "temple" }));
+
+    expect(response.status).toBe(429);
+    await expect(response.json()).resolves.toEqual({
+      error: "Google Places is busy. Please retry shortly.",
+    });
+  });
+
+  it("maps every other upstream failure to 502 without leaking provider details", async () => {
+    const { searchPlaces } = await import("@/lib/google");
+    vi.mocked(searchPlaces).mockRejectedValue(new GoogleRequestError(500));
+
+    const response = await POST(request({ text: "temple" }));
+
+    expect(response.status).toBe(502);
+    const body = await response.json();
+    expect(body.error).not.toMatch(/500|GoogleRequestError/);
+  });
+});
