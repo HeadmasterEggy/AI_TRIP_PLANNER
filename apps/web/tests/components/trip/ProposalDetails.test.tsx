@@ -30,6 +30,11 @@ describe("Trip drawer details", () => {
 
   it("shows chronological day groups, missing prices and honest source fallback", () => {
     const section = structuredClone(plan.sections[0]!);
+    section.proposal!.source = {
+      kind: "fallback",
+      label: "Local fallback",
+      freshness: "The model was unavailable; a deterministic plan was used.",
+    };
     section.proposal!.items = [
       { kind: "activity", day: 2, detail: "Second day", location: "Park" },
       { kind: "activity", day: 1, detail: "First day", location: "Museum", estCost: 0.01 },
@@ -42,7 +47,8 @@ describe("Trip drawer details", () => {
     ]);
     expect(screen.getByText("Price not provided")).toBeTruthy();
     expect(screen.getByText(/AUD\s*0.01/)).toBeTruthy();
-    expect(screen.getByText("Source not recorded")).toBeTruthy();
+    expect(screen.getByText("Fallback plan")).toBeTruthy();
+    expect(screen.getByText("Local fallback")).toBeTruthy();
   });
   it("keeps restaurant suggestions unpriced alongside the meal budget", () => {
     const section = structuredClone(plan.sections[0]!);

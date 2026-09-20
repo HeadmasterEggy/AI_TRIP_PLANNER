@@ -13,6 +13,13 @@ const STATUS_LABEL: Record<string, string> = {
   needs_you: "Needs you",
   confirmed: "Confirmed",
 };
+const SOURCE_KIND_LABEL: Record<string, string> = {
+  live: "Live data",
+  estimated: "Estimated data",
+  mock: "Mock data",
+  fallback: "Fallback plan",
+  unavailable: "Data unavailable",
+};
 
 export function TripSection({
   section,
@@ -52,6 +59,13 @@ export function TripSection({
           {section.proposal ? (
             <>
               <p className="source-note">
+                <span
+                  className={`source-kind source-kind--${section.proposal.source?.kind ?? "unavailable"}`}
+                  role="status"
+                >
+                  {SOURCE_KIND_LABEL[section.proposal.source?.kind ?? "unavailable"] ??
+                    "Source status"}
+                </span>
                 <strong>{section.proposal.source?.label ?? "Source not recorded"}</strong>
                 <br />
                 {section.proposal.source?.freshness ?? "These estimates are not live verified."}

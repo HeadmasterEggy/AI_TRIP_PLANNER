@@ -164,6 +164,7 @@ describe("destination guide", () => {
     expect(result.items.map((item) => item.location).filter(Boolean)).not.toContain(
       "Invented Palace",
     );
+    expect(result.source).toMatchObject({ kind: "fallback", label: "Local fallback" });
     warning.mockRestore();
   });
 

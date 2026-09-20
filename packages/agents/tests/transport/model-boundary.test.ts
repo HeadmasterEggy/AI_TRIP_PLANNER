@@ -143,6 +143,7 @@ describe("the model's transport choices are load-bearing", () => {
     // The heuristic's flight and its 09:00 default, not a partly-applied selection.
     expect(result.items.find((item) => item.detail.includes("Flex Air"))?.estCost).toBe(900);
     expect(result.assumptions.join(" ")).not.toContain("keeps the afternoon free");
+    expect(result.source).toMatchObject({ kind: "fallback", label: "Local fallback" });
     warning.mockRestore();
   });
 
@@ -153,6 +154,7 @@ describe("the model's transport choices are load-bearing", () => {
       const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
       const result = await transportAgent.invoke({ brief, context });
       expect(result.items.find((item) => item.detail.includes("Flex Air"))?.estCost).toBe(900);
+      expect(result.source).toMatchObject({ kind: "fallback", label: "Local fallback" });
       warning.mockRestore();
     },
   );

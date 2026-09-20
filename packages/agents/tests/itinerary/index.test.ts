@@ -114,6 +114,7 @@ describe("itinerary planner", () => {
     });
     expect(result.assumptions.join(" ")).toContain("Opening hours and live availability");
     expect(result.items).toHaveLength(2);
+    expect(result.source).toMatchObject({ kind: "fallback", label: "Local fallback" });
     warning.mockRestore();
   });
 

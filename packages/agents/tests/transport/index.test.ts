@@ -49,6 +49,7 @@ describe("transport planner", () => {
     expect(AgentProposal.safeParse(result).success).toBe(true);
     expect(result.summary).not.toContain("STUB");
     expect(result.items.map((item) => item.estCost)).toEqual([1600, 90]);
+    expect(result.source).toMatchObject({ kind: "mock", label: "Mock booking and route data" });
     expect(result.items[1]).toMatchObject({ day: 3, startTime: "09:00", endTime: "11:20" });
     expect(searchFlights).toHaveBeenCalledWith(
       expect.objectContaining({ from: "Sydney", to: "Tokyo", passengers: 2 }),
@@ -133,6 +134,7 @@ describe("B transport reliability", () => {
     expect(result.conflictsWith.join(" ")).toContain("no route returned");
     expect(result.conflictsWith.join(" ")).toContain("no valid fare");
     expect(result.summary).toContain("incomplete");
+    expect(result.source).toMatchObject({ kind: "unavailable", label: "Flight provider" });
   });
 
   it("degrades provider exceptions into unresolved conflicts", async () => {

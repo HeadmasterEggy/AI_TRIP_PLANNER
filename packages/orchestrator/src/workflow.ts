@@ -287,15 +287,10 @@ export function createOrchestratorGraph(options: OrchestratorOptions = {}) {
       if (plan.hitl.some((c) => c.sectionId === section.id)) section.status = "needs_you";
       if (section.proposal && !section.proposal.source)
         section.proposal.source = {
-          label: injected
-            ? "Injected planning data"
-            : process.env.USE_MOCK_TOOLS !== "false"
-              ? "Simulated Places / route data and AI estimates"
-              : section.id === "transport"
-                ? "Map route estimates; flight fares are simulated"
-                : "Map place data and AI estimates",
+          kind: "unavailable",
+          label: "Source not recorded",
           freshness:
-            "Prices, availability and opening hours are not live verified. Check the proposal notes for data assumptions.",
+            "This specialist did not report its provider or degradation state; treat the result as unverified.",
         };
     }
     return { plan: TripPlanSchema.parse(plan) };
