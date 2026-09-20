@@ -7,10 +7,9 @@ import { z } from "zod";
 // SUPPORTED_CURRENCIES value; it is converted once, where it is read out of
 // their message, and never again.
 //
-// BASE_CURRENCY is that one currency. Note it is not yet true everywhere: the
-// display layer and the mock supplier prices still read as USD, and are being
-// moved over separately. Until then, treat BASE_CURRENCY as the value new code
-// should be written against, not as a description of every existing line.
+// BASE_CURRENCY is that one currency. Provider-native fares (such as a Google
+// transit fare) may still carry their own currency because they are displayed
+// as evidence and are not included in the AUD planning totals.
 // ---------------------------------------------------------------------------
 
 export const SUPPORTED_CURRENCIES = ["AUD", "CNY", "USD", "JPY"] as const;

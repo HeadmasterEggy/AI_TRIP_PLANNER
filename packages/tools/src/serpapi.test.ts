@@ -29,6 +29,25 @@ afterEach(() => {
 });
 
 describe("searchHotelsSerpApi", () => {
+  it("requests hotel and flight prices in the AUD base currency", async () => {
+    const urls: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request) => {
+        urls.push(String(input));
+        return String(input).includes("google_hotels")
+          ? Response.json({ properties: [{ name: "Hotel", rate_per_night: { extracted_lowest: 225 } }] })
+          : Response.json({ best_flights: [{ price: 450, flights: [{ airline: "Qantas" }] }] });
+      }),
+    );
+
+    await searchHotelsSerpApi(hotelQuery);
+    await searchFlightsSerpApi(flightQuery);
+
+    expect(urls).toHaveLength(2);
+    expect(urls.every((url) => new URL(url).searchParams.get("currency") === "AUD")).toBe(true);
+  });
+
   it("maps a real property, converting Google's 1.0-5.0 rating to this project's 0-10 scale", async () => {
     stub(200, {
       properties: [
