@@ -78,7 +78,7 @@ travel backend:
 | Place search and details | [Google Places API](https://developers.google.com/maps/documentation/places/web-service/op-overview) | Server-side place grounding with `MAPS_API_KEY`. |
 | Routes and travel time | [Google Routes API](https://developers.google.com/maps/documentation/routes) | Route and distance checks for itinerary editing. |
 | Time zones | [Google Time Zone API](https://developers.google.com/maps/documentation/timezone/overview) | Destination-local time calculations. |
-| Weather forecasts | Google Weather API or another dedicated weather provider | Not implemented in the current tool gateway. Generic SerpApi web results must not be treated as a weather API. |
+| Weather forecasts | Google Weather API (days 0–10), Open-Meteo (days 11–14), climate fixture after day 14 | Implemented in the tool gateway with explicit forecast/climate provenance; generic SerpApi web results are not treated as weather data. |
 | Flight delays, gates and operational status | Aviationstack or another aviation-status provider | Optional future capability; not needed for hotel/flight price search. |
 | Chat, preferences, trip plans/HITL decisions and SerpApi usage/cache | Upstash-compatible Redis REST store | Configure `KV_REST_API_URL` + `KV_REST_API_TOKEN` in deployment; local/offline runs use an in-process fallback. |
 

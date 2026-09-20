@@ -6,8 +6,10 @@
 
 ## Current milestone
 
-The project is completing the post-PR #23 product-closure sequence directly on the upstream repository.
-The web production code is grouped by responsibility and all tests are separated into `tests/` directories.
+The post-PR #23 product-closure sequence is complete on the upstream repository. PRs #31–#36 were
+merged in Todo order through their stacked bases, then PR #37 integrated the cumulative result into
+`main`. The web production code is grouped by responsibility and all tests are separated into `tests/`
+directories.
 
 ## Recently completed
 
@@ -19,25 +21,23 @@ The web production code is grouped by responsibility and all tests are separated
   `lib/{integrations,map,planning,trip,workspace}`.
 - Web and package tests are grouped under separate `tests/` directories, with package typechecks also
   including their tests.
-- Upstream PR #31 makes specialist degradation visible; upstream PR #32 adds durable storage and its
-  clean-workspace dependency fix; upstream PR #33 adds the weather provider and 14-day forecast/climate
-  boundary; upstream PR #34 adds provider provenance; the current branch is implementing the AI progress
-  UI for the next stacked PR. These PRs are intentionally open and stacked; none should be merged
-  automatically.
+- PR #31 makes specialist degradation visible; PR #32 adds durable storage and its clean-workspace
+  dependency fix; PR #33 adds the weather provider and 14-day forecast/climate boundary; PR #34 adds
+  provider provenance; PR #35 adds AI progress UI; PR #36 adds source-aware result cards. PR #37 brings
+  the cumulative stacked result into `main`. All of these PRs are merged upstream.
 
-## In progress / not yet committed
+## Working tree
 
-- The current working tree is on the stacked travel-result-cards branch. It contains source-aware hotel,
-  budget, context, and HITL cards; earlier provider metadata and AI progress are in the parent branches.
-  Preserve unrelated `.gitignore` and `output/` changes.
-  Preserve unrelated `.gitignore` and `output/` changes.
+- The current working tree is on `main` after the PR #37 fast-forward integration. Preserve unrelated
+  `.gitignore` and `output/` changes.
 
 ## Next recommended actions
 
-1. Finish and verify the provider-provenance PR, then continue with the AI progress UI branch.
-2. Build the grounded hotel, flight, weather, budget, and HITL result cards.
-3. Keep durable storage configured with deployment environment variables before treating production as
-   ready.
+1. Run a real-provider Sydney → Tokyo smoke test with `USE_MOCK_TOOLS=false` and credentials configured
+   in the environment actually read by Next.js.
+2. Configure the durable-store variables in Vercel before treating persistence as production-ready.
+3. Consider the deferred P2 capabilities only when needed: flight operational status, affiliate inventory,
+   booking/payment fulfillment, and weather history.
 
 ## Validation status
 
@@ -45,6 +45,7 @@ The web production code is grouped by responsibility and all tests are separated
 |---|---|---|
 | `pnpm typecheck` | Passed | All six packages, including separated package tests |
 | `pnpm lint` | Passed | Next.js reports only existing deprecation/workspace-root warnings |
-| `pnpm test` | Passed | Web: 20 files / 187 tests; package suites also passed |
+| `pnpm test` | Passed | Web: 20 files / 188 tests; package suites also passed |
 | `git diff --check` | Passed | No whitespace errors |
-| `pnpm build` | Not run | Run before merge/deployment |
+| `pnpm build` | Passed | Production build completed before mainline integration |
+| Browser smoke | Passed | HTTP 200; preferences/calendar open; 375×812 layout usable; no console errors after interaction |

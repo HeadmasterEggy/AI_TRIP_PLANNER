@@ -1,7 +1,8 @@
 # 产品闭环待办：真实数据、天气与 UI
 
-当前基线：`main` 已合入 PR #23，SerpApi 酒店和航班适配器已经存在。下一阶段重点不是重新接入
-API，而是验证真实数据端到端可用、让来源和降级状态对用户可见，并完成工作区视觉收敛。
+当前基线：`main` 已按本文件顺序合入 PR #31–#37；SerpApi 酒店和航班适配器、持久化、天气、来源
+状态、AI 进度和结果卡片已经进入主线。下一阶段不再是这些 P0/P1 能力的实现，而是验证真实数据
+端到端可用并继续处理下方保留的 P2 能力。
 
 ## P0：真实酒店与航班数据
 
@@ -43,7 +44,7 @@ destination-guide 和 dining）的模型/外部 provider 降级目前主要写�
 实现记录（`fix/degraded-visibility`，PR #31）：五个 specialist 的模型/外部 provider fallback 都在
 发生降级的 catch 分支生成统一的 `source.kind`，并由 TripSection、ChatPanel 和结果卡片显示 live、
 estimated、mock、fallback 或 unavailable 状态及高层原因；未暴露 prompt 或 chain-of-thought。PR 已
-直接提交到上游仓库，新的 GitHub CI 与 Vercel 检查均通过，保持 open、待按计划合并。
+直接提交到上游仓库，GitHub CI 与 Vercel 检查均通过，已按顺序合并进 `main`。
 
 ### 现有回填是同一个 bug，不要拿它交差
 
@@ -82,12 +83,12 @@ estimated、mock、fallback 或 unavailable 状态及高层原因；未暴露 pr
 
 实现记录（`feature/durable-storage`，PR #32）：新增 Upstash-compatible JSON store，并保留本地
 fallback；聊天、偏好、行程、HITL 决策、SerpApi 缓存和用量计数都通过持久化服务访问，CI/离线测试仍
-默认使用本地 mock。应用依赖和 lockfile 已同步，PR 以 `fix/degraded-visibility` 为 base 保持 open，
-待按计划合并。
+默认使用本地 mock。应用依赖和 lockfile 已同步，GitHub CI 与 Vercel 检查均通过，已按顺序合并进
+`main`。
 
 ## P1：天气能力
 
-天气现在可以进入实现阶段，沿用现有工具网关和证据链，不把天气交给普通搜索结果。
+天气能力已实现并合入主线，沿用现有工具网关和证据链，不把天气交给普通搜索结果。
 
 - 新增 `WeatherPort` 和 `packages/tools/src/weather.ts`，mock 与真实 provider 在同一文件内分流。
 - 优先使用 Google Weather API；provider 名称和字段以官方接口为准。
@@ -287,6 +288,21 @@ unavailable 状态和可访问的进度条，HITL 酒店选择显示来源和“
 `feature/weather-capability` → `feature/provider-provenance` → `feature/ai-progress-ui` →
 `feature/travel-result-cards`。持久化先建立稳定的状态边界；天气和 provider 可以在此基础上提供
 可追踪的结果，UI 卡片最后消费这些明确状态。
+
+### 已完成合并记录
+
+| 顺序 | PR | 内容 | 结果 |
+| --- | --- | --- | --- |
+| 1 | #31 | specialist 降级状态可见 | 已合入 `main`（`f79a43b`） |
+| 2 | #32 | 持久化规划状态、HITL、SerpApi 配额和缓存 | 已按 stacked base 合并（`8c25dba`） |
+| 3 | #33 | 14 天 forecast/climate 天气能力 | 已按 stacked base 合并（`f68fa1f`） |
+| 4 | #34 | 酒店/航班 provider provenance | 已按 stacked base 合并（`8e6b2ae`） |
+| 5 | #35 | AI 规划进度 UI | 已按 stacked base 合并（`b5c9242`） |
+| 6 | #36 | 真实结果卡片、预算和 HITL 来源状态 | 已按 stacked base 合并（`e79a8a6`） |
+| 7 | #37 | 将 stacked 累计结果整合进 `main` | 已合入 `main`（`056f45f`） |
+
+由于 #32–#36 当时分别以功能分支为 base，#37 是必要的 mainline integration；没有它，前面
+已合并的 PR 虽然存在于 stacked 分支，主线仍不会包含完整实现。
 
 ## 当前代码目录约定
 
