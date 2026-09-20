@@ -331,6 +331,26 @@ button {
   opacity: 0.55;
   cursor: not-allowed;
 }
+.chat__form .chat__calendar-trigger {
+  display: grid;
+  place-items: center;
+  padding: 0;
+  width: 40px;
+  background: transparent;
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+}
+.chat__form .chat__calendar-trigger:hover:not(:disabled) {
+  filter: none;
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.date-picker__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
 
 /* ---- trip panel ---- */
 .trip__meta {
@@ -622,6 +642,35 @@ button:not(.section__row):not(.stay-option):not(.primary):not(.trip__cta) {
   font-size: 12px;
   color: var(--text-dim);
   margin-bottom: 5px;
+}
+/* Start/end date fields plus a calendar shortcut, aligned to the inputs'
+   baseline rather than the labels' — the label row above them differs in
+   height between "Start date" and "End date" only by content, so align on
+   the row that's actually the same height everywhere: the fields. */
+.filter-dates {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.filter-dates .form-field {
+  flex: 1;
+  margin-bottom: 0;
+}
+.filter-dates__calendar {
+  display: grid;
+  place-items: center;
+  padding: 0;
+  width: 40px;
+  height: 38px;
+  background: transparent;
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.filter-dates__calendar:hover {
+  color: var(--accent);
+  border-color: var(--accent);
 }
 .field[aria-invalid="true"] {
   border-color: var(--warn);

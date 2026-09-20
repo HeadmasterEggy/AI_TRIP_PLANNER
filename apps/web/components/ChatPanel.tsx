@@ -1,8 +1,18 @@
 "use client";
-import { useEffect, useRef } from "react";
+import dynamic from "next/dynamic";
+import { useEffect, useRef, useState } from "react";
 import { AGENT_NAMES, type AgentProgressEvent, type TripPlan } from "@trip/shared";
-import { CheckpointCards, type Decision } from "./CheckpointCards";
+import { looksLikeDateQuestion } from "@/lib/date-range";
 import type { Message } from "@/lib/workspace";
+import { CalendarIcon } from "./icons";
+import { CheckpointCards, type Decision } from "./CheckpointCards";
+
+// react-day-picker + its stylesheet are only worth loading once the
+// traveller actually opens the calendar, not on every chat load.
+const DateRangePicker = dynamic(
+  () => import("./DateRangePicker").then((m) => m.DateRangePicker),
+  { ssr: false },
+);
 const labels = {
   itinerary: "Day plan",
   transport: "Getting around",
@@ -76,6 +86,23 @@ export function ChatPanel({
     if (messages.length || activity.length)
       stream.current?.scrollTo({ top: stream.current.scrollHeight });
   }, [messages, activity]);
+
+  const [showCalendar, setShowCalendar] = useState(false);
+  // Auto-open once per new assistant message that reads as a date question —
+  // track the message count we last reacted to so closing the dialog (or the
+  // traveller typing instead) doesn't make it pop back open on every render.
+  const autoOpenedFor = useRef(-1);
+  useEffect(() => {
+    const last = messages.at(-1);
+    if (
+      last?.role === "agent" &&
+      looksLikeDateQuestion(last.text) &&
+      autoOpenedFor.current !== messages.length
+    ) {
+      autoOpenedFor.current = messages.length;
+      setShowCalendar(true);
+    }
+  }, [messages]);
   return (
     <section className="panel chat" aria-labelledby="chat-title">
       <h2 id="chat-title">Plan together</h2>
@@ -218,6 +245,15 @@ export function ChatPanel({
           onSend();
         }}
       >
+        <button
+          type="button"
+          className="chat__calendar-trigger"
+          aria-label="Pick travel dates from a calendar"
+          disabled={busy}
+          onClick={() => setShowCalendar(true)}
+        >
+          <CalendarIcon />
+        </button>
         <input
           ref={inputRef}
           className="field"
@@ -234,6 +270,12 @@ export function ChatPanel({
         </button>
       </form>
       <p className="disclaimer">Estimates require verification. Nothing here makes a booking.</p>
+      {showCalendar && (
+        <DateRangePicker
+          onConfirm={({ start, end }) => onInput(`Travel dates: ${start} to ${end}`)}
+          onClose={() => setShowCalendar(false)}
+        />
+      )}
     </section>
   );
 }
