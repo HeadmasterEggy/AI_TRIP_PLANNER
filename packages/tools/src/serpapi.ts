@@ -13,6 +13,7 @@
 // https://serpapi.com/google-flights-api and (for the actual error shape,
 // which neither doc page shows) an empirical request with a bad key:
 // `{"error": "Invalid API key. ..."}` with HTTP 401.
+import { durableStoreConfigured, jsonStore } from "@trip/services";
 import type { FlightOption, StayOption } from "@trip/shared";
 
 const MONTHLY_LIMIT = 230;
@@ -45,14 +46,38 @@ function rolloverIfNewMonth(): void {
   const month = currentMonth();
   if (usage.month !== month) usage = { month, count: 0 };
 }
-function assertUnderQuota(): void {
+async function reserveQuota(): Promise<{ commit(): void; release(): Promise<void> }> {
   rolloverIfNewMonth();
-  if (usage.count >= MONTHLY_LIMIT) {
+  if (!durableStoreConfigured()) {
+    if (usage.count >= MONTHLY_LIMIT) {
+      throw new SerpApiError(
+        `SerpApi's shared monthly search limit (${MONTHLY_LIMIT}) is reached for ${usage.month}.`,
+        "quota_exceeded",
+      );
+    }
+    return {
+      commit() {
+        usage.count += 1;
+      },
+      async release() {},
+    };
+  }
+  const month = currentMonth();
+  const count = await jsonStore.increment(`trip:serpapi:usage:${month}`);
+  usage = { month, count };
+  if (count > MONTHLY_LIMIT) {
     throw new SerpApiError(
       `SerpApi's shared monthly search limit (${MONTHLY_LIMIT}) is reached for ${usage.month}.`,
       "quota_exceeded",
     );
   }
+  return {
+    commit() {},
+    async release() {
+      const remaining = await jsonStore.decrement(`trip:serpapi:usage:${month}`);
+      usage = { month, count: remaining };
+    },
+  };
 }
 /** Exported for tests and any future usage indicator; not part of BookingPort. */
 export function serpApiUsage(): { month: string; count: number; limit: number } {
@@ -68,6 +93,18 @@ export function resetSerpApiUsageForTests(): void {
 // during one planning session doesn't spend a second real search --------
 const cache = new Map<string, { expiresAt: number; value: unknown }>();
 async function cached<T>(key: string, fetcher: () => Promise<T>): Promise<T> {
+  if (durableStoreConfigured()) {
+    const stored = await jsonStore.get<{ expiresAt: number; value: T }>(
+      `trip:serpapi:cache:${key}`,
+    );
+    if (stored && stored.expiresAt > Date.now()) return stored.value;
+    const value = await fetcher();
+    await jsonStore.set(`trip:serpapi:cache:${key}`, {
+      expiresAt: Date.now() + CACHE_TTL_MS,
+      value,
+    });
+    return value;
+  }
   const hit = cache.get(key);
   if (hit && hit.expiresAt > Date.now()) return hit.value as T;
   const value = await fetcher();
@@ -93,43 +130,46 @@ interface SerpApiRaw {
 }
 
 async function serpApiSearch(params: Record<string, string>): Promise<SerpApiRaw> {
-  assertUnderQuota();
-  const url = new URL("https://serpapi.com/search.json");
-  for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);
-  url.searchParams.set("api_key", apiKey());
-
-  let response: Response;
+  const reservation = await reserveQuota();
   try {
-    response = await fetch(url.toString(), { signal: AbortSignal.timeout(10_000) });
+    const url = new URL("https://serpapi.com/search.json");
+    for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);
+    url.searchParams.set("api_key", apiKey());
+
+    let response: Response;
+    try {
+      response = await fetch(url.toString(), { signal: AbortSignal.timeout(10_000) });
+    } catch (error) {
+      throw new SerpApiError(
+        `SerpApi request failed: ${error instanceof Error ? error.message : "network error"}.`,
+        "request_failed",
+      );
+    }
+
+    let data: SerpApiRaw;
+    try {
+      data = (await response.json()) as SerpApiRaw;
+    } catch {
+      throw new SerpApiError("SerpApi returned an unreadable response.", "request_failed");
+    }
+
+    if (!response.ok || data.error) {
+      const message = typeof data.error === "string" ? data.error : `HTTP ${response.status}`;
+      if (/invalid api key/i.test(message)) {
+        throw new SerpApiError(`SerpApi rejected the configured key: ${message}`, "invalid_key");
+      }
+      if (/run out of searches|account has been suspended/i.test(message)) {
+        throw new SerpApiError(`SerpApi account limit reached: ${message}`, "quota_exceeded");
+      }
+      throw new SerpApiError(`SerpApi request failed: ${message}`, "request_failed");
+    }
+
+    reservation.commit();
+    return data;
   } catch (error) {
-    throw new SerpApiError(
-      `SerpApi request failed: ${error instanceof Error ? error.message : "network error"}.`,
-      "request_failed",
-    );
+    await reservation.release();
+    throw error;
   }
-
-  let data: SerpApiRaw;
-  try {
-    data = (await response.json()) as SerpApiRaw;
-  } catch {
-    throw new SerpApiError("SerpApi returned an unreadable response.", "request_failed");
-  }
-
-  if (!response.ok || data.error) {
-    const message = typeof data.error === "string" ? data.error : `HTTP ${response.status}`;
-    if (/invalid api key/i.test(message)) {
-      throw new SerpApiError(`SerpApi rejected the configured key: ${message}`, "invalid_key");
-    }
-    if (/run out of searches|account has been suspended/i.test(message)) {
-      throw new SerpApiError(`SerpApi account limit reached: ${message}`, "quota_exceeded");
-    }
-    throw new SerpApiError(`SerpApi request failed: ${message}`, "request_failed");
-  }
-
-  // Only a request that actually reached Google (not a rejected key or an
-  // already-exhausted account, both handled above) spends a real credit.
-  usage.count += 1;
-  return data;
 }
 
 // --- Google Hotels ----------------------------------------------------------

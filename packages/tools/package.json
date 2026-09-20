@@ -14,6 +14,7 @@
     "mock-server": "node src/mock-server.mjs"
   },
   "dependencies": {
+    "@trip/services": "workspace:*",
     "@trip/shared": "workspace:*"
   },
   "devDependencies": {
