@@ -85,6 +85,13 @@ destination-guide 和 dining）的模型/外部 provider 降级目前主要写�
 天气验收：14 天内的行程返回 forecast，15 天及之后返回 climate context；模拟模式不访问网络；
 真实 provider 失败时不阻塞整份行程计划，并明确标记天气数据不可用。
 
+实现记录（`feature/weather-capability`）：Google Weather daily forecast 用于距离出发日 10 天以内；
+由于 Google 官方接口的 daily forecast 上限是 10 天，距离出发日第 11–14 天使用 Open-Meteo
+forecast 作为扩展的真实 forecast provider，仍满足本节的 14 天边界；第 15 天起才进入 climate
+fixture。模拟模式不调用任一网络 provider。天气结果已通过 `ToolGateway` 注入 destination guide，
+并在 assumptions 与 `AgentProposal.source` 中记录 provider、horizon、观察时间和不可用状态。
+Google Weather、Open-Meteo、>14 天 climate、provider 失败和 destination guide 集成均有回归测试。
+
 天气与 provider 分支必须共享同一来源契约：`AgentProposal.source.kind` 使用
 `live | estimated | mock | fallback | unavailable`，`label` 只显示 provider/数据来源名称，
 `freshness` 描述时间和限制。`kind` 是 UI 可判断的稳定状态，不允许各分支通过自由文本自行约定。

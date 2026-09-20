@@ -29,6 +29,7 @@ export interface Place {
   name: string;
   category: string;
   rating?: number;
+  location?: { latitude: number; longitude: number };
 }
 export interface MapsPort {
   route(q: RouteQuery): Promise<RouteLeg[]>;
@@ -76,10 +77,28 @@ export interface BookingPort {
   searchFlights(q: FlightQuery): Promise<FlightOption[]>;
 }
 
+export type WeatherHorizon = "forecast" | "climate";
+export interface WeatherQuery {
+  location: { latitude: number; longitude: number };
+  targetDate: string;
+}
+export interface WeatherResult {
+  horizon: WeatherHorizon;
+  targetDate: string;
+  summary: string;
+  observedAt: string;
+  validUntil?: string;
+  provider: string;
+}
+export interface WeatherPort {
+  forecast(q: WeatherQuery): Promise<WeatherResult>;
+}
+
 // --- The gateway handed to agents (mock or real, decided once by A) ---------
 export interface ToolGateway {
   maps: MapsPort;
   booking: BookingPort;
+  weather?: WeatherPort;
 }
 
 // --- Memory port (implemented by @trip/services/memory) --------------------

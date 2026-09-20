@@ -262,13 +262,16 @@ export async function places(q: PlaceQuery): Promise<Place[]> {
     return results.map((place) => ({
       name: place.display_name,
       category: q.category ?? place.type ?? "place",
+      ...(Number.isFinite(Number(place.lat)) && Number.isFinite(Number(place.lon))
+        ? { location: { latitude: Number(place.lat), longitude: Number(place.lon) } }
+        : {}),
     }));
   }
   if (provider() !== "google") throw new Error(`Unsupported maps provider: ${provider()}`);
   if (!process.env.MAPS_API_KEY) throw new Error("Google Maps provider requires MAPS_API_KEY.");
   const results = await searchGooglePlacesText(
     `${q.category ?? "attraction"} in ${q.near}`,
-    "places.displayName,places.types,places.rating",
+    "places.displayName,places.types,places.rating,places.location",
   );
   return results
     .map((place) => ({
@@ -279,6 +282,16 @@ export async function places(q: PlaceQuery): Promise<Place[]> {
       // it numerically against this project's 0-10 convention, so it is not
       // converted.
       ...(place.rating === undefined ? {} : { rating: place.rating }),
+      ...(place.location &&
+      Number.isFinite(place.location.latitude) &&
+      Number.isFinite(place.location.longitude)
+        ? {
+            location: {
+              latitude: place.location.latitude!,
+              longitude: place.location.longitude!,
+            },
+          }
+        : {}),
     }))
     .filter((place) => place.name.length > 0);
 }
