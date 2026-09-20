@@ -128,3 +128,69 @@ city fails fast with `unsupported_location` before ever calling SerpApi.
 Validation (updated): 293/293 tests pass repo-wide, as above. The real-key
 calls themselves are not part of the automated suite (they'd spend real
 SerpApi credits on every CI run) — this was a one-time manual check.
+
+## Addendum 2: end-to-end through the actual web UI — two more findings
+
+A asked to see the whole thing running through the real chat/HITL UI, not
+just the tool layer. Two things surfaced that neither unit tests nor the
+first real-key check (which called `serpapi.ts` directly) could have caught:
+
+1. **`next dev` never loaded the root `.env.local` at all.** This repo's
+   convention (`.env.example`, every prior session log) puts secrets in a
+   single `.env.local` at the monorepo root. Next.js only loads `.env*`
+   files from the directory it's actually run in — `apps/web`, per its own
+   `dev`/`build`/`start` scripts — and does not walk up to a monorepo root.
+   So `SERPAPI_KEY` (and, it turns out, every other var in that file —
+   `MAPS_API_KEY`, `GPT_API_KEY`, etc.) was silently invisible to the actual
+   Next.js server process the whole time, for anyone who followed this
+   project's own documented setup and only ran `next dev` locally.
+   `vercel env pull`/deployed functions are unaffected (Vercel injects env
+   vars directly, independent of file layout), which is why this had never
+   surfaced before. Worked around locally with
+   `ln -s ../../.env.local apps/web/.env.local` (confirmed gitignored via
+   the existing root `.env*` pattern, confirmed by `next dev` printing
+   `- Environments: .env.local` on startup, which it did not before the
+   symlink). **Flagging this as a real environment/DX gap the team should
+   fix properly** (a documented symlink step for local setup, or a
+   `next.config.js` change to point at the root file) — not fixed as part
+   of this PR since it's unrelated to the SerpApi feature itself and
+   affects every env var, not just this one.
+2. **`packages/tools/src/gateway.ts` had a stale startup log**:
+   `` `[tools] Live ${selected} Maps adapter enabled; booking remains
+   fixture-backed.` `` — written before either the Google Places or SerpApi
+   real-mode paths existed, so it was actively wrong once the env-loading
+   issue above was fixed and a real run actually reached it. Fixed to
+   report the real active booking tier (SerpApi / Google Places / fixture)
+   instead of a hardcoded claim; added `gateway.test.ts` (this file had no
+   tests before), since a diagnostic log going stale silently is exactly
+   the kind of thing that should have a test pin it down.
+
+With both fixed, a real plan for Sydney (2026-12-01 to 2026-12-04, 2
+travellers, $3,000 budget) returned **20 real SerpApi hotel options** in
+the actual "Choose your stay" HITL card — InterContinental Sydney, Sofitel
+Sydney Darling Harbour, Capella Sydney, Park Hyatt Sydney, real budget
+options (Pacific House Hostel, YHA Sydney Harbour), real prices, real
+ratings correctly on the 0-10 scale (e.g. Capella Sydney 9.4/10).
+
+One more small, real, not-yet-fixed observation from that same run: two
+vacation-rental-style SerpApi results ("Cozy Queen Room in ...") had no
+`overall_rating` at all and displayed as **"0/10"** — technically correct
+per `normalizedRating`'s designed fallback (never crash, never fabricate a
+rating), but "0/10" reads to a traveller as "worst possible" rather than
+"no rating reported," which is misleading. Not fixed here (would need a
+`rating?: number` semantics change so "no rating" can be rendered
+differently from "rated zero," touching the shared contract and the
+frontend card) — flagged for a follow-up, not silently patched over.
+
+Separately (not a SerpApi issue, but worth recording since this was the
+first live end-to-end run with `USE_MOCK_TOOLS=false`): the itinerary and
+transport sections came back empty/conflicted
+("geography conflict: no grounded places available", "driving estimate
+cannot verify public transport timing") because no `MAPS_API_KEY` is
+configured locally, so maps fell back to the free OSM/Nominatim provider,
+which needs `OSM_USER_AGENT` set (the server logged exactly this warning)
+and has its own real limitations for transit-timing verification. Unrelated
+to hotels/flights; out of scope for this PR.
+
+Validation (updated again): 298/298 tests pass repo-wide (5 new in
+`gateway.test.ts`); typecheck/lint/build clean.

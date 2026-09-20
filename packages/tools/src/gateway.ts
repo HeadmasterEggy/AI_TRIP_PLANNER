@@ -14,7 +14,16 @@ export function createToolGateway(): ToolGateway {
     if (selected === "osm" && !process.env.OSM_USER_AGENT) {
       console.warn("[tools] OSM_USER_AGENT is unset; configure one before production traffic.");
     }
-    console.warn(`[tools] Live ${selected} Maps adapter enabled; booking remains fixture-backed.`);
+    // Stale as of the SerpApi integration: booking is no longer always
+    // fixture-backed in real mode. Mirrors booking.ts's own tier order
+    // (SerpApi -> Google Places estimate -> fixture) without importing its
+    // internals — this is a diagnostic line, not a source of truth.
+    const booking = process.env.SERPAPI_KEY
+      ? "SerpApi (real prices; Google Places estimate on failure)"
+      : selected === "google"
+        ? "Google Places (grounded properties, estimated prices)"
+        : "fixture-backed (no SERPAPI_KEY or MAPS_API_KEY set)";
+    console.warn(`[tools] Live ${selected} Maps adapter enabled; booking: ${booking}.`);
   }
   return { maps: mapsAdapter, booking: bookingAdapter };
 }
