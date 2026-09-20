@@ -61,7 +61,7 @@ export function ProposalDetails({
             <article className="proposal-item" key={stay.id}>
               <div className="proposal-item__meta">
                 <span>{stay.city}</span>
-                <strong>{money(selected.pricePerNightUsd * stay.rooms * stay.nights)}</strong>
+                <strong>{money(selected.pricePerNight * stay.rooms * stay.nights)}</strong>
               </div>
               <h4>{selected.name}</h4>
               <p>
@@ -84,7 +84,7 @@ export function ProposalDetails({
                 </div>
                 <div>
                   <dt>Room per night</dt>
-                  <dd>{money(selected.pricePerNightUsd)}</dd>
+                  <dd>{money(selected.pricePerNight)}</dd>
                 </div>
               </dl>
               <p>

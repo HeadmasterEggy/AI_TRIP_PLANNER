@@ -15,9 +15,9 @@ import {
 } from "./workspace-catalog";
 
 describe("workspace catalog", () => {
-  it("builds stable linked chat and trip records from legacy snapshots", () => {
+  it("builds stable linked chat and trip records from snapshots", () => {
     const catalog = createCatalog(snapshot, [snapshot]);
-    expect(catalog.version).toBe(3);
+    expect(catalog.version).toBe(4);
     expect(catalog.activeTripId).toBe("trip:test-trip");
     expect(catalog.activeConversationId).toBe("conversation:saved-copy");
     expect(catalog.trips).toHaveLength(1);
@@ -26,12 +26,12 @@ describe("workspace catalog", () => {
     expect(parseCatalog(serializeCatalog(catalog))).toEqual(catalog);
   });
 
-  it("migrates a legacy saved array without mutating it", () => {
-    const legacy = [JSON.parse(JSON.stringify(snapshot))];
-    const before = JSON.stringify(legacy);
-    const catalog = parseCatalog(JSON.stringify(legacy));
-    expect(catalog.trips[0].snapshot.version).toBe(2);
-    expect(JSON.stringify(legacy)).toBe(before);
+  it("reads a bare saved array without mutating it", () => {
+    const saved = [JSON.parse(JSON.stringify(snapshot))];
+    const before = JSON.stringify(saved);
+    const catalog = parseCatalog(JSON.stringify(saved));
+    expect(catalog.trips[0].snapshot.version).toBe(3);
+    expect(JSON.stringify(saved)).toBe(before);
   });
 
   it("updates current snapshot and keeps independent conversations linked to one trip", () => {
@@ -79,7 +79,7 @@ describe("workspace catalog", () => {
 
   it("rejects corrupt catalog data without changing the input", () => {
     const corrupt = {
-      version: 3,
+      version: 4,
       conversations: [],
       trips: [],
       layout: {
@@ -203,7 +203,7 @@ describe("workspace catalog", () => {
 
   it("falls back to default layout values instead of rejecting history", () => {
     const catalog = parseCatalog({
-      version: 3,
+      version: 4,
       conversations: [],
       trips: [],
       layout: { sidebar: { collapsed: "yes" }, trip: { open: 1 }, view: "nowhere" },
@@ -218,20 +218,22 @@ describe("workspace catalog", () => {
 
   it("clamps a stored sidebar width, ignores invalid ones and can reset it", () => {
     const layout = (sidebar: unknown) =>
-      parseCatalog({ version: 3, conversations: [], trips: [], layout: { sidebar } }).layout
+      parseCatalog({ version: 4, conversations: [], trips: [], layout: { sidebar } }).layout
         .sidebar;
     expect(layout({ width: 312.4 }).width).toBe(312);
     expect(layout({ width: 20 }).width).toBe(200);
     expect(layout({ width: 5000 }).width).toBe(420);
     expect(layout({ width: "wide" }).width).toBeUndefined();
     expect(layout({ width: Number.NaN })).toEqual({ collapsed: false });
-    const catalog = parseCatalog({ version: 3, conversations: [], trips: [] });
+    const catalog = parseCatalog({ version: 4, conversations: [], trips: [] });
     const wide = updateCatalog(catalog, { layout: { sidebar: { collapsed: false, width: 300 } } });
     expect(parseCatalog(serializeCatalog(wide)).layout.sidebar.width).toBe(300);
     // Collapsing keeps the width for when the sidebar is expanded again.
     const collapsed = updateCatalog(wide, { layout: { sidebar: { collapsed: true } } });
     expect(collapsed.layout.sidebar).toEqual({ collapsed: true, width: 300 });
-    const reset = updateCatalog(wide, { layout: { sidebar: { collapsed: false, width: undefined } } });
+    const reset = updateCatalog(wide, {
+      layout: { sidebar: { collapsed: false, width: undefined } },
+    });
     expect(reset.layout.sidebar).toEqual({ collapsed: false });
   });
 });

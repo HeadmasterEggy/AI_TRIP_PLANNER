@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { Currency } from "./money";
 
 // ---------------------------------------------------------------------------
 // The five specialist agents. `name` is the stable id used as the section id
@@ -40,7 +41,12 @@ export const TripBrief = z
       z.string().refine(isTripDate, "Enter a real date"),
     ]), // [start, end] ISO date
     groupSize: z.number().int().positive(),
-    budgetTotal: z.number().min(0.01),
+    budgetTotal: z.number().min(0.01), // always BASE_CURRENCY; see ./money
+    // What the traveller actually said, kept only so the UI can show "A$630
+    // (≈ ¥3,000)". Absent means they stated the budget in the base currency, so
+    // there is nothing to explain. Optional on purpose: every brief saved before
+    // this field existed still parses.
+    budgetSource: z.object({ amount: z.number().positive(), currency: Currency }).optional(),
     nationality: z.string().optional(),
     accommodation: AccommodationPreferences.optional(),
   })
@@ -63,7 +69,7 @@ export type TripBrief = z.infer<typeof TripBrief>;
 
 // ---------------------------------------------------------------------------
 // AgentProposal — what every specialist agent returns for one round.
-// The `estCost` rule (currency = USD, whole trip not per-person) is frozen by A.
+// The `estCost` rule (currency = AUD, whole trip not per-person) is frozen by A.
 // ---------------------------------------------------------------------------
 const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
 
@@ -116,7 +122,7 @@ export const StayCandidate = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
   area: z.string(),
-  pricePerNightUsd: z.number().positive(),
+  pricePerNight: z.number().positive(),
   rating: z.number().min(0).max(10),
   freeCancellation: z.boolean(),
 });

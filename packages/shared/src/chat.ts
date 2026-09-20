@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { AGENT_NAMES, isTripDate, TripBrief } from "./contracts";
+import { Currency } from "./money";
 import { TripPlan } from "./plan";
 
 // The contract between the web client and POST /api/chat.
@@ -18,7 +19,10 @@ export const PartialTripBrief = z.object({
     ])
     .optional(),
   groupSize: z.number().int().positive().optional(),
-  budgetTotal: z.number().min(0.01).optional(),
+  budgetTotal: z.number().min(0.01).optional(), // always BASE_CURRENCY; see ./money
+  // Travels with `budgetTotal` so a half-built brief can still explain the
+  // conversion it came from. See TripBrief.budgetSource.
+  budgetSource: z.object({ amount: z.number().positive(), currency: Currency }).optional(),
   nationality: z.string().optional(),
 });
 export type PartialTripBrief = z.infer<typeof PartialTripBrief>;
@@ -34,6 +38,10 @@ export const ChatRequest = z.object({
   // Optional for backward compatibility. The browser sends the latest brief so
   // serverless requests can apply incremental edits without sticky process state.
   brief: TripBrief.optional(),
+  // The plan those edits apply to. The server is stateless, so a message that
+  // only asks a question has no plan to return unless the client supplies the
+  // current one — and every completed response must carry a plan.
+  plan: TripPlan.optional(),
   // "start" begins a blank conversation: the brief is extracted only from the
   // message, and missing required fields are reported instead of defaulted.
   mode: z.enum(["chat", "plan", "start"]).optional(),

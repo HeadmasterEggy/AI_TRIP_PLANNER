@@ -4,6 +4,7 @@ import { TripPlan } from "@trip/shared";
 import type { GooglePlace, RouteResult } from "@/lib/google";
 import type { EditInput, EditPreview } from "@/lib/trip-edit";
 import type { TripPlaces } from "./useTripPlaces";
+import { money } from "@/lib/workspace";
 
 /**
  * Day timeline and activity editor shown inside the Your Trip drawer. Place data and the
@@ -246,7 +247,7 @@ export function TripEditor({
               <p>
                 {item.estCost === undefined
                   ? "Activity price unknown"
-                  : `USD ${item.estCost.toFixed(2)}${item.priceNeedsReview ? " · needs verification" : " estimated"}`}
+                  : `${money(item.estCost)}${item.priceNeedsReview ? " · needs verification" : " estimated"}`}
               </p>
               <button
                 disabled={locked || index === 0}
@@ -383,10 +384,10 @@ export function TripEditor({
         >
           <h3>Preview changes</h3>
           <p>
-            Trip estimate: USD {preview.plan.estTotal.toFixed(2)} · Change: USD{" "}
-            {(preview.plan.estTotal - plan.estTotal).toFixed(2)} · Budget difference: USD{" "}
-            {(preview.plan.budgetTotal - preview.plan.estTotal).toFixed(2)}. Route fares are
-            separate and are not added to the transport budget.
+            Trip estimate: {money(preview.plan.estTotal)} · Change:{" "}
+            {money(preview.plan.estTotal - plan.estTotal)} · Budget difference:{" "}
+            {money(preview.plan.budgetTotal - preview.plan.estTotal)}. Route fares are shown in the
+            provider&apos;s own currency and are not added to the transport budget.
           </p>
           {preview.differences.map((d, i) => (
             <p key={i}>{d}</p>
@@ -395,6 +396,7 @@ export function TripEditor({
           {preview.routes.map((r, i) => (
             <p key={i}>
               {r.mode}: {r.durationMin ?? "Unknown"} minutes ·{" "}
+              {/* The provider's currency, deliberately not converted and not counted. */}
               {r.fare ? `${r.fare.currency} ${r.fare.amount.toFixed(2)}` : "Fare unavailable"}
             </p>
           ))}

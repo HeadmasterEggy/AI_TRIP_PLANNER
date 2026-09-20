@@ -18,7 +18,7 @@ export interface RouteQuery {
 export interface RouteLeg {
   mode: "train" | "flight" | "bus" | "walk" | "transit";
   durationMin: number;
-  priceUsd: number;
+  price: number;
   note?: string;
 }
 export interface PlaceQuery {
@@ -45,7 +45,7 @@ export interface StayQuery {
 export interface StayOption {
   name: string;
   area: string;
-  pricePerNightUsd: number;
+  pricePerNight: number;
   rating: number;
   freeCancellation: boolean;
 }
@@ -58,7 +58,7 @@ export interface FlightQuery {
 }
 export interface FlightOption {
   carrier: string;
-  priceUsd: number;
+  price: number;
   note?: string;
 }
 export interface BookingPort {

@@ -1,6 +1,6 @@
 // Owner: C — deterministic Booking / Price mocks; no reservations or payments.
-// Stay prices are USD per room per night, assuming at most two guests per room.
-// Flight prices are USD for ALL passengers and include both legs when returning.
+// Stay prices are AUD per room per night, assuming at most two guests per room.
+// Flight prices are AUD for ALL passengers and include both legs when returning.
 import type { StayQuery, StayOption, FlightQuery, FlightOption } from "@trip/shared";
 
 export type { StayQuery, StayOption, FlightQuery, FlightOption } from "@trip/shared";
@@ -44,28 +44,28 @@ export async function searchStays(q: StayQuery): Promise<StayOption[]> {
     {
       name: `Mock ${city} Economy`,
       area: "Outer district",
-      pricePerNightUsd: economy,
+      pricePerNight: economy,
       rating: 7.6,
       freeCancellation: true,
     },
     {
       name: `Mock ${city} Standard`,
       area: "Central",
-      pricePerNightUsd: standard,
+      pricePerNight: standard,
       rating: 8.7,
       freeCancellation: true,
     },
     {
       name: `Mock ${city} Comfort`,
       area: "Central",
-      pricePerNightUsd: comfort,
+      pricePerNight: comfort,
       rating: 9.3,
       freeCancellation: true,
     },
     {
       name: `Mock ${city} Saver`,
       area: "Outer district",
-      pricePerNightUsd: economy - 20,
+      pricePerNight: economy - 20,
       rating: 7.2,
       freeCancellation: false,
     },
@@ -85,13 +85,13 @@ export async function searchFlights(q: FlightQuery): Promise<FlightOption[]> {
   }
   const legs = q.return === undefined ? 1 : 2;
   if (!Number.isSafeInteger(420 * q.passengers * legs * 100)) {
-    throw new Error("Flight estimate exceeds supported USD precision.");
+    throw new Error("Flight estimate exceeds supported AUD precision.");
   }
   const note =
     `${from} ${legs === 2 ? "<->" : "->"} ${to}; ${q.passengers} passengers; ` +
-    `${legs === 2 ? "round-trip" : "one-way"} group total in USD; fictional mock fare`;
+    `${legs === 2 ? "round-trip" : "one-way"} group total in AUD; fictional mock fare`;
   return [
-    { carrier: "MockAir Economy", priceUsd: 310 * q.passengers * legs, note },
-    { carrier: "MockAir Flexible", priceUsd: 420 * q.passengers * legs, note },
+    { carrier: "MockAir Economy", price: 310 * q.passengers * legs, note },
+    { carrier: "MockAir Flexible", price: 420 * q.passengers * legs, note },
   ];
 }

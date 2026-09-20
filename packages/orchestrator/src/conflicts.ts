@@ -51,6 +51,11 @@ export function detectConflicts(proposals: AgentProposal[], brief: TripBrief): R
         toMinutes(left.item.startTime!) < toMinutes(right.item.endTime!) &&
         toMinutes(right.item.startTime!) < toMinutes(left.item.endTime!);
       if (!overlaps) continue;
+      // A deliberate asymmetry: when an activity collides with anything else, only the
+      // itinerary is asked to move. A flight or a train leaves when it leaves; a museum
+      // visit does not. Keep it -- "fixing" this into a symmetric rule asks both sides to
+      // reschedule around each other and can oscillate for every remaining round.
+      // `conflicts.test.ts` locks this semantics, now that transport picks its own times.
       const targets =
         left.agent === "itinerary" || right.agent === "itinerary"
           ? (["itinerary"] as const)

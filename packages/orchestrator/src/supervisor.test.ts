@@ -73,6 +73,62 @@ describe("LangChain supervisor", () => {
     expect(proposals.map((proposal) => proposal.agent)).toEqual(["itinerary"]);
   });
 
+  it("fails when the model skips a specialist the plan cannot do without", async () => {
+    // The prompt only asks it to "consider" each domain, so a model that picks
+    // dining and stops used to ship a plan with no day plan and no complaint.
+    const dining: Specialist = {
+      name: "dining",
+      label: "Food & drink",
+      invoke: async () => ({
+        agent: "dining" as const,
+        summary: "Meal budget envelope",
+        items: [],
+        assumptions: [],
+        conflictsWith: [],
+      }),
+    };
+    const model = new FakeToolCallingModel({
+      toolCalls: [
+        [{ name: "ask_dining_specialist", args: { objective: "Plan meals" }, id: "call-1" }],
+        [],
+      ],
+    });
+
+    await expect(
+      dispatchWithSupervisor({ brief, specialists: [itinerary, dining], context, model }),
+    ).rejects.toThrow(/skipped required specialist\(s\): itinerary/);
+  });
+
+  it("ignores a required specialist that was never offered as a tool", async () => {
+    // A caller that dispatches only dining is not asking for a day plan, so
+    // requiring one would make the default unusable rather than safe.
+    const dining: Specialist = {
+      name: "dining",
+      label: "Food & drink",
+      invoke: async () => ({
+        agent: "dining" as const,
+        summary: "Meal budget envelope",
+        items: [],
+        assumptions: [],
+        conflictsWith: [],
+      }),
+    };
+    const model = new FakeToolCallingModel({
+      toolCalls: [
+        [{ name: "ask_dining_specialist", args: { objective: "Plan meals" }, id: "call-1" }],
+        [],
+      ],
+    });
+
+    const proposals = await dispatchWithSupervisor({
+      brief,
+      specialists: [dining],
+      context,
+      model,
+    });
+    expect(proposals.map((proposal) => proposal.agent)).toEqual(["dining"]);
+  });
+
   it("routes an immutable revision request through its typed specialist tool", async () => {
     const request = {
       tripId: brief.tripId,
@@ -84,12 +140,12 @@ describe("LangChain supervisor", () => {
       ...itinerary,
       supportsRevision: true,
       invoke: vi.fn(async ({ revision }) => ({
-          agent: "itinerary" as const,
-          summary: revision!.reason,
-          items: [],
-          assumptions: revision!.constraints,
-          conflictsWith: [],
-        })),
+        agent: "itinerary" as const,
+        summary: revision!.reason,
+        items: [],
+        assumptions: revision!.constraints,
+        conflictsWith: [],
+      })),
     };
     const model = new FakeToolCallingModel({
       toolCalls: [

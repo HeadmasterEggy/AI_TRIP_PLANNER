@@ -1,7 +1,9 @@
 import {
   AgentProgressEvent,
+  BASE_CURRENCY,
   ChatNeedsInfo,
   ChatResponse,
+  moneyIn,
   PartialTripBrief,
   TripBrief,
   TripPlan,
@@ -20,11 +22,19 @@ export type Draft = {
   freeCancellation: boolean;
 };
 export const money = (value: number) =>
-  new Intl.NumberFormat("en-US", {
+  new Intl.NumberFormat("en-AU", {
     style: "currency",
-    currency: "USD",
+    currency: BASE_CURRENCY,
     currencyDisplay: "code",
   }).format(value);
+/**
+ * "(≈ ¥3,000)" beside a converted budget, so a traveller who said 3000 人民币 can see where
+ * A$630 came from. Empty when they stated it in the base currency: there is nothing to explain.
+ */
+export const budgetHint = (brief: Pick<TripBrief, "budgetSource">) =>
+  brief.budgetSource && brief.budgetSource.currency !== BASE_CURRENCY
+    ? ` (≈ ${moneyIn(brief.budgetSource.amount, brief.budgetSource.currency)})`
+    : "";
 export function draftFor(brief: TripBrief): Draft {
   return {
     destination: brief.destination,
@@ -69,6 +79,9 @@ export function parseDraft(draft: Draft, current: Pick<TripBrief, "tripId"> & Pa
     dates: [draft.start, draft.end],
     groupSize: Number(draft.groupSize),
     budgetTotal: Number(draft.budgetTotal),
+    // The form is base-currency only, so a budget typed here has no source to explain.
+    // Spreading `current` would otherwise carry a stale one past an edit.
+    budgetSource: undefined,
     nationality: draft.nationality.trim() || undefined,
     accommodation: {
       roomAllocation: draft.roomAllocation,
@@ -107,8 +120,15 @@ export function draftWithKnown(draft: Draft, known: PartialTripBrief): Draft {
   };
 }
 
+/**
+ * `version` 3 is the AUD base-currency snapshot. Versions 1 and 2 are rejected rather
+ * than migrated: their stay candidates carry the old `pricePerNightUsd` field, so they
+ * cannot be parsed at all, and their amounts meant USD. Rejecting is honest -- there is
+ * no defensible rate for a snapshot of unknown date. This is a single-user local
+ * workspace, so the cost is that saved trips from before the change do not reopen.
+ */
 export type Snapshot = {
-  version: 1 | 2;
+  version: 3;
   id: string;
   savedAt: string;
   plan: TripPlan;
@@ -124,7 +144,7 @@ const object = (value: unknown): value is Record<string, unknown> =>
 export function parseSnapshot(value: unknown): Snapshot {
   if (
     !object(value) ||
-    (value.version !== 1 && value.version !== 2) ||
+    value.version !== 3 ||
     typeof value.id !== "string" ||
     typeof value.savedAt !== "string" ||
     !Number.isFinite(Date.parse(value.savedAt))
@@ -148,7 +168,7 @@ export function parseSnapshot(value: unknown): Snapshot {
       value.previousTotal < 0)
   )
     throw new Error("Saved budget history is invalid.");
-  return { ...value, version: 2, plan } as Snapshot;
+  return { ...value, version: 3, plan } as Snapshot;
 }
 export function parseSaved(raw: string | null): Snapshot[] {
   if (raw === null) return [];

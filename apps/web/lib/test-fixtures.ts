@@ -33,7 +33,7 @@ export const plan: TripPlan = {
   ],
 };
 export const snapshot: Snapshot = {
-  version: 1,
+  version: 3,
   id: "saved-copy",
   savedAt: "2026-09-16T00:00:00Z",
   plan,

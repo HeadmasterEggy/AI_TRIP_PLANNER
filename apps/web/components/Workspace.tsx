@@ -23,6 +23,7 @@ import {
   draftFor,
   draftWithKnown,
   knownFromDraft,
+  budgetHint,
   money,
   parseDraft,
   parseSaved,
@@ -72,7 +73,7 @@ function tripFacts(plan: TripPlan) {
   return [
     Number.isFinite(days) && days > 0 ? `${days} ${days === 1 ? "day" : "days"}` : undefined,
     `${groupSize} ${groupSize === 1 ? "traveller" : "travellers"}`,
-    `${money(budgetTotal)} budget`,
+    `${money(budgetTotal)}${budgetHint(plan.brief)} budget`,
   ].filter(Boolean);
 }
 const seed: Message[] = [
@@ -206,7 +207,7 @@ function WorkspaceContent({ restored }: { restored: RestoredWorkspace }) {
           });
         } else {
           const current = {
-            version: 2,
+            version: 3,
             id: conversationId.replace(/^conversation:/, ""),
             savedAt: new Date().toISOString(),
             plan,
@@ -324,7 +325,7 @@ function WorkspaceContent({ restored }: { restored: RestoredWorkspace }) {
   }
   function snapshot(current: TripPlan): Snapshot {
     return {
-      version: 2,
+      version: 3,
       id: activeConversation.current.replace(/^conversation:/, ""),
       savedAt: new Date().toISOString(),
       plan: current,
@@ -457,16 +458,14 @@ function WorkspaceContent({ restored }: { restored: RestoredWorkspace }) {
     const message = input.trim();
     if (!message || active.current) return;
     setMessages((current) => [...current, { role: "user", text: message }]);
+    // No mode: the assistant reads the message and decides whether this is a question,
+    // an edit, or a request to plan. The plan travels with the brief so a question can
+    // be answered without rebuilding it.
     void run({
       kind: "chat",
       request: plan
-        ? { tripId: plan.tripId, message, brief: plan.brief }
-        : {
-            tripId: freshTripId.current,
-            mode: "start",
-            message,
-            known: knownFromDraft(draft),
-          },
+        ? { tripId: plan.tripId, message, brief: plan.brief, plan }
+        : { tripId: freshTripId.current, message, known: knownFromDraft(draft) },
     });
   }
   const onDecision = (decision: Decision) => {

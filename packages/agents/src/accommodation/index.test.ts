@@ -17,9 +17,9 @@ const brief: TripBrief = {
   budgetTotal: 4000,
 };
 const options: StayOption[] = [
-  { name: "Standard", area: "Central", pricePerNightUsd: 100, rating: 8.7, freeCancellation: true },
-  { name: "Comfort", area: "Central", pricePerNightUsd: 140, rating: 9.3, freeCancellation: true },
-  { name: "Economy", area: "Outer", pricePerNightUsd: 60, rating: 7.6, freeCancellation: false },
+  { name: "Standard", area: "Central", pricePerNight: 100, rating: 8.7, freeCancellation: true },
+  { name: "Comfort", area: "Central", pricePerNight: 140, rating: 9.3, freeCancellation: true },
+  { name: "Economy", area: "Outer", pricePerNight: 60, rating: 7.6, freeCancellation: false },
 ];
 const request = {
   tripId: brief.tripId,
@@ -50,7 +50,7 @@ function context(stays = options, prefs: UserPreference[] = []) {
 }
 
 describe("accommodation proposals", () => {
-  it("charges only the selected stay: 3 guests, 2 rooms, 4 nights = USD 800", async () => {
+  it("charges only the selected stay: 3 guests, 2 rooms, 4 nights = AUD 800", async () => {
     const { ctx, searchStays, getLongTerm } = context();
     const result = await accommodationAgent.invoke({ brief, context: ctx });
     expect(AgentProposal.safeParse(result).success).toBe(true);
@@ -76,7 +76,12 @@ describe("accommodation proposals", () => {
   it("partitions seven nights into adjacent city stays without double-counting", async () => {
     const { ctx, searchStays } = context();
     const result = await accommodationAgent.invoke({
-      brief: { ...brief, groupSize: 2, destination: "Tokyo & Kyoto", dates: ["2026-06-15", "2026-06-22"] },
+      brief: {
+        ...brief,
+        groupSize: 2,
+        destination: "Tokyo & Kyoto",
+        dates: ["2026-06-15", "2026-06-22"],
+      },
       context: ctx,
     });
     expect(searchStays.mock.calls).toEqual([
@@ -91,7 +96,7 @@ describe("accommodation proposals", () => {
   });
 
   it("counts leap-day nights using calendar dates and keeps cents", async () => {
-    const { ctx } = context([{ ...options[0]!, pricePerNightUsd: 99.99 }]);
+    const { ctx } = context([{ ...options[0]!, pricePerNight: 99.99 }]);
     const result = await accommodationAgent.invoke({
       brief: { ...brief, dates: ["2028-02-28", "2028-03-01"] },
       context: ctx,
@@ -118,12 +123,12 @@ describe("accommodation proposals", () => {
   it("does not turn missing or invalid lodging prices into a successful zero-cost stay", async () => {
     for (const stays of [
       [],
-      [{ ...options[0]!, pricePerNightUsd: NaN }],
-      [{ ...options[0]!, pricePerNightUsd: -1 }],
+      [{ ...options[0]!, pricePerNight: NaN }],
+      [{ ...options[0]!, pricePerNight: -1 }],
     ]) {
-      await expect(accommodationAgent.invoke({ brief, context: context(stays).ctx })).rejects.toThrow(
-        "No valid stays",
-      );
+      await expect(
+        accommodationAgent.invoke({ brief, context: context(stays).ctx }),
+      ).rejects.toThrow("No valid stays");
     }
   });
 
@@ -156,7 +161,7 @@ describe("accommodation revisions", () => {
     expect(result.items[0]!.estCost).toBe(480);
     expect(result.items[0]!.detail).toContain("Economy");
     expect(result.items[0]!.detail).toContain("no free cancellation");
-    expect(result.assumptions.join(" ")).toContain("saved USD 320.00");
+    expect(result.assumptions.join(" ")).toContain("saved AUD 320.00");
     expect(result.assumptions.join(" ")).toContain("Target met");
     expect(searchStays).toHaveBeenCalledWith(
       expect.objectContaining({ guests: 3, checkIn: brief.dates[0], checkOut: brief.dates[1] }),

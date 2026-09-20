@@ -29,7 +29,7 @@ describe("human decisions", () => {
     const plan = await initial();
     const stay = plan.sections[0]!.proposal!.stays![0]!;
     const choice = stay.candidates.find((c) => c.name.includes("Economy"))!;
-    choice.pricePerNightUsd = 1;
+    choice.pricePerNight = 1;
     stay.rooms = 99;
     stay.nights = 99;
     plan.estTotal = 1;
@@ -101,14 +101,13 @@ describe("human decisions", () => {
   });
   it("plans submitted brief directly and keeps request preferences isolated", async () => {
     const extractor = { extract: vi.fn(async () => ({ destination: "Wrong city" })) };
-    const replyGenerator = { generate: async () => "Updated" };
     const request = {
       tripId: brief.tripId,
       mode: "plan" as const,
       message: "Sydney with shared rooms",
       brief,
     };
-    const result = await runTripChat(request, { ...options, extractor, replyGenerator });
+    const result = await runTripChat(request, { ...options, extractor });
     expect(extractor.extract).not.toHaveBeenCalled();
     expect(result.plan.brief).toEqual(brief);
     expect(result.plan.hitl.every((c) => c.status === "pending")).toBe(true);
@@ -120,7 +119,7 @@ describe("human decisions", () => {
           accommodation: { ...brief.accommodation!, roomAllocation: "individual" },
         },
       },
-      { ...options, extractor, replyGenerator },
+      { ...options, extractor },
     );
     expect(individual.plan.estTotal).toBe(result.plan.estTotal * 1.5);
     expect((await initial()).estTotal).toBe(result.plan.estTotal);

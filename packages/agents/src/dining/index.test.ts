@@ -42,7 +42,7 @@ function context(preferences: UserPreference[] = [], withPlaces = true): AgentCo
 
 const validDraft = {
   summary: "Dining candidates for the trip",
-  dailyBudgetPerPersonUsd: 40,
+  dailyBudgetPerPerson: 40,
   picks: [{ name: "Market Kitchen", detail: "Confirm the current menu directly." }],
   assumptions: ["Menus change."],
 };
@@ -74,7 +74,7 @@ describe("dining planner", () => {
     expect(generate).toHaveBeenCalledWith(
       expect.objectContaining({
         dietaryPreferences: [preferences[0]],
-        maxDailyPerPersonUsd: 50,
+        maxDailyPerPerson: 50,
       }),
     );
     expect(result.assumptions.join(" ")).toContain("dietary.allergy=peanuts");
@@ -141,7 +141,7 @@ describe("dining planner", () => {
   it("falls back when model cost exceeds the budget guardrail", async () => {
     const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
     const generator: DiningGenerator = {
-      generate: vi.fn(async () => ({ ...validDraft, dailyBudgetPerPersonUsd: 500 })),
+      generate: vi.fn(async () => ({ ...validDraft, dailyBudgetPerPerson: 500 })),
     };
     const result = await createDiningAgent({ generator }).invoke({
       brief,
@@ -171,7 +171,7 @@ describe("dining planner", () => {
   });
 
   it("passes the reduced budget ceiling to a revised generator", async () => {
-    const generate = vi.fn(async () => ({ ...validDraft, dailyBudgetPerPersonUsd: 35 }));
+    const generate = vi.fn(async () => ({ ...validDraft, dailyBudgetPerPerson: 35 }));
     const agent = createDiningAgent({ generator: { generate } });
 
     await agent.invoke({
@@ -187,7 +187,7 @@ describe("dining planner", () => {
 
     expect(generate).toHaveBeenCalledWith(
       expect.objectContaining({
-        maxDailyPerPersonUsd: 35,
+        maxDailyPerPerson: 35,
         revision: expect.objectContaining({ targetAgent: "dining" }),
       }),
     );

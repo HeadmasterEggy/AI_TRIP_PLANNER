@@ -56,7 +56,7 @@ export function FiltersPanel({
           {field("start", "Start date", "date", "dates")}
           {field("end", "End date", "date", "dates")}
           {field("groupSize", "Travellers", "number")}
-          {field("budgetTotal", "Total budget (USD)", "number")}
+          {field("budgetTotal", "Total budget (AUD)", "number")}
           {field("nationality", "Nationality / passport (optional)")}
           <h3>Accommodation</h3>
           <label className="form-field">

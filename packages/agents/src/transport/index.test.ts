@@ -18,11 +18,11 @@ const brief: TripBrief = {
 
 function context(preferences: UserPreference[] = []) {
   const searchFlights = vi.fn(async () => [
-    { carrier: "MockAir Economy", priceUsd: 1200, note: "group total" },
-    { carrier: "MockAir Flexible", priceUsd: 1600, note: "group total" },
+    { carrier: "MockAir Economy", price: 1200, note: "group total" },
+    { carrier: "MockAir Flexible", price: 1600, note: "group total" },
   ]);
   const route = vi.fn(async () => [
-    { mode: "train" as const, durationMin: 140, priceUsd: 90, note: "fixture" },
+    { mode: "train" as const, durationMin: 140, price: 90, note: "fixture" },
   ]);
   const ctx: AgentContext = {
     tripId: brief.tripId,
@@ -146,7 +146,7 @@ describe("B transport reliability", () => {
   it("omits unknown fares rather than claiming a free route", async () => {
     const { ctx, route } = context();
     route.mockResolvedValue([
-      { mode: "train", durationMin: 140, priceUsd: 0, note: "fare unavailable" },
+      { mode: "train", durationMin: 140, price: 0, note: "fare unavailable" },
     ]);
     const result = await transportAgent.invoke({ brief, context: ctx });
     expect(result.items[1]).not.toHaveProperty("estCost");
@@ -158,7 +158,7 @@ describe("B transport reliability", () => {
     "does not emit a timed route for invalid/unrepresentable duration %s",
     async (durationMin) => {
       const { ctx, route } = context();
-      route.mockResolvedValue([{ mode: "train", durationMin, priceUsd: 90, note: "fixture" }]);
+      route.mockResolvedValue([{ mode: "train", durationMin, price: 90, note: "fixture" }]);
       const result = await transportAgent.invoke({ brief, context: ctx });
       expect(result.items).toHaveLength(1);
       expect(result.conflictsWith.length).toBeGreaterThan(0);
@@ -171,7 +171,7 @@ describe("B transport reliability", () => {
       {
         mode: "train",
         durationMin: 20,
-        priceUsd: 0,
+        price: 0,
         note: "OSRM driving estimate; fare unavailable",
       },
     ]);

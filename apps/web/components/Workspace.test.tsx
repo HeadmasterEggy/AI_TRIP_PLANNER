@@ -182,7 +182,7 @@ describe("Workspace interactions", () => {
       "Start date",
       "End date",
       "Travellers",
-      "Total budget (USD)",
+      "Total budget (AUD)",
     ])
       expect((screen.getByLabelText(label) as HTMLInputElement).value).toBe("");
     fireEvent.click(screen.getByRole("button", { name: "Open your trip" }));
@@ -396,6 +396,22 @@ describe("Workspace interactions", () => {
     fireEvent.click(historyButton(/^Sydney · 2026-10-01/));
     expect((screen.getByLabelText("Destination") as HTMLInputElement).value).toBe("Sydney");
   });
+  it("sends the current plan with a chat message so a question need not rebuild it", async () => {
+    const fetcher = withPlaceRequests(completeFor("Sydney"));
+    vi.stubGlobal("fetch", fetcher);
+    render(<Workspace initialPlan={plan} />);
+    fireEvent.change(screen.getByLabelText("Message AI Trip Planner"), {
+      target: { value: "东京11月天气怎么样？" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    await screen.findByText("Updated");
+    const request = JSON.parse(
+      (fetcher.mock.calls.find(([url]) => url === "/api/chat")![1] as RequestInit).body as string,
+    );
+    expect(request.mode).toBeUndefined();
+    expect(request.brief).toMatchObject({ destination: plan.brief.destination });
+    expect(request.plan).toMatchObject({ tripId: plan.tripId });
+  });
   it("starts a blank chat from natural language and links the generated trip", async () => {
     const fetcher = withPlaceRequests(completeFor("Lisbon"));
     vi.stubGlobal("fetch", fetcher);
@@ -409,8 +425,12 @@ describe("Workspace interactions", () => {
     const request = JSON.parse(
       (fetcher.mock.calls.find(([url]) => url === "/api/chat")![1] as RequestInit).body as string,
     );
-    expect(request.mode).toBe("start");
+    // No mode: the assistant reads the message and decides. A blank chat has no
+    // brief or plan to send, only what earlier turns stated.
+    expect(request.mode).toBeUndefined();
     expect(request.brief).toBeUndefined();
+    expect(request.plan).toBeUndefined();
+    expect(request.known).toBeDefined();
     expect(request.tripId).not.toBe(plan.tripId);
     await waitFor(() => {
       const catalog = parseCatalog(localStorage.getItem(CATALOG_KEY));
@@ -512,7 +532,7 @@ describe("Workspace interactions", () => {
     vi.stubGlobal("fetch", withPlaceRequests());
     const view = render(<Workspace initialPlan={plan} />);
     openPreferences();
-    fireEvent.change(screen.getByLabelText("Total budget (USD)"), { target: { value: "" } });
+    fireEvent.change(screen.getByLabelText("Total budget (AUD)"), { target: { value: "" } });
     fireEvent.change(screen.getByLabelText("Message AI Trip Planner"), {
       target: { value: "unfinished request" },
     });
@@ -534,7 +554,7 @@ describe("Workspace interactions", () => {
       "unfinished request",
     );
     openPreferences();
-    expect((screen.getByLabelText("Total budget (USD)") as HTMLInputElement).value).toBe("");
+    expect((screen.getByLabelText("Total budget (AUD)") as HTMLInputElement).value).toBe("");
     fireEvent.click(screen.getByRole("button", { name: /^Trips\s*1$/ }));
     expect(historyButton(/^Sydney · 2026-10-01/).getAttribute("aria-current")).toBe("true");
   });
@@ -753,7 +773,7 @@ describe("Workspace navigation", () => {
     localStorage.setItem(
       CATALOG_KEY,
       JSON.stringify({
-        version: 3,
+        version: 4,
         conversations: [],
         trips: [],
         layout: { sidebar: "yes", view: 7 },
@@ -776,7 +796,7 @@ describe("Workspace navigation", () => {
       within(map).queryByRole("button", { name: /Open (your trip|trip preferences)/ }),
     ).toBeNull();
     expect(within(topbar).getByRole("heading", { name: "Sydney" })).toBeTruthy();
-    expect(topbar.textContent).toMatch(/4 days · 2 travellers · USD\s2,000\.00 budget/);
+    expect(topbar.textContent).toMatch(/4 days · 2 travellers · AUD\s2,000\.00 budget/);
     expect(shell.contains(topbar)).toBe(false);
     expect(shell.contains(drawer("trip"))).toBe(true);
     expect(shell.contains(drawer("preferences"))).toBe(true);

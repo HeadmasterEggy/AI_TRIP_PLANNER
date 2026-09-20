@@ -8,7 +8,7 @@ describe("Trip drawer details", () => {
   it.each([
     [undefined, "Budget not set"],
     [0, "Budget not set"],
-    [100, /over the USD\s*100.00 budget/],
+    [100, /over the AUD\s*100.00 budget/],
   ])("keeps a %s budget safe", (budgetTotal, expected) => {
     const trip = { ...plan, budgetTotal: budgetTotal as number, estTotal: 200 };
     const { container } = render(
@@ -41,7 +41,7 @@ describe("Trip drawer details", () => {
       "Day 2",
     ]);
     expect(screen.getByText("Price not provided")).toBeTruthy();
-    expect(screen.getByText(/USD\s*0.01/)).toBeTruthy();
+    expect(screen.getByText(/AUD\s*0.01/)).toBeTruthy();
     expect(screen.getByText("Source not recorded")).toBeTruthy();
   });
   it("keeps restaurant suggestions unpriced alongside the meal budget", () => {
@@ -77,7 +77,7 @@ describe("Trip drawer details", () => {
             area: "Central",
             rating: 8.5,
             freeCancellation: true,
-            pricePerNightUsd: 100,
+            pricePerNight: 100,
           },
         ],
       },
@@ -85,7 +85,7 @@ describe("Trip drawer details", () => {
     const review = vi.fn();
     render(<TripSection section={section} onEdit={() => {}} onReview={review} />);
     fireEvent.click(screen.getByRole("button", { expanded: false }));
-    expect(screen.getByText(/USD\s*600.00/)).toBeTruthy();
+    expect(screen.getByText(/AUD\s*600.00/)).toBeTruthy();
     expect(screen.getByText("2026-10-04")).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Review hotel choices" }));
     expect(review).toHaveBeenCalledOnce();

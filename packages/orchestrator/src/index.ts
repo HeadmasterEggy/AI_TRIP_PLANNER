@@ -2,14 +2,13 @@
 
 export { DEMO_BRIEF } from "./demo";
 export {
-  applyBriefPatch,
-  extractBriefPatchLocally,
   IncompleteBriefError,
   runTripChat,
   type BriefExtractor,
-  type BriefPatch,
   type TripChatOptions,
 } from "./chat";
+export { applyBriefPatch, type BriefPatch } from "./brief";
+export { extractBriefPatchLocally } from "./chat-offline";
 export {
   createOrchestratorGraph,
   detectConflicts,

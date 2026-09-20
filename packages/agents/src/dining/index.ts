@@ -16,7 +16,9 @@ import { createRoutedChatModel, readStructuredResponse } from "../models";
 // a caller separately confirms them, so only the envelope contributes cost.
 const DAY_MS = 86_400_000;
 const DINING_BUDGET_SHARE = 0.2;
-const MAX_DAILY_PER_PERSON_USD = 75;
+// A judgement about what a person spends on meals in a day, so it is repriced with the
+// base currency rather than just renamed. Was AUD 75.
+const MAX_DAILY_PER_PERSON = 115;
 
 const DiningPick = z.object({
   name: z.string().trim().min(1).max(120),
@@ -25,7 +27,7 @@ const DiningPick = z.object({
 
 const DiningDraft = z.object({
   summary: z.string().trim().min(1).max(400),
-  dailyBudgetPerPersonUsd: z.number().nonnegative(),
+  dailyBudgetPerPerson: z.number().nonnegative(),
   picks: z.array(DiningPick).max(5),
   assumptions: z.array(z.string().trim().min(1).max(400)).max(6),
 });
@@ -40,7 +42,7 @@ export interface DiningGenerator {
     days: number;
     places: Place[];
     dietaryPreferences: UserPreference[];
-    maxDailyPerPersonUsd: number;
+    maxDailyPerPerson: number;
     revision?: RevisionRequest;
   }): Promise<DiningDraft>;
 }
@@ -108,7 +110,7 @@ function isBudgetRevision(revision?: RevisionRequest): boolean {
 /** Compute the per-person ceiling shared with the model and validator. */
 function budgetCeiling(brief: TripBrief, days: number, revision?: RevisionRequest): number {
   const normal = Math.min(
-    MAX_DAILY_PER_PERSON_USD,
+    MAX_DAILY_PER_PERSON,
     (brief.budgetTotal * DINING_BUDGET_SHARE) / (brief.groupSize * days),
   );
   return isBudgetRevision(revision) ? normal * 0.7 : normal;
@@ -118,10 +120,10 @@ function budgetCeiling(brief: TripBrief, days: number, revision?: RevisionReques
 function validateDraft(
   draft: DiningDraft,
   places: Place[],
-  maxDailyPerPersonUsd: number,
+  maxDailyPerPerson: number,
 ): DiningDraft {
   const parsed = DiningDraft.parse(draft);
-  if (parsed.dailyBudgetPerPersonUsd > maxDailyPerPersonUsd + Number.EPSILON) {
+  if (parsed.dailyBudgetPerPerson > maxDailyPerPerson + Number.EPSILON) {
     throw new Error("Dining estimate exceeds its planning guardrail.");
   }
   const candidates = new Set(places.map((place) => normalize(place.name)));
@@ -146,7 +148,7 @@ function validateDraft(
 function fallbackDraft(
   places: Place[],
   preferences: UserPreference[],
-  maxDailyPerPersonUsd: number,
+  maxDailyPerPerson: number,
 ): DiningDraft {
   const constraintText = preferences.length
     ? ` Ask the venue to confirm these requirements directly: ${preferences.map(({ key, value }) => `${key}=${value}`).join(", ")}.`
@@ -155,14 +157,12 @@ function fallbackDraft(
     summary: places.length
       ? `${places.length} grounded dining candidate(s) within a whole-trip meal budget envelope`
       : "No grounded dining candidates; using a whole-trip meal budget envelope",
-    dailyBudgetPerPersonUsd: Math.min(50, maxDailyPerPersonUsd),
+    dailyBudgetPerPerson: Math.min(50, maxDailyPerPerson),
     picks: places.slice(0, 5).map((place) => ({
       name: place.name,
       detail: `${place.category} candidate${place.rating ? ` with supplied rating ${place.rating}` : ""}.${constraintText}`,
     })),
-    assumptions: [
-      "Cuisine, menu, certification and availability require direct confirmation.",
-    ],
+    assumptions: ["Cuisine, menu, certification and availability require direct confirmation."],
   };
 }
 
@@ -185,7 +185,7 @@ function createMiniMaxGenerator(): DiningGenerator | undefined {
         model,
         tools: [evidence],
         systemPrompt:
-          "You are the dining specialist. Always call read_dining_evidence and use only its facts and exact venue names. Stay within its daily per-person USD ceiling and address any revision. Never claim live hours, availability, menu items, allergen safety, certification or dietary suitability; tell travellers to confirm important constraints directly. Return the requested structured dining draft.\n\nEach pick's name must be a candidate's name copied character for character, with no category, rating or district appended. Return no picks rather than inventing a venue that is not in the evidence.",
+          "You are the dining specialist. Always call read_dining_evidence and use only its facts and exact venue names. Stay within its daily per-person AUD ceiling and address any revision. Never claim live hours, availability, menu items, allergen safety, certification or dietary suitability; tell travellers to confirm important constraints directly. Return the requested structured dining draft.\n\nEach pick's name must be a candidate's name copied character for character, with no category, rating or district appended. Return no picks rather than inventing a venue that is not in the evidence.",
         responseFormat: DiningDraft,
       });
       const result = await specialist.invoke({
@@ -235,7 +235,7 @@ async function planDining(
           days,
           places,
           dietaryPreferences: preferences,
-          maxDailyPerPersonUsd: ceiling,
+          maxDailyPerPerson: ceiling,
           revision,
         }),
         places,
@@ -250,15 +250,15 @@ async function planDining(
     draft = fallbackDraft(places, preferences, ceiling);
   }
 
-  const total = Number((draft.dailyBudgetPerPersonUsd * brief.groupSize * days).toFixed(2));
+  const total = Number((draft.dailyBudgetPerPerson * brief.groupSize * days).toFixed(2));
   // Keep venue picks informational; only the whole-trip meal envelope is priced.
   return {
     agent: "dining",
-    summary: `${draft.summary} · USD ${total.toFixed(2)} meal budget`,
+    summary: `${draft.summary} · AUD ${total.toFixed(2)} meal budget`,
     items: [
       {
         kind: "meal-budget",
-        detail: `${days} planning day(s) × ${brief.groupSize} traveller(s) × USD ${draft.dailyBudgetPerPersonUsd.toFixed(2)} per person/day.`,
+        detail: `${days} planning day(s) × ${brief.groupSize} traveller(s) × AUD ${draft.dailyBudgetPerPerson.toFixed(2)} per person/day.`,
         estCost: total,
       },
       ...draft.picks.map((pick) => ({
