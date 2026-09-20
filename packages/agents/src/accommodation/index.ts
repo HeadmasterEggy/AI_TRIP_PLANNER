@@ -104,8 +104,14 @@ function assembleStayProposal(
   const initialTotal =
     selections.reduce((sum, stay) => sum + Math.round(stay.initialCost * 100), 0) / 100;
   const savings = Math.round((initialTotal - total) * 100) / 100;
+  // Google Places (real mode) marks every option it returns as `grounded`;
+  // the mock fixtures never do. Reporting this honestly matters because the
+  // *property* being real doesn't make the *price* real in either mode.
+  const grounded = selections.every(({ options }) => options.every((option) => option.grounded));
   const assumptions = [
-    "Booking mock convention: AUD per room per night; at most 2 guests per room; availability is simulated.",
+    grounded
+      ? "AUD per room per night; properties are real (Google Places), availability is not verified."
+      : "Booking mock convention: AUD per room per night; at most 2 guests per room; availability is simulated.",
     `${roomAllocation} allocation: ${rooms} room(s) for ${groupSize} guest(s); check-out day is not charged.`,
     "Only selected stays contribute to estCost. Taxes/fees are assumed included in mock rates.",
     "Initial selection prefers rating >=8/10 and free cancellation; confirmed preferences remain mandatory during revisions.",
@@ -154,10 +160,16 @@ function assembleStayProposal(
   }
   return {
     agent: "accommodation",
-    source: {
-      label: "Simulated booking data",
-      freshness: "Fictional rates and availability; not a live quote.",
-    },
+    source: grounded
+      ? {
+          label: "Google Places (grounded)",
+          freshness:
+            "Property names, ratings and addresses are real; nightly price is a planning estimate from Google's price-level bucket, not a live quote.",
+        }
+      : {
+          label: "Simulated booking data",
+          freshness: "Fictional rates and availability; not a live quote.",
+        },
     stays: selections.map(({ segment, options, chosen }) => ({
       id: `stay-${segment.day}`,
       ...segment,

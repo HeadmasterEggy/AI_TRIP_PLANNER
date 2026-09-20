@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { route } from "./maps";
+import { places, route } from "./maps";
 
 const q = {
   from: "Tokyo",
@@ -142,5 +142,72 @@ describe("B route provider boundaries", () => {
       })),
     );
     expect((await route(q))[0]!.note).toContain("driving-only");
+  });
+});
+
+describe("B places provider boundaries", () => {
+  function google(data: unknown) {
+    vi.stubEnv("USE_MOCK_TOOLS", "false");
+    vi.stubEnv("MAPS_PROVIDER", "google");
+    vi.stubEnv("MAPS_API_KEY", "test-only");
+    const fetcher = vi.fn().mockResolvedValue({ ok: true, json: async () => data });
+    vi.stubGlobal("fetch", fetcher);
+    return fetcher;
+  }
+
+  it("queries Google Places by category and destination, and returns grounded results", async () => {
+    const fetcher = google({
+      places: [
+        { displayName: { text: "Sensoji Temple" }, types: ["tourist_attraction"], rating: 4.5 },
+      ],
+    });
+
+    const results = await places({ near: "Tokyo", category: "temple" });
+
+    expect(results).toEqual([
+      { name: "Sensoji Temple", category: "temple", rating: 4.5 },
+    ]);
+    const [url, init] = fetcher.mock.calls[0]!;
+    expect(String(url)).toBe("https://places.googleapis.com/v1/places:searchText");
+    expect(JSON.parse(String((init as RequestInit).body))).toEqual({
+      textQuery: "temple in Tokyo",
+      pageSize: 5,
+    });
+  });
+
+  it("falls back to Google's own place type when no category was requested", async () => {
+    google({ places: [{ displayName: { text: "Ichiran Ramen" }, types: ["restaurant"] }] });
+
+    const [result] = await places({ near: "Tokyo" });
+
+    expect(result).toEqual({ name: "Ichiran Ramen", category: "restaurant" });
+  });
+
+  it("drops candidates with no usable name instead of returning a blank card", async () => {
+    google({ places: [{ types: ["restaurant"] }, { displayName: { text: "  " } }] });
+
+    expect(await places({ near: "Tokyo" })).toEqual([]);
+  });
+
+  it("passes Google's 1.0-5.0 rating through unconverted (unlike accommodation's 0-10 scale)", async () => {
+    google({ places: [{ displayName: { text: "A" }, rating: 4.9 }] });
+
+    expect((await places({ near: "Tokyo" }))[0]!.rating).toBe(4.9);
+  });
+
+  it("propagates an upstream failure instead of returning an empty list silently", async () => {
+    vi.stubEnv("USE_MOCK_TOOLS", "false");
+    vi.stubEnv("MAPS_PROVIDER", "google");
+    vi.stubEnv("MAPS_API_KEY", "test-only");
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 429 }));
+
+    await expect(places({ near: "Tokyo" })).rejects.toThrow("429");
+  });
+
+  it("requires MAPS_API_KEY before calling Google", async () => {
+    vi.stubEnv("USE_MOCK_TOOLS", "false");
+    vi.stubEnv("MAPS_PROVIDER", "google");
+
+    await expect(places({ near: "Tokyo" })).rejects.toThrow("MAPS_API_KEY");
   });
 });

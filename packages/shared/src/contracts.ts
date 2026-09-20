@@ -125,6 +125,11 @@ export const StayCandidate = z.object({
   pricePerNight: z.number().positive(),
   rating: z.number().min(0).max(10),
   freeCancellation: z.boolean(),
+  // true only for a real property from a grounded provider (e.g. Google
+  // Places); absent/false for a fictional mock fixture. In both cases
+  // pricePerNightUsd is a planning estimate, never a live quote — see
+  // AgentProposal.source for the human-readable disclosure.
+  grounded: z.boolean().optional(),
 });
 export const StaySelection = z.object({
   id: z.string().min(1),

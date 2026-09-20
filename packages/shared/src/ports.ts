@@ -48,6 +48,8 @@ export interface StayOption {
   pricePerNight: number;
   rating: number;
   freeCancellation: boolean;
+  /** true for a real property from a grounded provider; see contracts.ts StayCandidate. */
+  grounded?: boolean;
 }
 export interface FlightQuery {
   from: string;
