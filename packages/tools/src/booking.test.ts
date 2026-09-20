@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { searchFlights, searchStays } from "./booking";
+import { clearSerpApiCacheForTests, resetSerpApiUsageForTests } from "./serpapi";
 
 const stay = { city: "Tokyo", checkIn: "2026-06-15", checkOut: "2026-06-19", guests: 2 };
 const flight = { from: "Sydney", to: "Tokyo", depart: "2026-06-15", passengers: 2 };
@@ -7,6 +8,8 @@ const flight = { from: "Sydney", to: "Tokyo", depart: "2026-06-15", passengers: 
 afterEach(() => {
   vi.unstubAllEnvs();
   vi.unstubAllGlobals();
+  resetSerpApiUsageForTests();
+  clearSerpApiCacheForTests();
 });
 
 describe("Booking mock: stays", () => {
@@ -113,6 +116,65 @@ describe("Google-grounded lodging (real mode)", () => {
   });
 });
 
+describe("SerpApi stays: takes priority over Google Places, falls back to it on failure", () => {
+  function serpApi(data: unknown, status = 200) {
+    vi.stubEnv("USE_MOCK_TOOLS", "false");
+    vi.stubEnv("SERPAPI_KEY", "test-serpapi-key");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(JSON.stringify(data), { status })),
+    );
+  }
+
+  it("prefers a real, live SerpApi rate over the Google Places estimate when both are configured", async () => {
+    vi.stubEnv("MAPS_PROVIDER", "google");
+    vi.stubEnv("MAPS_API_KEY", "unused-in-this-case");
+    serpApi({
+      properties: [{ name: "Park Hyatt Tokyo", rate_per_night: { extracted_lowest: 650 } }],
+    });
+
+    const [option] = await searchStays(stay);
+
+    expect(option).toMatchObject({ name: "Park Hyatt Tokyo", pricePerNight: 650 });
+  });
+
+  it("falls back to the Google Places estimate when SerpApi fails, instead of failing the search", async () => {
+    vi.stubEnv("USE_MOCK_TOOLS", "false");
+    vi.stubEnv("SERPAPI_KEY", "test-serpapi-key");
+    vi.stubEnv("MAPS_PROVIDER", "google");
+    vi.stubEnv("MAPS_API_KEY", "test-only");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string | URL | Request) =>
+        String(url).includes("serpapi.com")
+          ? new Response(JSON.stringify({ error: "Invalid API key." }), { status: 401 })
+          : Response.json({ places: [{ displayName: { text: "Fallback Hotel" }, rating: 4 }] }),
+      ),
+    );
+
+    const [option] = await searchStays(stay);
+
+    expect(option).toMatchObject({ name: "Fallback Hotel", grounded: true });
+  });
+
+  it("still throws the original 'no lodging' error when SerpApi AND the Google Places fallback both fail", async () => {
+    vi.stubEnv("USE_MOCK_TOOLS", "false");
+    vi.stubEnv("SERPAPI_KEY", "test-serpapi-key");
+    vi.stubEnv("MAPS_PROVIDER", "google");
+    vi.stubEnv("MAPS_API_KEY", "test-only");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string | URL | Request) =>
+        String(url).includes("serpapi.com")
+          ? new Response(JSON.stringify({ error: "Invalid API key." }), { status: 401 })
+          : Response.json({ places: [] }),
+      ),
+    );
+
+    await expect(searchStays(stay)).rejects.toThrow("no lodging");
+  });
+});
+
 describe("Booking mock: flights", () => {
   it("quotes flights for the whole group, scaling passengers and return legs exactly once", async () => {
     expect((await searchFlights({ ...flight, passengers: 1 }))[0]!.price).toBe(310);
@@ -130,5 +192,42 @@ describe("Booking mock: flights", () => {
     { from: "" },
   ])("rejects invalid flight searches: %j", async (override) => {
     await expect(searchFlights({ ...flight, ...override })).rejects.toThrow();
+  });
+});
+
+describe("SerpApi flights", () => {
+  it("returns real fares from SerpApi when configured", async () => {
+    vi.stubEnv("USE_MOCK_TOOLS", "false");
+    vi.stubEnv("SERPAPI_KEY", "test-serpapi-key");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json({ best_flights: [{ price: 450, flights: [{ airline: "Qantas" }] }] }),
+      ),
+    );
+
+    const [option] = await searchFlights({ ...flight, passengers: 2 });
+
+    expect(option).toMatchObject({ carrier: "Qantas", price: 900 }); // 450 * 2 passengers
+  });
+
+  it("throws a clear error (not a silent mock fare) when SerpApi fails and mock is disabled", async () => {
+    vi.stubEnv("USE_MOCK_TOOLS", "false");
+    vi.stubEnv("SERPAPI_KEY", "test-serpapi-key");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(JSON.stringify({ error: "Invalid API key." }), { status: 401 })),
+    );
+
+    const options = await searchFlights(flight).catch((e: unknown) => e);
+
+    expect(options).toBeInstanceOf(Error);
+    expect((options as Error).message).not.toContain("MockAir");
+  });
+
+  it("rejects with a clear message when no real flight provider is configured", async () => {
+    vi.stubEnv("USE_MOCK_TOOLS", "false");
+
+    await expect(searchFlights(flight)).rejects.toThrow("Unsupported flight provider");
   });
 });

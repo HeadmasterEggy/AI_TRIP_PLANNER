@@ -50,6 +50,10 @@ export interface StayOption {
   freeCancellation: boolean;
   /** true for a real property from a grounded provider; see contracts.ts StayCandidate. */
   grounded?: boolean;
+  /** GPS coordinates, when the provider reports them (e.g. SerpApi Google Hotels). */
+  location?: { latitude: number; longitude: number };
+  /** Link to the property's details page, when the provider reports one. */
+  detailsUrl?: string;
 }
 export interface FlightQuery {
   from: string;
@@ -62,6 +66,10 @@ export interface FlightOption {
   carrier: string;
   price: number;
   note?: string;
+  /** Number of layovers (0 = nonstop), when the provider reports it. */
+  stops?: number;
+  /** Total scheduled flight time in minutes, when the provider reports it. */
+  durationMin?: number;
 }
 export interface BookingPort {
   searchStays(q: StayQuery): Promise<StayOption[]>;

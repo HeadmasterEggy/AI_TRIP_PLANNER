@@ -126,10 +126,13 @@ export const StayCandidate = z.object({
   rating: z.number().min(0).max(10),
   freeCancellation: z.boolean(),
   // true only for a real property from a grounded provider (e.g. Google
-  // Places); absent/false for a fictional mock fixture. In both cases
-  // pricePerNightUsd is a planning estimate, never a live quote — see
+  // Places, SerpApi); absent/false for a fictional mock fixture. In mock and
+  // Google-Places mode pricePerNight is a planning estimate, never a live
+  // quote; SerpApi mode is the one path with a real live rate — see
   // AgentProposal.source for the human-readable disclosure.
   grounded: z.boolean().optional(),
+  location: z.object({ latitude: z.number(), longitude: z.number() }).optional(),
+  detailsUrl: z.string().url().optional(),
 });
 export const StaySelection = z.object({
   id: z.string().min(1),

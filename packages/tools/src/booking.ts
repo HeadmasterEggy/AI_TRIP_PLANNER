@@ -2,16 +2,24 @@
 // Stay prices are AUD per room per night, assuming at most two guests per room.
 // Flight prices are AUD for ALL passengers and include both legs when returning.
 //
-// Hotels: Google has no public live-pricing API (real availability/rates need
-// a partner agreement with Booking.com/Expedia/etc., out of scope for this
-// project). Real mode is therefore "grounded, estimated": a real property
-// from Google Places, priced by mapping Google's price_level bucket to a
-// planning estimate — never a live quote. Flights stay mock-only; no
-// grounded flight provider is wired up.
+// Real-mode priority, hotels: SerpApi (live Google Hotels price) if
+// SERPAPI_KEY is set, else Google Places (grounded property, estimated price
+// — Google itself has no public live-pricing API; a real quote needs a
+// partner agreement with Booking.com/Expedia/etc., out of scope here), else
+// mock. A SerpApi failure (bad key, quota, no results, network) falls back to
+// Google Places rather than failing the whole request — see searchStays.
+//
+// Real-mode priority, flights: SerpApi if SERPAPI_KEY is set, else mock —
+// there is no Google-Places-equivalent fallback for flights, so a SerpApi
+// failure here is thrown; the transport agent already treats a thrown
+// searchFlights as "flight remains unpriced" rather than a crash (see
+// packages/agents/src/transport/index.ts's .catch on this call).
 import type { StayQuery, StayOption, FlightQuery, FlightOption } from "@trip/shared";
 import { searchGooglePlacesText } from "./google-places";
+import { searchFlightsSerpApi, searchHotelsSerpApi, SerpApiError } from "./serpapi";
 
 export type { StayQuery, StayOption, FlightQuery, FlightOption } from "@trip/shared";
+export { SerpApiError, serpApiUsage } from "./serpapi";
 
 const mockEnabled = () => process.env.USE_MOCK_TOOLS !== "false";
 const provider = () => process.env.MAPS_PROVIDER || (process.env.MAPS_API_KEY ? "google" : "osm");
@@ -116,6 +124,31 @@ export async function searchStays(q: StayQuery): Promise<StayOption[]> {
     ];
   }
 
+  if (process.env.SERPAPI_KEY) {
+    try {
+      return await searchHotelsSerpApi({
+        city,
+        checkIn: q.checkIn,
+        checkOut: q.checkOut,
+        guests: q.guests,
+      });
+    } catch (error) {
+      // Any SerpApi failure (bad key, quota, no results, network) degrades to
+      // the estimated-price Google Places path below rather than failing the
+      // whole search — real property data, just without a live rate.
+      const reason = error instanceof SerpApiError ? error.reason : "request_failed";
+      console.warn(
+        `[booking] SerpApi hotel search unavailable (${reason}); falling back to Google Places estimate: ${
+          error instanceof Error ? error.message : "unknown error"
+        }`,
+      );
+    }
+  }
+
+  return searchStaysGooglePlacesEstimate(city);
+}
+
+async function searchStaysGooglePlacesEstimate(city: string): Promise<StayOption[]> {
   if (provider() !== "google") throw new Error(`Unsupported booking provider: ${provider()}`);
   if (!process.env.MAPS_API_KEY) throw new Error("Google Places provider requires MAPS_API_KEY.");
   const results = await searchGooglePlacesText(
@@ -155,11 +188,28 @@ export async function searchFlights(q: FlightQuery): Promise<FlightOption[]> {
   if (!Number.isSafeInteger(420 * q.passengers * legs * 100)) {
     throw new Error("Flight estimate exceeds supported AUD precision.");
   }
-  const note =
-    `${from} ${legs === 2 ? "<->" : "->"} ${to}; ${q.passengers} passengers; ` +
-    `${legs === 2 ? "round-trip" : "one-way"} group total in AUD; fictional mock fare`;
-  return [
-    { carrier: "MockAir Economy", price: 310 * q.passengers * legs, note },
-    { carrier: "MockAir Flexible", price: 420 * q.passengers * legs, note },
-  ];
+
+  if (mockEnabled()) {
+    const note =
+      `${from} ${legs === 2 ? "<->" : "->"} ${to}; ${q.passengers} passengers; ` +
+      `${legs === 2 ? "round-trip" : "one-way"} group total in AUD; fictional mock fare`;
+    return [
+      { carrier: "MockAir Economy", price: 310 * q.passengers * legs, note },
+      { carrier: "MockAir Flexible", price: 420 * q.passengers * legs, note },
+    ];
+  }
+
+  // No Google-Places-style fallback exists for flights, so a SerpApi failure
+  // is thrown as-is (a clear, typed SerpApiError, never a raw fetch
+  // exception). The transport agent already treats a thrown searchFlights as
+  // "flight remains unpriced" — a conflict note, not a crash — rather than
+  // silently substituting a fictional fare for a real search that failed.
+  if (!process.env.SERPAPI_KEY) throw new Error("Unsupported flight provider: no SERPAPI_KEY set.");
+  return searchFlightsSerpApi({
+    from,
+    to,
+    depart: q.depart,
+    return: q.return,
+    passengers: q.passengers,
+  });
 }
