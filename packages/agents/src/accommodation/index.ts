@@ -87,6 +87,7 @@ function assembleStayProposal(
   evidence: StayEvidence,
   revision: RevisionRequest | undefined,
   pick: (segmentDay: number, options: StayOption[]) => StayOption,
+  sourceKind: "estimated" | "mock" | "fallback" = "estimated",
 ): AgentProposal {
   const { segments, rooms, roomAllocation, groupSize, budgetRevision, searched } = evidence;
   const selections = searched.map(({ segment, options }) => {
@@ -160,13 +161,22 @@ function assembleStayProposal(
   }
   return {
     agent: "accommodation",
-    source: grounded
+    source:
+      sourceKind === "fallback"
+        ? {
+            kind: "fallback",
+            label: "Local fallback",
+            freshness: "The model choice was unavailable; a deterministic stay selection was used from the gathered candidates.",
+          }
+        : grounded
       ? {
+          kind: sourceKind,
           label: "Google Places (grounded)",
           freshness:
             "Property names, ratings and addresses are real; nightly price is a planning estimate from Google's price-level bucket, not a live quote.",
         }
       : {
+          kind: "mock",
           label: "Simulated booking data",
           freshness: "Fictional rates and availability; not a live quote.",
         },
@@ -326,11 +336,23 @@ async function planStays(
     ctx.signal?.throwIfAborted();
     const reason = error instanceof Error ? error.message : "unknown model error";
     console.warn(`[accommodation] Specialist failed; using a safe local plan: ${reason}`);
-    return evidence
-      ? assembleStayProposal(evidence, revision, (_day, options) =>
-          evidence!.budgetRevision ? options[0]! : chooseInitial(options),
-        )
-      : buildStayProposal(brief, ctx, revision);
+    if (evidence) {
+      return assembleStayProposal(
+        evidence,
+        revision,
+        (_day, options) => (evidence!.budgetRevision ? options[0]! : chooseInitial(options)),
+        "fallback",
+      );
+    }
+    const proposal = await buildStayProposal(brief, ctx, revision);
+    return {
+      ...proposal,
+      source: {
+        kind: "fallback",
+        label: "Local fallback",
+        freshness: "The model choice was unavailable; a deterministic stay selection was used from the gathered candidates.",
+      },
+    };
   }
 }
 

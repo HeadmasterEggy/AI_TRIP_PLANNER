@@ -696,6 +696,37 @@ button:not(.section__row):not(.stay-option):not(.primary):not(.trip__cta) {
   background: var(--surface-2);
   border-radius: var(--radius-sm);
 }
+.source-note > strong {
+  display: inline-block;
+  margin-top: 5px;
+}
+.source-kind {
+  display: inline-flex;
+  align-items: center;
+  min-height: 20px;
+  padding: 2px 7px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-dim);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.source-kind--live {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+  color: var(--accent);
+}
+.source-kind--estimated {
+  border-color: color-mix(in srgb, var(--text-dim) 70%, var(--border));
+}
+.source-kind--mock {
+  border-color: color-mix(in srgb, var(--text-dim) 50%, var(--border));
+}
+.source-kind--fallback,
+.source-kind--unavailable {
+  border-color: var(--warn);
+  color: var(--warn);
+}
 .error-text {
   color: var(--warn);
   display: block;

@@ -149,6 +149,7 @@ describe("dining planner", () => {
     });
     expect(result.items[0]!.estCost).toBe(200);
     expect(result.assumptions.join(" ")).toContain("Cuisine, menu, certification and availability");
+    expect(result.source).toMatchObject({ kind: "fallback", label: "Local fallback" });
     warning.mockRestore();
   });
 
@@ -206,6 +207,7 @@ describe("dining planner", () => {
       context: context(),
     });
     expect(result.items.map((item) => item.location).filter(Boolean)).toEqual(["Market Kitchen"]);
+    expect(result.source).toMatchObject({ kind: "fallback", label: "Local fallback" });
     warning.mockRestore();
   });
 

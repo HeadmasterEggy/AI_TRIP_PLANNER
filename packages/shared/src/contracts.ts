@@ -146,6 +146,20 @@ export const StaySelection = z.object({
   candidates: z.array(StayCandidate).min(1),
 });
 export type StaySelection = z.infer<typeof StaySelection>;
+export const AgentProposalSourceKind = z.enum([
+  "live",
+  "estimated",
+  "mock",
+  "fallback",
+  "unavailable",
+]);
+export type AgentProposalSourceKind = z.infer<typeof AgentProposalSourceKind>;
+export const AgentProposalSource = z.object({
+  kind: AgentProposalSourceKind,
+  label: z.string(),
+  freshness: z.string(),
+});
+export type AgentProposalSource = z.infer<typeof AgentProposalSource>;
 export const AgentProposal = z.object({
   agent: z.enum(AGENT_NAMES),
   summary: z.string(),
@@ -153,7 +167,7 @@ export const AgentProposal = z.object({
   assumptions: z.array(z.string()),
   conflictsWith: z.array(z.string()).default([]),
   stays: z.array(StaySelection).optional(),
-  source: z.object({ label: z.string(), freshness: z.string() }).optional(),
+  source: AgentProposalSource.optional(),
 });
 export type AgentProposal = z.infer<typeof AgentProposal>;
 

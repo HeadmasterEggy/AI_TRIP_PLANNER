@@ -227,6 +227,7 @@ async function planDining(
   const generator =
     options.generator === false ? undefined : (options.generator ?? createMiniMaxGenerator());
   let draft: DiningDraft;
+  let usedFallback = !generator;
   if (generator) {
     try {
       draft = validateDraft(
@@ -244,6 +245,7 @@ async function planDining(
     } catch (error) {
       const reason = error instanceof Error ? error.message : "unknown model error";
       console.warn(`[dining] Model draft failed; using a safe local plan: ${reason}`);
+      usedFallback = true;
       draft = fallbackDraft(places, preferences, ceiling);
     }
   } else {
@@ -279,6 +281,20 @@ async function planDining(
       ...draft.assumptions,
     ],
     conflictsWith: [],
+    source: usedFallback
+      ? {
+          kind: "fallback",
+          label: "Local fallback",
+          freshness: "The model dining draft was unavailable or invalid; deterministic meal guidance was used from the gathered venue evidence.",
+        }
+      : {
+          kind: process.env.USE_MOCK_TOOLS === "false" ? "estimated" : "mock",
+          label: "Maps evidence and AI dining plan",
+          freshness:
+            process.env.USE_MOCK_TOOLS === "false"
+              ? "Venue details are provider estimates; menus, dietary suitability and availability require direct confirmation."
+              : "Venue details come from deterministic mock fixtures; not live verified.",
+        },
   };
 }
 

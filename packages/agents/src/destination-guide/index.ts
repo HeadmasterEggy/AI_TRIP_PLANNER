@@ -179,6 +179,7 @@ async function planDestinationGuide(
   const generator =
     options.generator === false ? undefined : (options.generator ?? createMiniMaxGenerator());
   let draft: DestinationGuideDraft;
+  let usedFallback = !generator;
   if (generator) {
     try {
       draft = validateDraft(
@@ -190,6 +191,7 @@ async function planDestinationGuide(
       console.warn(
         `[destination-guide] Model draft failed; using a safe local plan: ${reason}`,
       );
+      usedFallback = true;
       draft = fallbackDraft(brief, month, places);
     }
   } else {
@@ -222,6 +224,20 @@ async function planDestinationGuide(
       ...draft.assumptions,
     ],
     conflictsWith: [],
+    source: usedFallback
+      ? {
+          kind: "fallback",
+          label: "Local fallback",
+          freshness: "The model guide was unavailable or invalid; deterministic destination guidance was used from the gathered place evidence.",
+        }
+      : {
+          kind: process.env.USE_MOCK_TOOLS === "false" ? "estimated" : "mock",
+          label: "Maps evidence and AI guide",
+          freshness:
+            process.env.USE_MOCK_TOOLS === "false"
+              ? "Place details are provider estimates; weather, entry, health and safety claims require official verification."
+              : "Place details come from deterministic mock fixtures; not live verified.",
+        },
   };
 }
 

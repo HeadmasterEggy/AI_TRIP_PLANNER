@@ -139,11 +139,13 @@ describe("the model's stay choice is load-bearing", () => {
     behavior.fail = true;
     const proposal = await accommodationAgent.invoke({ brief, context });
     expect(proposal.items[0]!.estCost).toBe(1000);
+    expect(proposal.source).toMatchObject({ kind: "fallback", label: "Local fallback" });
   });
 
   it("does not plan from an answer given without searching", async () => {
     behavior.skipTool = true;
     const proposal = await accommodationAgent.invoke({ brief, context });
     expect(proposal.items[0]!.estCost).toBe(1000);
+    expect(proposal.source).toMatchObject({ kind: "fallback" });
   });
 });

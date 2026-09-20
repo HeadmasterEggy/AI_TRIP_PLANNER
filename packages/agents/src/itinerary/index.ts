@@ -264,6 +264,11 @@ async function planItinerary(
       conflictsWith: [
         "geography conflict: no grounded places available; itinerary requires new evidence",
       ],
+      source: {
+        kind: "unavailable",
+        label: "Maps provider",
+        freshness: "No grounded place data was available, so no activities were invented.",
+      },
     };
   }
   const generator =
@@ -321,6 +326,20 @@ async function planItinerary(
         : []),
     ],
     conflictsWith: conflicts,
+    source: usedFallback
+      ? {
+          kind: "fallback",
+          label: "Local fallback",
+          freshness: "The model draft was unavailable or invalid; a deterministic itinerary was used from the gathered place evidence.",
+        }
+      : {
+          kind: process.env.USE_MOCK_TOOLS === "false" ? "estimated" : "mock",
+          label: "Maps evidence and AI plan",
+          freshness:
+            process.env.USE_MOCK_TOOLS === "false"
+              ? "Place and route details are provider estimates; opening hours and availability remain unverified."
+              : "Place and route details come from deterministic mock fixtures; not live verified.",
+        },
   };
 }
 

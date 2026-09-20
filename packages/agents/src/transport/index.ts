@@ -211,10 +211,52 @@ interface TransportPlan {
   extraAssumptions: string[];
 }
 
+function transportSource(
+  evidence: TransportEvidence,
+  degraded = false,
+): NonNullable<AgentProposal["source"]> {
+  if (degraded) {
+    return {
+      kind: "fallback",
+      label: "Local fallback",
+      freshness:
+        "The model schedule was unavailable or invalid; a deterministic transport plan was used from the gathered evidence.",
+    };
+  }
+  const requiresFlight = evidence.origin.toLowerCase() !== evidence.destinations[0]!.toLowerCase();
+  if (requiresFlight && !evidence.flights.length) {
+    return {
+      kind: "unavailable",
+      label: "Flight provider",
+      freshness: "No valid flight fare was available; transport remains incomplete and unpriced.",
+    };
+  }
+  if (process.env.USE_MOCK_TOOLS !== "false") {
+    return {
+      kind: "mock",
+      label: "Mock booking and route data",
+      freshness: "Fares and route details are deterministic fixtures; not live verified.",
+    };
+  }
+  if (process.env.SERPAPI_KEY && evidence.flights.length) {
+    return {
+      kind: "live",
+      label: "SerpApi Google Flights + Maps",
+      freshness: "Flight fares are live search results at query time; route timings remain provider estimates and availability can change.",
+    };
+  }
+  return {
+    kind: "estimated",
+    label: "Maps route estimates",
+    freshness: "Route details are provider estimates; no live flight fare was included.",
+  };
+}
+
 /** Turn a chosen flight and schedule into the costed proposal. */
 function assembleTransportProposal(
   evidence: TransportEvidence,
   plan: TransportPlan,
+  degraded = false,
 ): AgentProposal {
   const { origin, destinations, brief, budgetRevision, scheduleRevision } = evidence;
   const conflicts = [...evidence.conflicts];
@@ -251,6 +293,7 @@ function assembleTransportProposal(
       ...plan.extraAssumptions,
     ],
     conflictsWith: [...new Set(conflicts)].sort((a, b) => a.localeCompare(b)),
+    source: transportSource(evidence, degraded),
   };
 }
 
@@ -411,9 +454,16 @@ async function planTransport(
     ctx.signal?.throwIfAborted();
     const reason = error instanceof Error ? error.message : "unknown model error";
     console.warn(`[transport] Specialist failed; using a safe local plan: ${reason}`);
-    return evidence
-      ? assembleTransportProposal(evidence, deterministicPlan(evidence))
-      : buildTransportProposal(brief, ctx, revision);
+    if (evidence) return assembleTransportProposal(evidence, deterministicPlan(evidence), true);
+    const proposal = await buildTransportProposal(brief, ctx, revision);
+    return {
+      ...proposal,
+      source: {
+        kind: "fallback",
+        label: "Local fallback",
+        freshness: "The model schedule was unavailable; a deterministic transport plan was used from the gathered evidence.",
+      },
+    };
   }
 }
 
