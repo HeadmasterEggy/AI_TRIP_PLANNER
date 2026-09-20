@@ -1,14 +1,15 @@
+import { FakeToolCallingModel } from "langchain";
 import { describe, expect, it, vi } from "vitest";
-import type { MemoryStore, Specialist, ToolGateway, TripBrief } from "@trip/shared";
-import {
-  applyBriefPatch,
-  extractBriefPatchLocally,
-  IncompleteBriefError,
-  replyPrompt,
-  runTripChat,
-  type BriefExtractor,
-  type ReplyGenerator,
-} from "./chat";
+import type {
+  ChatTurn,
+  MemoryStore,
+  Specialist,
+  ToolGateway,
+  TripBrief,
+  TripPlan,
+} from "@trip/shared";
+import { z } from "zod/v4";
+import { BriefUpdate, IncompleteBriefError, runTripChat } from "./chat";
 
 const brief: TripBrief = {
   tripId: "chat-test",
@@ -19,281 +20,374 @@ const brief: TripBrief = {
   budgetTotal: 4000,
 };
 
-describe("local TripBrief extraction", () => {
-  it("extracts explicit English trip fields without a model", () => {
-    expect(
-      extractBriefPatchLocally(
-        "Plan a trip to Sydney for 3 people, 2026-10-01 to 2026-10-05, budget $2,500",
-      ),
-    ).toEqual({
-      destination: "Sydney",
-      dates: ["2026-10-01", "2026-10-05"],
-      groupSize: 3,
-      budgetTotal: 2500,
-    });
-  });
+const tools: ToolGateway = {
+  maps: { route: vi.fn(async () => []), places: vi.fn(async () => []) },
+  booking: { searchStays: vi.fn(async () => []), searchFlights: vi.fn(async () => []) },
+};
+const itinerary: Specialist = {
+  name: "itinerary",
+  label: "Day plan",
+  invoke: vi.fn(async ({ brief: updated }) => ({
+    agent: "itinerary" as const,
+    summary: `Plan for ${updated.destination}`,
+    items: [{ kind: "activity", detail: "Walk", estCost: 100 }],
+    assumptions: [],
+    conflictsWith: [],
+  })),
+};
 
-  it("extracts explicit Chinese updates", () => {
-    expect(
-      extractBriefPatchLocally(
-        "2026-10-01 至 2026-10-05 去悉尼，预算改成 3000，两个人，澳大利亚护照",
-      ),
-    ).toEqual({
-      destination: "悉尼",
-      dates: ["2026-10-01", "2026-10-05"],
-      groupSize: 2,
-      budgetTotal: 3000,
-      nationality: "澳大利亚",
-    });
-  });
-
-  it("supports the concise format shown in the chat placeholder", () => {
-    expect(
-      extractBriefPatchLocally("Sydney, 2026-10-01 to 2026-10-05, 2 people, budget $3000."),
-    ).toMatchObject({ destination: "Sydney", groupSize: 2, budgetTotal: 3000 });
-  });
-
-  it("recognises a destination introduced with visit", () => {
-    expect(extractBriefPatchLocally("I want to visit Lisbon")).toEqual({ destination: "Lisbon" });
-  });
-
-  it("supports incremental destination and budget wording", () => {
-    expect(
-      extractBriefPatchLocally("Change the destination to Sydney and budget to $3000"),
-    ).toEqual({ destination: "Sydney", budgetTotal: 3000 });
-  });
-
-  it("keeps unmentioned fields and rejects impossible date ranges", () => {
-    expect(applyBriefPatch(brief, { budgetTotal: 3000 }, brief.tripId)).toEqual({
-      ...brief,
-      budgetTotal: 3000,
-    });
-    expect(() =>
-      applyBriefPatch(brief, { dates: ["2026-02-30", "2026-03-05"] }, brief.tripId),
-    ).toThrow("Enter a real date");
-    expect(() =>
-      applyBriefPatch(brief, { dates: ["2026-10-05", "2026-10-01"] }, brief.tripId),
-    ).toThrow("End date must follow start date");
-  });
-});
-
-describe("trip chat workflow", () => {
-  it("applies an injected structured extractor, records both turns and replans", async () => {
-    const extractor: BriefExtractor = {
-      extract: vi.fn(async () => ({ destination: "Melbourne", budgetTotal: 5000 })),
-    };
-    const replyGenerator: ReplyGenerator = {
-      generate: vi.fn(
-        async () =>
-          "Melbourne sounds like a great fit. I’ve updated the plan and kept the current budget in view.",
-      ),
-    };
-    const turns: Array<{ role: string; content: string }> = [];
-    const mem: MemoryStore = {
-      getShortTerm: vi.fn(async () => []),
-      appendShortTerm: vi.fn(async (_tripId, turn) => {
-        turns.push(turn);
-      }),
-      getLongTerm: vi.fn(async () => []),
-      setLongTerm: vi.fn(async () => {}),
-      promote: vi.fn(async () => {}),
-    };
-    const tools: ToolGateway = {
-      maps: { route: vi.fn(async () => []), places: vi.fn(async () => []) },
-      booking: { searchStays: vi.fn(async () => []), searchFlights: vi.fn(async () => []) },
-    };
-    const itinerary: Specialist = {
-      name: "itinerary",
-      label: "Day plan",
-      async invoke({ brief: updated }) {
-        return {
-          agent: "itinerary",
-          summary: `Plan for ${updated.destination}`,
-          items: [{ kind: "activity", detail: "Walk", estCost: 100 }],
-          assumptions: [],
-          conflictsWith: [],
-        };
-      },
-    };
-
-    const result = await runTripChat(
-      { tripId: brief.tripId, message: "Please change the destination", brief },
-      { extractor, replyGenerator, specialists: [itinerary], tools, mem },
-    );
-
-    expect(extractor.extract).toHaveBeenCalledWith("Please change the destination", brief);
-    expect(result.plan.brief).toMatchObject({ destination: "Melbourne", budgetTotal: 5000 });
-    expect(result.reply).toContain("Melbourne sounds like a great fit");
-    expect(replyGenerator.generate).toHaveBeenCalledWith(
-      expect.stringContaining("Detect the language of the traveler's latest message"),
-    );
-    expect(
-      replyPrompt("请改成中文回复", brief, result.plan.brief, ["destination"], result.plan),
-    ).toContain("reply in that exact same language");
-    expect(turns.map((turn) => turn.role)).toEqual(["user", "assistant"]);
-  });
-});
-
-describe("blank conversation start", () => {
+function memoryStore(history: ChatTurn[] = []) {
+  const turns: ChatTurn[] = [];
   const mem: MemoryStore = {
-    getShortTerm: vi.fn(async () => []),
-    appendShortTerm: vi.fn(async () => {}),
+    getShortTerm: vi.fn(async () => [...history, ...turns]),
+    appendShortTerm: vi.fn(async (_tripId, turn) => {
+      turns.push(turn);
+    }),
     getLongTerm: vi.fn(async () => []),
     setLongTerm: vi.fn(async () => {}),
     promote: vi.fn(async () => {}),
   };
-  const tools: ToolGateway = {
-    maps: { route: vi.fn(async () => []), places: vi.fn(async () => []) },
-    booking: { searchStays: vi.fn(async () => []), searchFlights: vi.fn(async () => []) },
-  };
-  const itinerary: Specialist = {
-    name: "itinerary",
-    label: "Day plan",
-    async invoke({ brief: updated }) {
-      return {
-        agent: "itinerary",
-        summary: `Plan for ${updated.destination}`,
-        items: [{ kind: "activity", detail: "Walk", estCost: 100 }],
-        assumptions: [],
-        conflictsWith: [],
-      };
-    },
-  };
+  return { mem, turns };
+}
 
-  it("reports missing fields instead of borrowing them from the demo brief", async () => {
-    const extractor: BriefExtractor = {
-      extract: vi.fn(async () => ({ destination: "Lisbon" })),
-    };
-    const run = runTripChat(
-      { tripId: "blank", mode: "start", message: "I want to visit Lisbon" },
-      { extractor, specialists: [itinerary], tools, mem },
+type ToolCall = { name: string; args: Record<string, unknown>; id: string };
+/** Each entry is one model turn; the empty array ends the loop. */
+const scriptedModel = (...turns: ToolCall[][]) =>
+  new FakeToolCallingModel({ toolCalls: [...turns, []] });
+
+const run = (
+  request: Parameters<typeof runTripChat>[0],
+  model: FakeToolCallingModel,
+  mem: MemoryStore,
+  extra: Partial<Parameters<typeof runTripChat>[1]> = {},
+) => runTripChat(request, { model, specialists: [itinerary], tools, mem, ...extra });
+
+describe("the conversation agent decides what to do", () => {
+  it("records what the traveller stated and replans when asked", async () => {
+    const { mem, turns } = memoryStore();
+    const model = scriptedModel(
+      [{ name: "update_trip_brief", args: { destination: "Melbourne" }, id: "c1" }],
+      [{ name: "replan_trip", args: {}, id: "c2" }],
     );
-    await expect(run).rejects.toThrow(
-      "include the start and end dates, number of travellers, total budget",
+
+    const result = await run(
+      { tripId: brief.tripId, message: "Change the destination to Melbourne", brief },
+      model,
+      mem,
     );
-    expect(extractor.extract).toHaveBeenCalledWith("I want to visit Lisbon", undefined);
+
+    expect(result.plan.brief).toMatchObject({ destination: "Melbourne", budgetTotal: 4000 });
+    expect(turns.map((turn) => turn.role)).toEqual(["user", "assistant"]);
   });
 
-  it("asks for the missing fields in the traveller's own language and keeps what it heard", async () => {
-    const question = "悉尼听起来不错！你打算哪天出发、哪天回来？几个人一起去？预算大概多少？";
-    const generate = vi.fn(async (_prompt: string) => question);
-    const error = await runTripChat(
-      { tripId: "blank", mode: "start", message: "悉尼三日游" },
+  it("answers a question without running any specialist", async () => {
+    const { mem } = memoryStore();
+    const planned = await run(
+      { tripId: brief.tripId, message: "plan it", brief },
+      scriptedModel([{ name: "replan_trip", args: {}, id: "c1" }]),
+      mem,
+    );
+    vi.mocked(itinerary.invoke).mockClear();
+
+    const asked = await run(
       {
-        extractor: { extract: async () => ({ destination: "悉尼" }) },
-        replyGenerator: { generate },
-        specialists: [itinerary],
-        tools,
-        mem,
+        tripId: brief.tripId,
+        message: "东京11月天气怎么样？",
+        brief,
+        plan: planned.plan,
       },
-    ).catch((failure: unknown) => failure);
-    expect(error).toBeInstanceOf(IncompleteBriefError);
-    const incomplete = error as IncompleteBriefError;
-    expect(incomplete.message).toBe(question);
+      scriptedModel(),
+      memoryStore().mem,
+    );
+
+    // The headline promise of the refactor: a question costs one model call, not a
+    // full replan, and the plan comes back untouched.
+    expect(itinerary.invoke).not.toHaveBeenCalled();
+    expect(asked.plan).toBe(planned.plan);
+  });
+
+  it("does not plan a trip that is still missing required fields", async () => {
+    const { mem } = memoryStore();
+    const failure = await run(
+      { tripId: "blank", message: "悉尼三日游" },
+      scriptedModel(
+        [{ name: "update_trip_brief", args: { destination: "悉尼" }, id: "c1" }],
+        [{ name: "replan_trip", args: {}, id: "c2" }],
+      ),
+      mem,
+    ).catch((error: unknown) => error);
+
+    expect(itinerary.invoke).not.toHaveBeenCalled();
+    expect(failure).toBeInstanceOf(IncompleteBriefError);
+    const incomplete = failure as IncompleteBriefError;
     expect(incomplete.known).toEqual({ destination: "悉尼" });
     expect(incomplete.missing).toEqual([
       "start and end dates",
       "number of travellers",
       "total budget",
     ]);
-    expect(incomplete.needsInfo).toEqual({
+    expect(incomplete.needsInfo).toMatchObject({
       type: "needs_info",
-      question: incomplete.message,
       known: { destination: "悉尼" },
     });
-    // The prompt carries what is known and what is missing, and asks for nothing else.
-    const prompt = generate.mock.calls[0]?.[0] ?? "";
-    expect(prompt).toContain("悉尼三日游");
-    expect(prompt).toContain('{"destination":"悉尼"}');
-    expect(prompt).toContain("start and end dates, number of travellers, total budget");
   });
 
-  it("merges what earlier turns stated, so the traveller answers only the question", async () => {
-    const result = await runTripChat(
+  it("carries what earlier turns stated, so the traveller answers only the question", async () => {
+    const { mem } = memoryStore();
+    const result = await run(
       {
         tripId: "blank",
-        mode: "start",
-        message: "2026-11-02 to 2026-11-06, 3 people, budget $2400",
+        message: "2026-11-02 to 2026-11-06, 3 people, budget 2400",
         known: { destination: "Lisbon" },
       },
-      {
-        extractor: { extract: async (message) => extractBriefPatchLocally(message) },
-        replyGenerator: { generate: async () => "Lisbon is ready to review." },
-        specialists: [itinerary],
-        tools,
-        mem,
-      },
-    );
-    expect(result.plan.brief).toMatchObject({
-      destination: "Lisbon",
-      dates: ["2026-11-02", "2026-11-06"],
-      groupSize: 3,
-      budgetTotal: 2400,
-    });
-  });
-
-  it("prefers this message over what an earlier turn stated", async () => {
-    const result = await runTripChat(
-      {
-        tripId: "blank",
-        mode: "start",
-        message: "Lisbon, 2026-11-02 to 2026-11-06, 3 people, budget $2400",
-        known: { destination: "Sydney", groupSize: 8 },
-      },
-      {
-        extractor: { extract: async (message) => extractBriefPatchLocally(message) },
-        replyGenerator: { generate: async () => "Lisbon is ready to review." },
-        specialists: [itinerary],
-        tools,
-        mem,
-      },
-    );
-    expect(result.plan.brief).toMatchObject({ destination: "Lisbon", groupSize: 3 });
-  });
-
-  it("falls back to the plain list when no reply model is available", async () => {
-    const error = await runTripChat(
-      { tripId: "blank", mode: "start", message: "Sydney" },
-      {
-        extractor: { extract: async () => ({ destination: "Sydney" }) },
-        replyGenerator: {
-          generate: async () => {
-            throw new Error("model down");
+      scriptedModel(
+        [
+          {
+            name: "update_trip_brief",
+            args: {
+              startDate: "2026-11-02",
+              endDate: "2026-11-06",
+              groupSize: 3,
+              budgetAmount: 2400,
+            },
+            id: "c1",
           },
-        },
-        specialists: [itinerary],
-        tools,
-        mem,
-      },
-    ).catch((failure: unknown) => failure);
-    expect((error as IncompleteBriefError).message).toContain(
-      "include the start and end dates, number of travellers, total budget",
+        ],
+        [{ name: "replan_trip", args: {}, id: "c2" }],
+      ),
+      mem,
     );
-    expect((error as IncompleteBriefError).known).toEqual({ destination: "Sydney" });
-  });
 
-  it("plans only from the fields stated in the first message", async () => {
-    const result = await runTripChat(
-      {
-        tripId: "blank",
-        mode: "start",
-        message: "Lisbon, 2026-11-02 to 2026-11-06, 3 people, budget $2400",
-      },
-      {
-        extractor: { extract: async (message) => extractBriefPatchLocally(message) },
-        replyGenerator: { generate: async () => "Lisbon is ready to review." },
-        specialists: [itinerary],
-        tools,
-        mem,
-      },
-    );
     expect(result.plan.brief).toMatchObject({
-      tripId: "blank",
       destination: "Lisbon",
       dates: ["2026-11-02", "2026-11-06"],
       groupSize: 3,
       budgetTotal: 2400,
     });
     expect(JSON.stringify(result.plan)).not.toMatch(/Tokyo|Kyoto|demo-trip/);
+  });
+
+  it("puts the conversation so far in front of the model", async () => {
+    // Without this a follow-up like 「是今年」 has nothing to resolve against.
+    const { mem } = memoryStore([
+      { role: "user", content: "悉尼三日游", at: "2026-09-20T00:00:00.000Z" },
+      { role: "assistant", content: "好的，几号出发？", at: "2026-09-20T00:00:01.000Z" },
+    ]);
+    const failure = await run({ tripId: "blank", message: "是今年" }, scriptedModel(), mem).catch(
+      (error: unknown) => error,
+    );
+
+    // FakeToolCallingModel answers with the prior messages joined together, so its
+    // reply is a transcript of exactly what the agent was shown.
+    expect((failure as IncompleteBriefError).message).toContain("悉尼三日游");
+    expect((failure as IncompleteBriefError).message).toContain("是今年");
+  });
+});
+
+describe("currency in the brief update tool", () => {
+  it("converts what the traveller said and keeps the original for display", async () => {
+    const { mem } = memoryStore();
+    const result = await run(
+      { tripId: "blank", message: "悉尼三日游，2 人，预算 3000 人民币" },
+      scriptedModel(
+        [
+          {
+            name: "update_trip_brief",
+            args: {
+              destination: "悉尼",
+              startDate: "2026-10-06",
+              endDate: "2026-10-09",
+              groupSize: 2,
+              budgetAmount: 3000,
+              budgetCurrency: "CNY",
+            },
+            id: "c1",
+          },
+        ],
+        [{ name: "replan_trip", args: {}, id: "c2" }],
+      ),
+      mem,
+    );
+
+    // The model named the currency; the arithmetic happened in code.
+    expect(result.plan.brief.budgetTotal).toBe(630);
+    expect(result.plan.brief.budgetSource).toEqual({ amount: 3000, currency: "CNY" });
+    expect(result.plan.brief.groupSize).toBe(2);
+  });
+
+  it("treats an explicit base-currency amount as an identity, not a second conversion", async () => {
+    // The preferences form builds its message with an "AUD 3,000.00" total, so the
+    // agent sees an explicit AUD and must not shrink it.
+    const { mem } = memoryStore();
+    const result = await run(
+      { tripId: "blank", message: "Sydney, 2026-10-06 to 2026-10-09, 2 people, AUD 3,000.00" },
+      scriptedModel(
+        [
+          {
+            name: "update_trip_brief",
+            args: {
+              destination: "Sydney",
+              startDate: "2026-10-06",
+              endDate: "2026-10-09",
+              groupSize: 2,
+              budgetAmount: 3000,
+              budgetCurrency: "AUD",
+            },
+            id: "c1",
+          },
+        ],
+        [{ name: "replan_trip", args: {}, id: "c2" }],
+      ),
+      mem,
+    );
+
+    expect(result.plan.brief.budgetTotal).toBe(3000);
+    expect(result.plan.brief.budgetSource).toBeUndefined();
+  });
+});
+
+describe("tolerating what models actually emit", () => {
+  it('accepts the literal string "null" instead of an omitted field', async () => {
+    // This threw before, and the throw fell back silently to the regex parser,
+    // which is how "3000 人民币" became a party of 3000.
+    const { mem } = memoryStore();
+    const result = await run(
+      { tripId: brief.tripId, message: "10.6-10.9，预算 3000 人民币", brief },
+      scriptedModel(
+        [
+          {
+            name: "update_trip_brief",
+            args: {
+              destination: "null",
+              startDate: "null",
+              endDate: "null",
+              groupSize: "null",
+              budgetAmount: 3000,
+              budgetCurrency: "CNY",
+            },
+            id: "c1",
+          },
+        ],
+        [{ name: "replan_trip", args: {}, id: "c2" }],
+      ),
+      mem,
+    );
+
+    expect(result.plan.brief).toMatchObject({
+      destination: "Tokyo",
+      groupSize: 2,
+      budgetTotal: 630,
+    });
+  });
+
+  it("holds back a date range with only one end", async () => {
+    const { mem } = memoryStore();
+    const result = await run(
+      { tripId: brief.tripId, message: "leave on the 6th", brief },
+      scriptedModel(
+        [{ name: "update_trip_brief", args: { startDate: "2026-10-06" }, id: "c1" }],
+        [{ name: "replan_trip", args: {}, id: "c2" }],
+      ),
+      mem,
+    );
+    expect(result.plan.brief.dates).toEqual(brief.dates);
+  });
+});
+
+describe("the preferences form path", () => {
+  it("plans a submitted brief without spending a model call on it", async () => {
+    const { mem } = memoryStore();
+    const result = await runTripChat(
+      { tripId: brief.tripId, mode: "plan", message: "Update my trip", brief },
+      { model: scriptedModel(), specialists: [itinerary], tools, mem },
+    );
+    expect(result.plan.brief).toEqual(brief);
+    // The deterministic summary, not the model's transcript-shaped answer: the
+    // agent was never asked to rediscover what the form already stated.
+    expect(result.reply).toContain("Plan for Tokyo");
+    expect(result.reply).not.toContain("Update my trip");
+  });
+
+  it("still refuses to plan without a brief", async () => {
+    await expect(
+      runTripChat({ tripId: brief.tripId, mode: "plan", message: "go" }, { specialists: [] }),
+    ).rejects.toThrow("A brief is required to plan.");
+  });
+});
+
+describe("without a provider key", () => {
+  const offline = (request: Parameters<typeof runTripChat>[0], mem: MemoryStore) =>
+    runTripChat(request, { specialists: [itinerary], tools, mem });
+
+  it("reports missing fields as a plain list", async () => {
+    const { mem } = memoryStore();
+    await expect(
+      offline({ tripId: "blank", message: "I want to visit Lisbon" }, mem),
+    ).rejects.toThrow("include the start and end dates, number of travellers, total budget");
+  });
+
+  it("plans from what the patterns can read", async () => {
+    const { mem } = memoryStore();
+    const result = await offline(
+      { tripId: "blank", message: "Lisbon, 2026-11-02 to 2026-11-06, 3 people, budget $2400" },
+      mem,
+    );
+    expect(result.plan.brief).toMatchObject({
+      tripId: "blank",
+      destination: "Lisbon",
+      groupSize: 3,
+      budgetTotal: 2400,
+    });
+  });
+
+  it("uses an injected extractor when one is supplied", async () => {
+    const { mem } = memoryStore();
+    const extract = vi.fn(async () => ({ destination: "Melbourne" }));
+    const result = await runTripChat(
+      { tripId: brief.tripId, message: "Change the destination", brief },
+      { extractor: { extract }, specialists: [itinerary], tools, mem },
+    );
+    expect(extract).toHaveBeenCalledWith("Change the destination", brief);
+    expect(result.plan.brief).toMatchObject({ destination: "Melbourne" });
+  });
+});
+
+describe("a question keeps the plan it was given", () => {
+  it("returns the client's plan unchanged rather than rebuilding one", async () => {
+    const { mem } = memoryStore();
+    const seed = await run(
+      { tripId: brief.tripId, message: "plan it", brief },
+      scriptedModel([{ name: "replan_trip", args: {}, id: "c1" }]),
+      mem,
+    );
+    const plan: TripPlan = seed.plan;
+    vi.mocked(itinerary.invoke).mockClear();
+
+    const answered = await run(
+      { tripId: brief.tripId, message: "Can you book the flights?", brief, plan },
+      scriptedModel(),
+      memoryStore().mem,
+    );
+    expect(answered.plan).toBe(plan);
+    expect(itinerary.invoke).not.toHaveBeenCalled();
+  });
+});
+
+describe("the tool schema the provider actually receives", () => {
+  it("renders to JSON Schema", () => {
+    // FakeToolCallingModel never serialises the schema, so nothing above catches
+    // this. A real provider call does: a `z.preprocess` here threw "Transforms
+    // cannot be represented in JSON Schema" and took the whole turn down.
+    expect(() => z.toJSONSchema(BriefUpdate, { io: "input", target: "draft-7" })).not.toThrow();
+  });
+
+  it("accepts the shapes a model actually sends for an absent field", () => {
+    for (const absent of [null, undefined, "null", "", "N/A"])
+      expect(
+        BriefUpdate.safeParse({ destination: absent, groupSize: absent, budgetAmount: absent })
+          .success,
+      ).toBe(true);
+    // Numbers arrive as strings often enough to be worth accepting.
+    expect(BriefUpdate.safeParse({ groupSize: "2", budgetAmount: "3000" }).success).toBe(true);
   });
 });

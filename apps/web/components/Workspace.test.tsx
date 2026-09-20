@@ -396,6 +396,22 @@ describe("Workspace interactions", () => {
     fireEvent.click(historyButton(/^Sydney · 2026-10-01/));
     expect((screen.getByLabelText("Destination") as HTMLInputElement).value).toBe("Sydney");
   });
+  it("sends the current plan with a chat message so a question need not rebuild it", async () => {
+    const fetcher = withPlaceRequests(completeFor("Sydney"));
+    vi.stubGlobal("fetch", fetcher);
+    render(<Workspace initialPlan={plan} />);
+    fireEvent.change(screen.getByLabelText("Message AI Trip Planner"), {
+      target: { value: "东京11月天气怎么样？" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+    await screen.findByText("Updated");
+    const request = JSON.parse(
+      (fetcher.mock.calls.find(([url]) => url === "/api/chat")![1] as RequestInit).body as string,
+    );
+    expect(request.mode).toBeUndefined();
+    expect(request.brief).toMatchObject({ destination: plan.brief.destination });
+    expect(request.plan).toMatchObject({ tripId: plan.tripId });
+  });
   it("starts a blank chat from natural language and links the generated trip", async () => {
     const fetcher = withPlaceRequests(completeFor("Lisbon"));
     vi.stubGlobal("fetch", fetcher);
@@ -409,8 +425,12 @@ describe("Workspace interactions", () => {
     const request = JSON.parse(
       (fetcher.mock.calls.find(([url]) => url === "/api/chat")![1] as RequestInit).body as string,
     );
-    expect(request.mode).toBe("start");
+    // No mode: the assistant reads the message and decides. A blank chat has no
+    // brief or plan to send, only what earlier turns stated.
+    expect(request.mode).toBeUndefined();
     expect(request.brief).toBeUndefined();
+    expect(request.plan).toBeUndefined();
+    expect(request.known).toBeDefined();
     expect(request.tripId).not.toBe(plan.tripId);
     await waitFor(() => {
       const catalog = parseCatalog(localStorage.getItem(CATALOG_KEY));

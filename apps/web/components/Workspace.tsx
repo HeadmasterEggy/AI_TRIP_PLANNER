@@ -457,16 +457,14 @@ function WorkspaceContent({ restored }: { restored: RestoredWorkspace }) {
     const message = input.trim();
     if (!message || active.current) return;
     setMessages((current) => [...current, { role: "user", text: message }]);
+    // No mode: the assistant reads the message and decides whether this is a question,
+    // an edit, or a request to plan. The plan travels with the brief so a question can
+    // be answered without rebuilding it.
     void run({
       kind: "chat",
       request: plan
-        ? { tripId: plan.tripId, message, brief: plan.brief }
-        : {
-            tripId: freshTripId.current,
-            mode: "start",
-            message,
-            known: knownFromDraft(draft),
-          },
+        ? { tripId: plan.tripId, message, brief: plan.brief, plan }
+        : { tripId: freshTripId.current, message, known: knownFromDraft(draft) },
     });
   }
   const onDecision = (decision: Decision) => {

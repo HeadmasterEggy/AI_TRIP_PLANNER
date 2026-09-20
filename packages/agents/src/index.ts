@@ -40,6 +40,7 @@ export {
   type DiningDraft,
   type DiningGenerator,
 } from "./dining";
+export { CAPABILITIES } from "./prompts/capabilities";
 export {
   MODEL_ROUTING,
   createRoutedChatModel,
