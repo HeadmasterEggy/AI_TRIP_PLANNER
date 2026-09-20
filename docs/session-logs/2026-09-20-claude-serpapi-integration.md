@@ -75,14 +75,56 @@
   against the live endpoint used an intentionally invalid key (`api_key`
   parameter only; that call itself does not require a valid key or spend a
   credit, per SerpApi's own 401 response).
-- Open issues / TODO: nobody has run either engine against a real
-  `SERPAPI_KEY` end-to-end — recommend a manual smoke test (one hotel
-  search, one flight search) before relying on this in a demo, and before
-  trusting `departure_id`/`arrival_id` resolution for a route this hasn't
-  been tried on. The in-process quota/cache limitation above should be
+- Open issues / TODO: the in-process quota/cache limitation above should be
   revisited once/if a durable store exists.
 - Reviewer: pending.
-- Validation: 290/290 tests pass repo-wide (up from 266 after the earlier
-  Google Places session today: 24 new — 18 in `serpapi.test.ts`, 6 in
+- Validation: 293/293 tests pass repo-wide (up from 266 after the earlier
+  Google Places session today: 27 new — 21 in `serpapi.test.ts`, 6 in
   `booking.test.ts`'s new SerpApi describe blocks); all 6 packages pass
   TypeScript checks; lint and the Next.js production build pass.
+
+## Addendum: real-key smoke test found and fixed a genuine bug
+
+A ran this against their own real `SERPAPI_KEY` (never seen by me) locally
+right after the PR went up. That surfaced exactly the risk flagged above as
+untested:
+
+- **Hotels worked as designed on the first try** — real properties
+  (InterContinental Sydney, Sofitel Sydney Darling Harbour, Capella Sydney),
+  real ratings correctly on the 0-10 scale, real GPS coordinates, real
+  `serpapi_property_details_link` values.
+- **Flights failed with free-text city names.** Calling with
+  `{from: "Sydney", to: "Tokyo"}` — exactly the shape `transport/index.ts`
+  actually sends, since `TripBrief` has no airport-code field — returned:
+  `` `departure_id` ("Sydney") should either be an uppercase 3-letter code
+  or start with "/m" or "/g" ``. So the doc-stated ambiguity ("airport code
+  or Google kgmid") is not actually ambiguous in practice: SerpApi's Google
+  Flights engine does **not** resolve city names the way the Google Flights
+  website does, unlike the assumption this session started with. Every real
+  flight search would have silently degraded to "flight remains unpriced"
+  via `transport/index.ts`'s existing `.catch()` — never crashing, but also
+  never actually returning a real flight, which defeats the point.
+
+Fixed with a small `CITY_AIRPORT_CODES` lookup in `serpapi.ts` (covering the
+cities this project's own demo fixtures already use — Sydney, Tokyo, Kyoto
+→ Kansai, Paris) plus a new `SerpApiError` reason, `unsupported_location`,
+for a city with no mapping — a clear, actionable message pointing at exactly
+where to add one, instead of surfacing SerpApi's raw validation error. A raw
+3-letter code or Google kgmid still passes through unchanged.
+
+Re-verified against the real key after the fix: `{from: "Sydney", to:
+"Tokyo"}` now returns real fares (China Eastern, Trinity Airways, Vietnam
+Airlines; ~$3,300-3,750 round-trip **group** total for 2 passengers — the
+per-passenger→group-total conversion holds up against real data too).
+
+This is exactly why the "recommend a manual smoke test before relying on
+this in a demo" line existed above — the assumption it was flagging turned
+out to be wrong, and no amount of mocked unit testing would have caught it,
+because the mocks were built from the same (incomplete) documentation as
+the implementation. Added 3 more tests locking in the fix: a known city
+resolves to its code, a raw code passes through unchanged, and an unmapped
+city fails fast with `unsupported_location` before ever calling SerpApi.
+
+Validation (updated): 293/293 tests pass repo-wide, as above. The real-key
+calls themselves are not part of the automated suite (they'd spend real
+SerpApi credits on every CI run) — this was a one-time manual check.

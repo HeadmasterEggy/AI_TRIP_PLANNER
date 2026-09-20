@@ -23,7 +23,8 @@ export type SerpApiErrorReason =
   | "invalid_key"
   | "quota_exceeded"
   | "no_results"
-  | "request_failed";
+  | "request_failed"
+  | "unsupported_location";
 
 export class SerpApiError extends Error {
   constructor(
@@ -200,6 +201,36 @@ export async function searchHotelsSerpApi(q: {
 
 // --- Google Flights ----------------------------------------------------------
 
+// Verified empirically against a real key: SerpApi's Google Flights engine
+// rejects a free-text city name outright —
+// `departure_id ("Sydney") should either be an uppercase 3-letter code or
+// start with "/m" or "/g"` — it does NOT resolve city names the way the
+// Google Flights website does. This project's TripBrief only ever carries
+// free-text city names (e.g. "Sydney"), never an airport code, so every real
+// flight search needs this bridge. Covers the cities this project's own demo
+// fixtures use (see booking.ts's NIGHTLY_RATES); anywhere else needs a new
+// entry, or the caller can already pass a real 3-letter code directly.
+const CITY_AIRPORT_CODES: Record<string, string> = {
+  sydney: "SYD",
+  tokyo: "NRT",
+  kyoto: "KIX", // Kyoto has no airport; Kansai (Osaka) is the nearest major one.
+  paris: "CDG",
+};
+function airportCode(city: string): string {
+  const trimmed = city.trim();
+  // Already a 3-letter airport code, or a Google Knowledge Graph id — SerpApi
+  // accepts both verbatim.
+  if (/^[A-Z]{3}$/.test(trimmed) || /^\/[mg]\//.test(trimmed)) return trimmed;
+  const code = CITY_AIRPORT_CODES[trimmed.toLowerCase()];
+  if (!code) {
+    throw new SerpApiError(
+      `SerpApi's flight search needs an airport code for "${city}", and this project has no mapping for it yet. Add it to CITY_AIRPORT_CODES in packages/tools/src/serpapi.ts, or search with a 3-letter code directly.`,
+      "unsupported_location",
+    );
+  }
+  return code;
+}
+
 export async function searchFlightsSerpApi(q: {
   from: string;
   to: string;
@@ -211,12 +242,8 @@ export async function searchFlightsSerpApi(q: {
   return cached(key, async () => {
     const data = await serpApiSearch({
       engine: "google_flights",
-      // Documented as an airport code or Google kgmid; this project's brief
-      // only carries free-text city names (e.g. "Sydney"). Google Flights has
-      // historically resolved common city names to their primary airport —
-      // verify with a real key before relying on an unusual route.
-      departure_id: q.from,
-      arrival_id: q.to,
+      departure_id: airportCode(q.from),
+      arrival_id: airportCode(q.to),
       outbound_date: q.depart,
       adults: String(q.passengers),
       currency: "AUD",

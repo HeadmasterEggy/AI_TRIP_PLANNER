@@ -131,6 +131,50 @@ describe("searchFlightsSerpApi", () => {
     expect((await searchFlightsSerpApi({ ...flightQuery, passengers: 1 }))[0]!.stops).toBe(0);
   });
 
+  it("resolves a known free-text city to its airport code, since SerpApi rejects city names outright", async () => {
+    // Verified empirically against a real key: SerpApi's Google Flights
+    // engine does NOT resolve city names the way the Google Flights website
+    // does — it rejects "Sydney" with a validation error asking for a
+    // 3-letter code. This project's TripBrief only ever has free-text city
+    // names, so this mapping is load-bearing, not a nice-to-have.
+    const fetcher = vi.fn(async (_url: string | URL | Request) =>
+      Response.json({ best_flights: [{ price: 100, flights: [{ airline: "A" }] }] }),
+    );
+    vi.stubGlobal("fetch", fetcher);
+
+    await searchFlightsSerpApi(flightQuery); // { from: "Sydney", to: "Tokyo", ... }
+
+    const url = new URL(String(fetcher.mock.calls[0]![0]));
+    expect(url.searchParams.get("departure_id")).toBe("SYD");
+    expect(url.searchParams.get("arrival_id")).toBe("NRT");
+  });
+
+  it("passes a real 3-letter airport code through unchanged", async () => {
+    const fetcher = vi.fn(async (_url: string | URL | Request) =>
+      Response.json({ best_flights: [{ price: 100, flights: [{ airline: "A" }] }] }),
+    );
+    vi.stubGlobal("fetch", fetcher);
+
+    await searchFlightsSerpApi({ ...flightQuery, from: "SYD", to: "HND" });
+
+    const url = new URL(String(fetcher.mock.calls[0]![0]));
+    expect(url.searchParams.get("departure_id")).toBe("SYD");
+    expect(url.searchParams.get("arrival_id")).toBe("HND");
+  });
+
+  it("rejects an unmapped city with a clear, actionable error instead of calling SerpApi", async () => {
+    const fetcher = vi.fn();
+    vi.stubGlobal("fetch", fetcher);
+
+    const error = await searchFlightsSerpApi({ ...flightQuery, to: "Atlantis" }).catch(
+      (e: unknown) => e,
+    );
+
+    expect(error).toBeInstanceOf(SerpApiError);
+    expect((error as SerpApiError).reason).toBe("unsupported_location");
+    expect(fetcher).not.toHaveBeenCalled();
+  });
+
   it("throws a typed no_results error when nothing comes back", async () => {
     stub(200, { best_flights: [], other_flights: [] });
 
@@ -200,7 +244,7 @@ describe("shared monthly quota (hotels + flights count against the same total)",
     expect(serpApiUsage().count).toBe(1);
 
     stub(200, { best_flights: [{ price: 100, flights: [{ airline: "A" }] }] });
-    await searchFlightsSerpApi({ ...flightQuery, to: "Osaka" }); // distinct key, not a cache hit
+    await searchFlightsSerpApi({ ...flightQuery, to: "Paris" }); // distinct key, not a cache hit
     expect(serpApiUsage().count).toBe(2);
   });
 
