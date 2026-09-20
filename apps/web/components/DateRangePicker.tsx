@@ -2,31 +2,33 @@
 import { useState } from "react";
 import { DayPicker, type DateRange } from "react-day-picker";
 import "react-day-picker/style.css";
-import { formatTravelDatesMessage } from "@/lib/date-range";
+import { isoDateRange } from "@/lib/date-range";
 import { Dialog } from "./Dialog";
 
 /**
- * A calendar for picking travel dates by click, as an alternative to typing
- * them. Confirming fills the chat composer with a plain-text message
- * ("Travel dates: YYYY-MM-DD to YYYY-MM-DD") rather than sending it or
- * patching the brief directly — the existing text parser already
- * understands that shape, and the traveller keeps a chance to review or
- * edit before sending, same as if they'd typed it.
+ * A calendar for picking a date range by click, as an alternative to typing
+ * two dates by hand. Reused from two places (the chat composer and the trip
+ * preferences form) with different `onConfirm` handlers — this component
+ * only turns clicks into a validated {start, end} ISO pair; what each caller
+ * does with that (fill a chat message vs. patch a form draft directly) is
+ * entirely up to them.
  */
 export function DateRangePicker({
+  title = "When are you travelling?",
   onConfirm,
   onClose,
 }: {
-  onConfirm: (message: string) => void;
+  title?: string;
+  onConfirm: (range: { start: string; end: string }) => void;
   onClose: () => void;
 }) {
   const [range, setRange] = useState<DateRange>();
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  const message = range ? formatTravelDatesMessage(range) : undefined;
+  const iso = range ? isoDateRange(range) : undefined;
 
   return (
-    <Dialog title="When are you travelling?" onClose={onClose}>
+    <Dialog title={title} onClose={onClose}>
       <DayPicker
         mode="range"
         selected={range}
@@ -42,9 +44,9 @@ export function DateRangePicker({
         <button
           type="button"
           className="primary"
-          disabled={!message}
+          disabled={!iso}
           onClick={() => {
-            if (message) onConfirm(message);
+            if (iso) onConfirm(iso);
             onClose();
           }}
         >

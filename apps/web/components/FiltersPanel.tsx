@@ -1,5 +1,16 @@
 "use client";
+import dynamic from "next/dynamic";
+import { useState } from "react";
 import type { Draft } from "@/lib/workspace";
+import { CalendarIcon } from "./icons";
+
+// react-day-picker + its stylesheet are only worth loading once the
+// traveller actually opens the calendar, not on every preferences open —
+// same reasoning as ChatPanel's identical lazy import.
+const DateRangePicker = dynamic(
+  () => import("./DateRangePicker").then((m) => m.DateRangePicker),
+  { ssr: false },
+);
 
 export function FiltersPanel({
   draft,
@@ -14,6 +25,7 @@ export function FiltersPanel({
   busy: boolean;
   errors: Record<string, string>;
 }) {
+  const [showCalendar, setShowCalendar] = useState(false);
   const field = (key: keyof Draft, label: string, type = "text", errorKey: string = key) => (
     <label className="form-field" key={key}>
       <span>{label}</span>
@@ -53,8 +65,18 @@ export function FiltersPanel({
           <p className="muted">
             Separate multiple cities with &amp;; allow at least one night per city.
           </p>
-          {field("start", "Start date", "date", "dates")}
-          {field("end", "End date", "date", "dates")}
+          <div className="filter-dates">
+            {field("start", "Start date", "date", "dates")}
+            {field("end", "End date", "date", "dates")}
+            <button
+              type="button"
+              className="filter-dates__calendar"
+              aria-label="Pick trip dates from a calendar"
+              onClick={() => setShowCalendar(true)}
+            >
+              <CalendarIcon />
+            </button>
+          </div>
           {field("groupSize", "Travellers", "number")}
           {field("budgetTotal", "Total budget (AUD)", "number")}
           {field("nationality", "Nationality / passport (optional)")}
@@ -86,6 +108,12 @@ export function FiltersPanel({
           </button>
         </fieldset>
       </form>
+      {showCalendar && (
+        <DateRangePicker
+          onConfirm={({ start, end }) => onChange({ ...draft, start, end })}
+          onClose={() => setShowCalendar(false)}
+        />
+      )}
     </div>
   );
 }

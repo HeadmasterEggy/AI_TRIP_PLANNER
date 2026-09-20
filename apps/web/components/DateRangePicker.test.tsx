@@ -44,7 +44,7 @@ describe("DateRangePicker", () => {
 
     fireEvent.click(confirm);
 
-    expect(onConfirm).toHaveBeenCalledWith("Travel dates: 2026-09-22 to 2026-09-25");
+    expect(onConfirm).toHaveBeenCalledWith({ start: "2026-09-22", end: "2026-09-25" });
     expect(onClose).toHaveBeenCalled();
   });
 
@@ -56,7 +56,7 @@ describe("DateRangePicker", () => {
     fireEvent.click(screen.getByRole("button", { name: "Tuesday, September 22nd, 2026" }));
     fireEvent.click(screen.getByRole("button", { name: /use these dates/i }));
 
-    expect(onConfirm).toHaveBeenCalledWith("Travel dates: 2026-09-22 to 2026-09-25");
+    expect(onConfirm).toHaveBeenCalledWith({ start: "2026-09-22", end: "2026-09-25" });
   });
 
   it("calls onClose without onConfirm when cancelled", () => {

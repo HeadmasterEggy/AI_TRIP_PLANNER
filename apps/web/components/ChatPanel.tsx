@@ -272,7 +272,7 @@ export function ChatPanel({
       <p className="disclaimer">Estimates require verification. Nothing here makes a booking.</p>
       {showCalendar && (
         <DateRangePicker
-          onConfirm={(message) => onInput(message)}
+          onConfirm={({ start, end }) => onInput(`Travel dates: ${start} to ${end}`)}
           onClose={() => setShowCalendar(false)}
         />
       )}
