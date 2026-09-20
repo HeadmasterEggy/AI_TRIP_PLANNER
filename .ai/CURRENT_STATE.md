@@ -6,8 +6,8 @@
 
 ## Current milestone
 
-The project is consolidating documentation and repository structure after PR #23. The web production
-code is grouped by responsibility and all tests are separated into `tests/` directories.
+The project is completing the post-PR #23 product-closure sequence directly on the upstream repository.
+The web production code is grouped by responsibility and all tests are separated into `tests/` directories.
 
 ## Recently completed
 
@@ -19,19 +19,22 @@ code is grouped by responsibility and all tests are separated into `tests/` dire
   `lib/{integrations,map,planning,trip,workspace}`.
 - Web and package tests are grouped under separate `tests/` directories, with package typechecks also
   including their tests.
+- Upstream PR #31 makes specialist degradation visible; upstream PR #32 adds durable storage and its
+  clean-workspace dependency fix; upstream PR #33 adds the weather provider and 14-day forecast/climate
+  boundary. These PRs are intentionally open and stacked; none should be merged automatically.
 
 ## In progress / not yet committed
 
-- The current working tree contains the documentation, code organization, and test relocation changes
-  from the ongoing cleanup task. Preserve unrelated `.gitignore` and `output/` changes.
+- The current working tree is on the stacked provider-provenance branch. It contains structured provider
+  metadata for SerpApi, Google Places estimates, and mock booking candidates plus source-label tests.
+  Preserve unrelated `.gitignore` and `output/` changes.
 
 ## Next recommended actions
 
-1. Review and commit the documentation and repository-organization changes as a focused PR.
-2. Implement weather capability and provider provenance according to
-   [`docs/todo-product-closure.md`](../docs/todo-product-closure.md).
-3. Move chat, preference, trip, and provider state from process memory to durable storage before
-   deployment is treated as production-ready.
+1. Finish and verify the provider-provenance PR, then continue with the AI progress UI branch.
+2. Build the grounded hotel, flight, weather, budget, and HITL result cards.
+3. Keep durable storage configured with deployment environment variables before treating production as
+   ready.
 
 ## Validation status
 

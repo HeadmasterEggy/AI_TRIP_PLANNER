@@ -8,6 +8,7 @@ import {
   type RouteLeg,
   type Specialist,
   type TripBrief,
+  type FlightOption,
 } from "@trip/shared";
 import { createAgent, tool } from "langchain";
 import { z } from "zod/v4";
@@ -49,7 +50,7 @@ interface TransportEvidence {
   days: number;
   budgetRevision: boolean;
   scheduleRevision: boolean;
-  flights: { carrier: string; price: number; note?: string }[];
+  flights: FlightOption[];
   routed: { query: RouteQuery; legs: RouteLeg[] }[];
   conflicts: string[];
 }
@@ -236,6 +237,28 @@ function transportSource(
       kind: "mock",
       label: "Mock booking and route data",
       freshness: "Fares and route details are deterministic fixtures; not live verified.",
+    };
+  }
+  const flightProvenance = evidence.flights
+    .map((flight) => flight.provenance)
+    .filter((value): value is NonNullable<FlightOption["provenance"]> => value !== undefined);
+  if (flightProvenance.length) {
+    const providers = [...new Set(flightProvenance.map((value) => value.provider))];
+    const queriedAt = [...new Set(flightProvenance.map((value) => value.queriedAt).filter(Boolean))];
+    const allLive = flightProvenance.every((value) => value.kind === "live");
+    const fallback = flightProvenance.find((value) => value.fallbackFrom);
+    return {
+      kind: allLive ? "live" : "estimated",
+      label: providers.join(" + "),
+      freshness: [
+        `Flight fares are ${allLive ? "live" : "estimated"} search results in AUD; availability can change.`,
+        queriedAt.length ? `Queried at ${queriedAt.join(", ")}.` : "",
+        fallback
+          ? `${fallback.fallbackFrom} was unavailable (${fallback.fallbackReason}); a fallback provider was used.`
+          : "",
+      ]
+        .filter(Boolean)
+        .join(" "),
     };
   }
   if (process.env.SERPAPI_KEY && evidence.flights.length) {

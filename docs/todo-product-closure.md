@@ -16,6 +16,13 @@ API，而是验证真实数据端到端可用、让来源和降级状态对用�
 验收：已支持的 Sydney → Tokyo 行程能显示真实酒店和航班；请求和页面金额均为 AUD；provider
 失败时页面仍能完成，但明确显示估算、未定价或重试状态。
 
+实现记录（`feature/provider-provenance`）：`ProviderProvenance` 随酒店/航班候选从 tools 传到
+agent，再汇总为统一的 `AgentProposal.source`。SerpApi Google Hotels/Flights 标为 `live`，
+Google Places 酒店价格标为 `estimated`，mock 候选标为 `mock`；每个真实查询保留 `queriedAt`，
+所有价格路径明确为 AUD。SerpApi 酒店失败时，Google Places fallback 会记录原 provider 与失败原因，
+页面仍显示“真实酒店、估算价格”，不会伪装成 live quote；航班 provider 失败仍保持未定价状态。
+相关 adapter、agent source 和 fallback 回归测试必须一起通过。
+
 ## P0：降级状态必须对用户可见
 
 这是一个已知的真实 bug，不是普通 UI polish：五个 specialist（accommodation、transport、itinerary、

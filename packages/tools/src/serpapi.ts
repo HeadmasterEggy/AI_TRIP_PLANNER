@@ -198,6 +198,7 @@ export async function searchHotelsSerpApi(q: {
       adults: String(q.guests),
       currency: "AUD",
     });
+    const queriedAt = new Date().toISOString();
     const properties = Array.isArray(data.properties) ? data.properties : [];
     const options: StayOption[] = properties
       .map((raw): StayOption => {
@@ -219,6 +220,11 @@ export async function searchHotelsSerpApi(q: {
           // as the Google Places path, for the same reason (see booking.ts).
           freeCancellation: false,
           grounded: true,
+          provenance: {
+            kind: "live",
+            provider: "SerpApi Google Hotels",
+            queriedAt,
+          },
           ...(Number.isFinite(latitude) && Number.isFinite(longitude)
             ? { location: { latitude, longitude } }
             : {}),
@@ -289,6 +295,7 @@ export async function searchFlightsSerpApi(q: {
       currency: "AUD",
       ...(q.return ? { return_date: q.return, type: "1" } : { type: "2" }),
     });
+    const queriedAt = new Date().toISOString();
     const flights = [...(data.best_flights ?? []), ...(data.other_flights ?? [])];
     const options: FlightOption[] = flights
       .map((raw): FlightOption => {
@@ -312,6 +319,11 @@ export async function searchFlightsSerpApi(q: {
           price: perPassenger * q.passengers,
           stops: Array.isArray(flight.layovers) ? flight.layovers.length : 0,
           ...(Number.isFinite(durationMin) ? { durationMin } : {}),
+          provenance: {
+            kind: "live",
+            provider: "SerpApi Google Flights",
+            queriedAt,
+          },
           note: `${q.from} ${q.return ? "<->" : "->"} ${q.to}; ${q.passengers} passenger(s); ${q.return ? "round-trip" : "one-way"} group total in AUD; real-time SerpApi fare.`,
         };
       })

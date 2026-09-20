@@ -154,7 +154,16 @@ describe("SerpApi stays: takes priority over Google Places, falls back to it on 
 
     const [option] = await searchStays(stay);
 
-    expect(option).toMatchObject({ name: "Fallback Hotel", grounded: true });
+    expect(option).toMatchObject({
+      name: "Fallback Hotel",
+      grounded: true,
+      provenance: {
+        kind: "estimated",
+        provider: "Google Places estimate",
+        fallbackFrom: "SerpApi Google Hotels",
+        fallbackReason: "invalid_key",
+      },
+    });
   });
 
   it("still throws the original 'no lodging' error when SerpApi AND the Google Places fallback both fail", async () => {

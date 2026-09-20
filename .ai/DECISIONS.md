@@ -83,3 +83,23 @@ Extend `AgentProposal.source` with a structured `kind` enum:
   available. Neither may be represented as a silent live result.
 - The shared schema and every proposal constructor/test must be migrated together before the source kind
   is made required.
+
+## DEC-006: Carry provider provenance from adapters to proposals
+
+- Status: Accepted
+- Date: 2026-09-21
+- Scope: `packages/tools`, `packages/shared`, and specialist agents
+
+### Decision
+
+Booking adapters attach structured provider metadata to each hotel or flight candidate: `kind`, provider
+name, optional query time, and any provider that was bypassed during a visible fallback. Specialist agents
+derive `AgentProposal.source` from that metadata instead of inferring the provider from environment flags or
+the `grounded` boolean.
+
+### Consequences
+
+- SerpApi live rates, Google Places estimates, and mock fixtures cannot accidentally share a label.
+- A Google Places hotel returned after a SerpApi failure can disclose both the estimate and the failed source.
+- Prices remain explicitly AUD at the adapter/assumption boundary; the metadata is not a booking or
+  availability guarantee.
