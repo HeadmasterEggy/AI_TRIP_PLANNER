@@ -19,6 +19,18 @@ pnpm dev                     # http://localhost:3000
 Keep real credentials in `.env.local` and never commit them. Use `pnpm` only so the workspace
 lockfile stays consistent.
 
+Next.js only ever reads `.env*` files from the directory it runs in (`apps/web`), never from a
+monorepo root — that lookup has no config option to redirect it, and it is re-applied by the dev
+server's own file watcher, so pointing it elsewhere from `next.config.mjs` does not survive `next
+dev`. `pnpm install` runs `scripts/link-env.mjs` as a `postinstall` step, which symlinks
+`apps/web/.env.local` to the root `.env.local` automatically (re-run `pnpm install` any time you
+recreate `.env.local`). On Windows this needs Developer Mode or an elevated shell; if the symlink
+can't be created the script warns and you can create it by hand:
+
+```bash
+ln -s ../../.env.local apps/web/.env.local
+```
+
 ## Environment variables
 
 Every variable is described in `.env.example`. The important ones:
