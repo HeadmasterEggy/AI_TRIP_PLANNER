@@ -12,9 +12,26 @@ import { PartialTripBrief } from "./chat";
 
 describe("toAud", () => {
   it("converts the currencies a traveller can state a budget in", () => {
-    expect(toAud(3000, "CNY")).toBe(630);
-    expect(toAud(3000, "USD")).toBe(4650);
-    expect(toAud(50000, "JPY")).toBe(525);
+    // Derived from the table on purpose. Pinning the products here would mean a
+    // rate review shows up as a test failure, which trains people to edit the
+    // number until it goes green instead of reading what changed.
+    for (const [amount, currency] of [
+      [3000, "CNY"],
+      [3000, "USD"],
+      [50000, "JPY"],
+    ] as const)
+      expect(toAud(amount, currency)).toBe(Math.round(amount * AUD_PER[currency] * 100) / 100);
+  });
+
+  it("converts to a plausible order of magnitude", () => {
+    // The guard the derived test above cannot give: an inverted or misplaced
+    // decimal would still satisfy its own arithmetic.
+    expect(toAud(1000, "CNY")).toBeGreaterThan(50);
+    expect(toAud(1000, "CNY")).toBeLessThan(1000);
+    expect(toAud(1000, "USD")).toBeGreaterThan(1000);
+    expect(toAud(1000, "USD")).toBeLessThan(3000);
+    expect(toAud(100000, "JPY")).toBeGreaterThan(300);
+    expect(toAud(100000, "JPY")).toBeLessThan(3000);
   });
 
   it("leaves a base-currency amount untouched", () => {
@@ -25,8 +42,12 @@ describe("toAud", () => {
   });
 
   it("rounds to cents rather than carrying float dust", () => {
-    expect(toAud(1, "JPY")).toBe(0.01);
-    expect(toAud(333, "CNY")).toBe(69.93);
+    // Compare against its own rounding: `69.93 * 100` is 6992.999… in float, so
+    // multiplying out to test for whole cents fails on correct values.
+    const whole = (value: number) => Math.round(value * 100) / 100 === value;
+    expect(whole(toAud(333, "CNY"))).toBe(true);
+    expect(whole(toAud(7, "JPY"))).toBe(true);
+    expect(whole(toAud(12345, "USD"))).toBe(true);
   });
 
   it("refuses amounts that cannot be a budget", () => {

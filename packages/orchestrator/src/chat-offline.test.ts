@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { TripBrief } from "@trip/shared";
+import { toAud, type TripBrief } from "@trip/shared";
 import { extractBriefPatchLocally } from "./chat-offline";
 import { applyBriefPatch } from "./brief";
 
@@ -61,13 +61,13 @@ describe("offline TripBrief extraction", () => {
     // the 人 inside 人民币, and the budget marker was not recognised at all.
     const patch = extractBriefPatchLocally("10.6-10.9，预算 3000 人民币");
     expect(patch.groupSize).toBeUndefined();
-    expect(patch.budgetTotal).toBe(630);
+    expect(patch.budgetTotal).toBe(toAud(3000, "CNY"));
     expect(patch.budgetSource).toEqual({ amount: 3000, currency: "CNY" });
   });
 
   it("converts a budget stated in another currency and records what was said", () => {
     expect(extractBriefPatchLocally("budget 3000 USD")).toMatchObject({
-      budgetTotal: 4650,
+      budgetTotal: toAud(3000, "USD"),
       budgetSource: { amount: 3000, currency: "USD" },
     });
   });

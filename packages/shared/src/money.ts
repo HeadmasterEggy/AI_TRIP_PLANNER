@@ -26,14 +26,20 @@ export const BASE_CURRENCY: Currency = "AUD";
  * invented by a language model would silently skew every budget guardrail with
  * nothing to catch it. Stating the rates here makes them reviewable.
  *
- * TODO(人工核对): approximate values — replace with the numbers you want before
- * relying on them, and move RATES_AS_OF with them.
+ * Be clear about what these numbers are. They are round figures at roughly the
+ * right level, not quotes: nobody checked them against a market on RATES_AS_OF.
+ * They are deliberately given to two significant figures so they do not read as
+ * more precise than they are. That is fine for sizing a holiday budget, and not
+ * fine for anything else — do not grow a second use for this table.
+ *
+ * Review them when RATES_AS_OF looks old, or when a budget converts to something
+ * a traveller would call wrong. Major currencies can drift 10% in a year.
  */
 export const AUD_PER: Record<Currency, number> = {
   AUD: 1,
   CNY: 0.21,
-  USD: 1.55,
-  JPY: 0.0105,
+  USD: 1.5,
+  JPY: 0.01,
 };
 
 /** Without this nobody can tell a stale table from a current one. */

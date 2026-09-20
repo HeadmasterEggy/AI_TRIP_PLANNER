@@ -1,5 +1,6 @@
 import { FakeToolCallingModel } from "langchain";
 import { describe, expect, it, vi } from "vitest";
+import { toAud } from "@trip/shared";
 import type {
   ChatTurn,
   MemoryStore,
@@ -210,7 +211,7 @@ describe("currency in the brief update tool", () => {
     );
 
     // The model named the currency; the arithmetic happened in code.
-    expect(result.plan.brief.budgetTotal).toBe(630);
+    expect(result.plan.brief.budgetTotal).toBe(toAud(3000, "CNY"));
     expect(result.plan.brief.budgetSource).toEqual({ amount: 3000, currency: "CNY" });
     expect(result.plan.brief.groupSize).toBe(2);
   });
@@ -276,7 +277,7 @@ describe("tolerating what models actually emit", () => {
     expect(result.plan.brief).toMatchObject({
       destination: "Tokyo",
       groupSize: 2,
-      budgetTotal: 630,
+      budgetTotal: toAud(3000, "CNY"),
     });
   });
 

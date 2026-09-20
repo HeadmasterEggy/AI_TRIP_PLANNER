@@ -1,6 +1,7 @@
 import {
   AgentProposal as AgentProposalSchema,
   type AgentContext,
+  type AgentName,
   type AgentProposal,
   type AgentProgressEvent,
   type RevisionRequest,
@@ -20,11 +21,21 @@ const DelegationRequest = z.object({
     .describe("The bounded planning objective for this specialist."),
 });
 
+/**
+ * Specialists whose absence makes the result not a trip plan. Only itinerary qualifies today:
+ * a trip with no day plan is not a trip, while a trip with no dining section is just a trip the
+ * traveller eats their own way through. Add to this list when a domain becomes load-bearing,
+ * not merely when it is usually wanted.
+ */
+export const DEFAULT_REQUIRED_AGENTS = ["itinerary"] as const satisfies readonly AgentName[];
+
 export interface SupervisorDispatchOptions {
   brief: TripBrief;
   specialists: Specialist[];
   context: AgentContext;
   model?: BaseChatModel;
+  /** Defaults to DEFAULT_REQUIRED_AGENTS; entries not offered as tools are ignored. */
+  requiredAgents?: readonly AgentName[];
   onProgress?: (event: AgentProgressEvent) => void;
 }
 
@@ -160,7 +171,7 @@ export async function dispatchWithSupervisor(
     model,
     tools,
     systemPrompt:
-      "You are the trip-planning supervisor. Decide which specialist tools are needed for the user's requested plan, delegate bounded objectives, and do not perform specialist work yourself. For a complete new trip plan, consider day planning, inter-city transport, accommodation, destination guidance and dining. Do not invent or modify trip facts. Stop after the necessary specialist tools have returned; the deterministic LangGraph workflow validates, reconciles and persists their proposals.",
+      "You are the trip-planning supervisor. Decide which specialist tools are needed for the user's requested plan, delegate bounded objectives, and do not perform specialist work yourself. For a complete new trip plan, consider day planning, inter-city transport, accommodation, destination guidance and dining. Day planning is not optional: always delegate to the itinerary specialist. Do not invent or modify trip facts. Stop after the necessary specialist tools have returned; the deterministic LangGraph workflow validates, reconciles and persists their proposals.",
   });
 
   await supervisor.invoke({
@@ -177,6 +188,17 @@ export async function dispatchWithSupervisor(
 
   if (proposals.size === 0) {
     throw new Error("Supervisor completed without delegating to a specialist.");
+  }
+  // The prompt only asks the model to "consider" each domain, so it can return after picking
+  // three and the plan quietly ships two sections short. Name the ones a plan is not a plan
+  // without, and treat their absence as a failure: the caller falls back to dispatching every
+  // specialist, which is the outcome the model was supposed to produce anyway.
+  const required = (options.requiredAgents ?? DEFAULT_REQUIRED_AGENTS).filter((name) =>
+    options.specialists.some((specialist) => specialist.name === name),
+  );
+  const missing = required.filter((name) => !proposals.has(name));
+  if (missing.length) {
+    throw new Error(`Supervisor skipped required specialist(s): ${missing.join(", ")}.`);
   }
   return options.specialists.flatMap((specialist) => {
     const proposal = proposals.get(specialist.name);
