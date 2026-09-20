@@ -1,4 +1,4 @@
-import { previewEdit } from "@/lib/trip-edit";
+import { previewEdit } from "@/lib/trip/trip-edit";
 export async function POST(request: Request) {
   try {
     return Response.json(await previewEdit(await request.json()), {

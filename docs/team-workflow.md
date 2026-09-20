@@ -30,15 +30,18 @@ This is a single deployable, so ownership is by module rather than by frontend/b
 | `packages/services/src/memory/**`                                        | E     | real short/long-term memory store                                                                                                        |
 | `packages/services/src/{notification,auth}/**`                           | E     | real notifications + auth                                                                                                                |
 
-Search the codebase for `TODO(` to see open slots. Module handoff notes are in
-[`modules/`](modules/): [itinerary and transport reliability](modules/b-reliability.md) (B) and
-[accommodation and budget](modules/accommodation.md) (C). How the pieces fit together is described in
-[architecture](architecture.md).
+Search the codebase for `TODO(` to see open slots. Historical module handoff notes are preserved in
+[`archive/`](archive/): [itinerary and transport reliability](archive/module-b-reliability-2026-09.md)
+(B) and [accommodation and budget](archive/module-accommodation-2026-09.md) (C). Current provider,
+weather and UI work is tracked in [the product closure TODO](todo-product-closure.md). How the pieces
+fit together is described in [architecture](architecture.md).
 
 ## Branches and commits
 
-Use `feature/<module>-<short-desc>` for module work or `codex/<short-desc>` for agent work. Use
-conventional prefixes: `feat:`, `fix:`, `docs:`, `refactor:`, `test:` and `chore:`.
+Use a standard branch type prefix such as `feature/<module>-<short-desc>`, `fix/<short-desc>`,
+`refactor/<short-desc>`, or `docs/<short-desc>`. Branch names are independent of the tool or
+assistant that created them. Use conventional commit prefixes: `feat:`, `fix:`, `docs:`,
+`refactor:`, `test:` and `chore:`.
 
 Open a pull request for `main`. CI must pass and at least one other person should review the change.
 Do not force-push or delete `main`.

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { googleRouteFromCoordinates } from "@/lib/google";
+import { googleRouteFromCoordinates } from "@/lib/integrations/google";
 
 const Input = z.object({
   latitude: z.number().min(-90).max(90),

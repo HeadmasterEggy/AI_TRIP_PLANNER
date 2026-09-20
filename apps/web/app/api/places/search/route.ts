@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { GoogleRequestError, searchPlaces } from "@/lib/google";
+import { GoogleRequestError, searchPlaces } from "@/lib/integrations/google";
 
 const SearchRequest = z.object({
   text: z.string().trim().min(1).max(200),

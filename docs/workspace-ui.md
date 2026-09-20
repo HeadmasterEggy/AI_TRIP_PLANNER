@@ -106,11 +106,12 @@ now. Implementation history and browser acceptance for each phase are in the
 - Changing a stay or replanning resets the confirmations that depend on it, and accepted conflicts stay
   visible.
 - The client is not a source of supplier facts: stay selections re-query the booking port and totals
-  are recomputed from proposal items. Booking data is fictional and labelled as simulated.
+  are recomputed from proposal items. Results are labelled as SerpApi live search, Google Places
+  estimates or simulated fixtures; none of them creates a reservation.
 
 ## Map and places
 
-- **Place lookups** (`useTripPlaces`, `lib/place-query.ts`):
+- **Place lookups** (`components/map/useTripPlaces`, `lib/map/place-query.ts`):
   - A lookup uses, in order, a saved `placeId`, the activity's `location`, or a title that is itself a
     place name.
   - Descriptive activity text and mock placeholders (“Mock attraction near …”) are never sent to
@@ -123,7 +124,7 @@ now. Implementation history and browser acceptance for each phase are in the
     shows “Location to be confirmed”.
   - Rate limits, timeouts and outages are retryable, and Retry places repeats only those lookups.
   - The map shows a compact status; located markers stay visible and there is no blocking error.
-- **Framing** (`lib/map-view.ts`):
+- **Framing** (`lib/map/map-view.ts`):
   - The map frames the destination first: zoom 12 for one city, or bounds capped at zoom 12 for
     several, widened as cities resolve.
   - Once markers exist it fits them once, capped at zoom 15 (zoom 14 for a single place).
@@ -176,8 +177,9 @@ first render; without a browser key the map shows a fallback and the itinerary s
 
 ## Out of scope
 
-Real booking and payments, multi-user collaboration and on-trip mode. Mock places and bookings must
-never be presented as real supplier data.
+Booking fulfilment, payments, multi-user collaboration and on-trip mode remain out of scope. Mock
+places and bookings must never be presented as real supplier data; live search and estimated prices
+must retain their provider and freshness labels.
 
 ## Visual verification matrix
 
@@ -202,7 +204,7 @@ The root layout loads the self-hosted Fraunces display font through `next/font`;
 
 `pnpm typecheck`, `pnpm lint`, `pnpm test` and `pnpm build` must pass. Component tests cover drawers,
 blank start, history restore, sidebar collapse, place lookup failures, request races and storage
-recovery; `lib/map-view.test.ts` and `lib/place-query.test.ts` cover framing and lookup rules. Live
+recovery; `lib/map/map-view.test.ts` and `lib/map/place-query.test.ts` cover framing and lookup rules. Live
 Google checks are reported separately in session logs and are never inferred from mocks. The
 historical P0–P3 plan is in [`archive/p3-implementation.md`](archive/p3-implementation.md) and the
 session logs.

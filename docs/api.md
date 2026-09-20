@@ -76,7 +76,7 @@ the booking port and recompute costs rather than trusting client prices. The res
 
 ## `POST /api/places/search`
 
-Implementation: `searchPlaces` in `apps/web/lib/google.ts` (requires the server `MAPS_API_KEY`).
+Implementation: `searchPlaces` in `apps/web/lib/integrations/google.ts` (requires the server `MAPS_API_KEY`).
 
 ```json
 { "text": "To-ji Temple", "destination": "Kyoto" }
@@ -84,7 +84,7 @@ Implementation: `searchPlaces` in `apps/web/lib/google.ts` (requires the server 
 
 `destination` is optional; omit it to look up a city itself. The response is
 `{ "places": GooglePlace[] }`. The workspace only sends saved place names, explicit activity locations
-or titles that are themselves place names (`apps/web/lib/place-query.ts`), never descriptive activity
+or titles that are themselves place names (`apps/web/lib/map/place-query.ts`), never descriptive activity
 text. Errors: 400 invalid input, 429 Google rate limit, 502 other upstream failures. Error messages do
 not include the query or provider details.
 
@@ -109,7 +109,7 @@ written into the plan. Invalid input returns 400.
 
 ## `POST /api/trip/preview-edit`
 
-Contract: `EditRequest` and `EditPreview` in `apps/web/lib/trip-edit.ts`.
+Contract: `EditRequest` and `EditPreview` in `apps/web/lib/trip/trip-edit.ts`.
 
 ```json
 {
