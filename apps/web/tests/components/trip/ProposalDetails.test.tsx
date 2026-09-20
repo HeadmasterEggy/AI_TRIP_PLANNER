@@ -66,6 +66,11 @@ describe("Trip drawer details", () => {
   it("renders selected lodging facts and opens the hotel review action", () => {
     const section = structuredClone(plan.sections[0]!);
     section.id = "accommodation";
+    section.proposal!.source = {
+      kind: "live",
+      label: "SerpApi Google Hotels",
+      freshness: "Queried at 2026-09-21T00:00:00.000Z.",
+    };
     section.proposal!.stays = [
       {
         id: "stay-1",
@@ -84,6 +89,7 @@ describe("Trip drawer details", () => {
             rating: 8.5,
             freeCancellation: true,
             pricePerNight: 100,
+            detailsUrl: "https://example.test/hotel",
           },
         ],
       },
@@ -93,6 +99,11 @@ describe("Trip drawer details", () => {
     fireEvent.click(screen.getByRole("button", { expanded: false }));
     expect(screen.getByText(/AUD\s*600.00/)).toBeTruthy();
     expect(screen.getByText("2026-10-04")).toBeTruthy();
+    expect(screen.getAllByText("Live data")).toHaveLength(2);
+    expect(screen.getByText(/availability can change/)).toBeTruthy();
+    expect(screen.getByRole("link", { name: "View property details" }).getAttribute("href")).toBe(
+      "https://example.test/hotel",
+    );
     fireEvent.click(screen.getByRole("button", { name: "Review hotel choices" }));
     expect(review).toHaveBeenCalledOnce();
   });

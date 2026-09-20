@@ -27,9 +27,9 @@ The web production code is grouped by responsibility and all tests are separated
 
 ## In progress / not yet committed
 
-- The current working tree is on the stacked AI progress UI branch. It contains the high-level planning
-  stage strip, answer placeholder, stop action, and browser tests; earlier provider metadata is in the
-  parent branch. Preserve unrelated `.gitignore` and `output/` changes.
+- The current working tree is on the stacked travel-result-cards branch. It contains source-aware hotel,
+  budget, context, and HITL cards; earlier provider metadata and AI progress are in the parent branches.
+  Preserve unrelated `.gitignore` and `output/` changes.
   Preserve unrelated `.gitignore` and `output/` changes.
 
 ## Next recommended actions
