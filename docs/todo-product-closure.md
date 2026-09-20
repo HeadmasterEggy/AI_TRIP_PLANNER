@@ -247,6 +247,12 @@ Mock fixture
 - 统一按钮、输入框、卡片、标签、阴影、间距和状态颜色；继续保留浅色/深色主题。
 - 1600×900、1000 px 边界、375×812、键盘导航和 reduced motion 都要验证。
 
+实现记录（`feature/travel-result-cards`）：Trip drawer 已把 source kind 统一成可复用 badge；酒店
+卡片显示 AUD 总价、每晚价、日期、房间/晚数、取消政策、live/estimated/mock 状态和可用详情链接；
+航班、活动和天气/地点内容使用同一组结构化 result/context card 样式。预算卡片增加 within/over/
+unavailable 状态和可访问的进度条，HITL 酒店选择显示来源和“不会在此预订”的边界提示。真实价格、
+估价、mock 和 provider 限制均不再依靠模糊的“simulated”文案。
+
 ## 分支与 PR 拆分
 
 后续工作按能力边界拆分，不按 UI 参考站点拆分。分支使用通用命名，和具体工具或 AI 助手无关：

@@ -3,6 +3,7 @@
 // Each row represents one specialist agent. The row stays compact, while its
 // expanded body exposes that agent's structured proposal in a readable form.
 import { ProposalDetails } from "./ProposalDetails";
+import { SourceBadge } from "./SourceBadge";
 import { money } from "@/lib/workspace";
 import { useState } from "react";
 import type { TripSection as TripSectionData } from "@trip/shared";
@@ -13,14 +14,6 @@ const STATUS_LABEL: Record<string, string> = {
   needs_you: "Needs you",
   confirmed: "Confirmed",
 };
-const SOURCE_KIND_LABEL: Record<string, string> = {
-  live: "Live data",
-  estimated: "Estimated data",
-  mock: "Mock data",
-  fallback: "Fallback plan",
-  unavailable: "Data unavailable",
-};
-
 export function TripSection({
   section,
   onEdit,
@@ -58,18 +51,13 @@ export function TripSection({
         <div className="section__body" id={bodyId}>
           {section.proposal ? (
             <>
-              <p className="source-note">
-                <span
-                  className={`source-kind source-kind--${section.proposal.source?.kind ?? "unavailable"}`}
-                  role="status"
-                >
-                  {SOURCE_KIND_LABEL[section.proposal.source?.kind ?? "unavailable"] ??
-                    "Source status"}
-                </span>
-                <strong>{section.proposal.source?.label ?? "Source not recorded"}</strong>
-                <br />
-                {section.proposal.source?.freshness ?? "These estimates are not live verified."}
-              </p>
+              <div className="source-note" aria-label="Result source">
+                <div className="source-note__head">
+                  <SourceBadge source={section.proposal.source} />
+                  <strong>{section.proposal.source?.label ?? "Source not recorded"}</strong>
+                </div>
+                <p>{section.proposal.source?.freshness ?? "These estimates are not live verified."}</p>
+              </div>
               <ProposalDetails section={section} onReview={onReview} />
               <button onClick={onEdit}>Change trip preferences</button>
               {section.proposal.assumptions.length > 0 && (
