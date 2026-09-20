@@ -1,6 +1,7 @@
 "use client";
 import type { HitlRequest, TripPlan } from "@trip/shared";
 import { money } from "@/lib/workspace";
+import { SourceBadge } from "./SourceBadge";
 export type Decision = Pick<HitlRequest, "checkpointId" | "action" | "candidateId">;
 export function CheckpointCards({
   plan,
@@ -28,6 +29,7 @@ export function CheckpointCards({
           const stay = plan.sections
             .find((s) => s.id === checkpoint.sectionId)
             ?.proposal?.stays?.find((s) => s.id === checkpoint.stayId);
+          const source = plan.sections.find((s) => s.id === checkpoint.sectionId)?.proposal?.source;
           const blocked =
             checkpoint.type === "confirm_plan" &&
             plan.hitl.some((c) => c.id !== checkpoint.id && c.status !== "approved");
@@ -50,6 +52,16 @@ export function CheckpointCards({
                   role="group"
                   aria-label={`Hotel choices in ${stay.city}`}
                 >
+                  <div className="checkpoint__source">
+                    <SourceBadge source={source} compact />
+                    <span>
+                      {source?.kind === "live"
+                        ? "Live rate; availability can change before booking."
+                        : source?.kind === "estimated"
+                          ? "Estimated price; verify the property before booking."
+                          : "No reservation is made from this workspace."}
+                    </span>
+                  </div>
                   {stay.candidates.map((choice) => (
                     <button
                       disabled={busy}
@@ -82,9 +94,7 @@ export function CheckpointCards({
                       </small>
                     </button>
                   ))}
-                  <small className="muted">
-                    Simulated booking data. No reservation will be made.
-                  </small>
+                  <small className="muted">No reservation will be made from this workspace.</small>
                 </div>
               )}
               {checkpoint.status !== "approved" && (

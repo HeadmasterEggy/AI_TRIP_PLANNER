@@ -73,6 +73,27 @@ describe("accommodation proposals", () => {
     expect((await accommodationAgent.invoke({ brief, context: ctx })).items[0]!.estCost).toBe(1200);
   });
 
+  it("labels the actual live hotel provider instead of inferring it from grounded", async () => {
+    const liveOptions = options.map((option) => ({
+      ...option,
+      provenance: {
+        kind: "live" as const,
+        provider: "SerpApi Google Hotels",
+        queriedAt: "2026-09-21T00:00:00.000Z",
+      },
+    }));
+    const { ctx } = context(liveOptions);
+
+    const result = await accommodationAgent.invoke({ brief, context: ctx });
+
+    expect(result.source).toMatchObject({
+      kind: "live",
+      label: "SerpApi Google Hotels",
+    });
+    expect(result.source?.freshness).toContain("Queried at 2026-09-21T00:00:00.000Z");
+    expect(result.assumptions[0]).toContain("live search");
+  });
+
   it("partitions seven nights into adjacent city stays without double-counting", async () => {
     const { ctx, searchStays } = context();
     const result = await accommodationAgent.invoke({

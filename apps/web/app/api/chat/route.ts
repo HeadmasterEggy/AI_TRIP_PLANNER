@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { IncompleteBriefError, runTripChat } from "@trip/orchestrator";
+import { tripStore } from "@trip/services";
 import {
   ChatRequest,
   ChatResponse,
@@ -34,6 +35,7 @@ export async function POST(req: Request) {
 
       try {
         const response = ChatResponse.parse(await runTripChat(parsed.data, { onProgress: send }));
+        await tripStore.set(response.plan);
         send({ type: "complete", response });
       } catch (error) {
         // A blank conversation that has not stated everything yet is a question, not a failure.

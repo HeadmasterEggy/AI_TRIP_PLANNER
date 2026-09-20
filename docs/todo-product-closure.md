@@ -16,6 +16,13 @@ API，而是验证真实数据端到端可用、让来源和降级状态对用�
 验收：已支持的 Sydney → Tokyo 行程能显示真实酒店和航班；请求和页面金额均为 AUD；provider
 失败时页面仍能完成，但明确显示估算、未定价或重试状态。
 
+实现记录（`feature/provider-provenance`）：`ProviderProvenance` 随酒店/航班候选从 tools 传到
+agent，再汇总为统一的 `AgentProposal.source`。SerpApi Google Hotels/Flights 标为 `live`，
+Google Places 酒店价格标为 `estimated`，mock 候选标为 `mock`；每个真实查询保留 `queriedAt`，
+所有价格路径明确为 AUD。SerpApi 酒店失败时，Google Places fallback 会记录原 provider 与失败原因，
+页面仍显示“真实酒店、估算价格”，不会伪装成 live quote；航班 provider 失败仍保持未定价状态。
+相关 adapter、agent source 和 fallback 回归测试必须一起通过。
+
 ## P0：降级状态必须对用户可见
 
 这是一个已知的真实 bug，不是普通 UI polish：五个 specialist（accommodation、transport、itinerary、
@@ -32,6 +39,11 @@ destination-guide 和 dining）的模型/外部 provider 降级目前主要写�
 
 验收：关闭模型 key 或让 provider 失败后，页面仍能完成，但用户能在对应结果或规划状态中看到降级
 说明；恢复 provider 后，状态不会残留为 degraded。
+
+实现记录（`fix/degraded-visibility`，PR #31）：五个 specialist 的模型/外部 provider fallback 都在
+发生降级的 catch 分支生成统一的 `source.kind`，并由 TripSection、ChatPanel 和结果卡片显示 live、
+estimated、mock、fallback 或 unavailable 状态及高层原因；未暴露 prompt 或 chain-of-thought。PR 已
+直接提交到上游仓库，新的 GitHub CI 与 Vercel 检查均通过，保持 open、待按计划合并。
 
 ### 现有回填是同一个 bug，不要拿它交差
 
@@ -68,6 +80,11 @@ destination-guide 和 dining）的模型/外部 provider 降级目前主要写�
 持久化是部署前的 P0，因为当前 `packages/services/src/memory/index.ts` 使用进程内 `Map`；Vercel
 冷启动会丢失数据，也会清零 SerpApi 计数和缓存。
 
+实现记录（`feature/durable-storage`，PR #32）：新增 Upstash-compatible JSON store，并保留本地
+fallback；聊天、偏好、行程、HITL 决策、SerpApi 缓存和用量计数都通过持久化服务访问，CI/离线测试仍
+默认使用本地 mock。应用依赖和 lockfile 已同步，PR 以 `fix/degraded-visibility` 为 base 保持 open，
+待按计划合并。
+
 ## P1：天气能力
 
 天气现在可以进入实现阶段，沿用现有工具网关和证据链，不把天气交给普通搜索结果。
@@ -84,6 +101,13 @@ destination-guide 和 dining）的模型/外部 provider 降级目前主要写�
 
 天气验收：14 天内的行程返回 forecast，15 天及之后返回 climate context；模拟模式不访问网络；
 真实 provider 失败时不阻塞整份行程计划，并明确标记天气数据不可用。
+
+实现记录（`feature/weather-capability`）：Google Weather daily forecast 用于距离出发日 10 天以内；
+由于 Google 官方接口的 daily forecast 上限是 10 天，距离出发日第 11–14 天使用 Open-Meteo
+forecast 作为扩展的真实 forecast provider，仍满足本节的 14 天边界；第 15 天起才进入 climate
+fixture。模拟模式不调用任一网络 provider。天气结果已通过 `ToolGateway` 注入 destination guide，
+并在 assumptions 与 `AgentProposal.source` 中记录 provider、horizon、观察时间和不可用状态。
+Google Weather、Open-Meteo、>14 天 climate、provider 失败和 destination guide 集成均有回归测试。
 
 天气与 provider 分支必须共享同一来源契约：`AgentProposal.source.kind` 使用
 `live | estimated | mock | fallback | unavailable`，`label` 只显示 provider/数据来源名称，
@@ -135,6 +159,11 @@ Idle → Submitting → Thinking → Calling tools → Drafting answer → Compl
 
 优先移植：思考步骤列表、流式回答占位、状态文字切换、完成 badge、失败状态卡、tool chips 和
 轻量 panel reveal。避免持续旋转、全屏 loading 和会干扰阅读的装饰动画。
+
+实现记录（`feature/ai-progress-ui`）：现有 NDJSON agent 事件已映射为不暴露内部推理的高层阶段
+`Submitting → Thinking → Calling tools → Drafting answer → Complete`；ChatPanel 增加当前 agent、
+结构化回答生成占位、失败/重试提示和 Stop 操作。保留现有 `<details>` 结构、ARIA live region、
+键盘焦点和 `prefers-reduced-motion`，并为阶段、占位回答和取消操作补浏览器回归测试。
 
 ## P1：五个 UI 站点的取舍与移植策略
 
@@ -227,6 +256,16 @@ Mock fixture
 - 空聊天、空地图、加载、错误和真实结果分别设计，不能共用模糊的默认状态。
 - 统一按钮、输入框、卡片、标签、阴影、间距和状态颜色；继续保留浅色/深色主题。
 - 1600×900、1000 px 边界、375×812、键盘导航和 reduced motion 都要验证。
+
+实现记录（`feature/travel-result-cards`）：Trip drawer 已把 source kind 统一成可复用 badge；酒店
+卡片显示 AUD 总价、每晚价、日期、房间/晚数、取消政策、live/estimated/mock 状态和可用详情链接；
+航班、活动和天气/地点内容使用同一组结构化 result/context card 样式。预算卡片增加 within/over/
+unavailable 状态和可访问的进度条，HITL 酒店选择显示来源和“不会在此预订”的边界提示。真实价格、
+估价、mock 和 provider 限制均不再依靠模糊的“simulated”文案。
+
+浏览器验收记录：重建 Next 开发缓存后，首页返回 200，偏好面板和日期日历可打开，375×812 移动
+布局可用，交互后无 console error；完整网页测试、lint、typecheck、production build 和 `git diff --check`
+均通过。旧开发进程曾因残留 `.next` chunk 返回 500，已通过结束旧进程并重新构建确认不是代码问题。
 
 ## 分支与 PR 拆分
 

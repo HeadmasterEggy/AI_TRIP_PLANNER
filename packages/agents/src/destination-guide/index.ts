@@ -176,6 +176,20 @@ async function planDestinationGuide(
     (place, index, all) =>
       all.findIndex((candidate) => normalize(candidate.name) === normalize(place.name)) === index,
   );
+  const weatherLocation = places.find((place) => place.location)?.location;
+  let weatherResult: Awaited<ReturnType<NonNullable<AgentContext["tools"]["weather"]>["forecast"]>> | undefined;
+  let weatherUnavailable = false;
+  if (ctx.tools.weather && weatherLocation) {
+    try {
+      weatherResult = await ctx.tools.weather.forecast({
+        location: weatherLocation,
+        targetDate: brief.dates[0],
+      });
+    } catch {
+      ctx.signal?.throwIfAborted();
+      weatherUnavailable = true;
+    }
+  }
   const generator =
     options.generator === false ? undefined : (options.generator ?? createMiniMaxGenerator());
   let draft: DestinationGuideDraft;
@@ -215,12 +229,20 @@ async function planDestinationGuide(
       },
       {
         kind: "weather-packing",
-        detail: `${draft.weather} Pack: ${draft.packing.join(", ")}.`,
+        detail: `${weatherResult?.summary ?? draft.weather} Pack: ${draft.packing.join(", ")}.`,
       },
     ],
     assumptions: [
       "Attractions come only from the injected MapsPort and may still be mock or stale data.",
-      "Weather is general model context, not a forecast; entry, health and safety guidance requires official verification.",
+      ...(weatherResult
+        ? [
+            `Weather source: ${weatherResult.provider}; ${weatherResult.horizon}${weatherResult.validUntil ? `, valid until ${weatherResult.validUntil}` : ""}; observed ${weatherResult.observedAt}.`,
+          ]
+        : [
+            weatherUnavailable
+              ? "Weather provider unavailable; using monthly planning context instead of a forecast."
+              : "Weather is general model context, not a forecast; entry, health and safety guidance requires official verification.",
+          ]),
       ...draft.assumptions,
     ],
     conflictsWith: [],
@@ -230,14 +252,25 @@ async function planDestinationGuide(
           label: "Local fallback",
           freshness: "The model guide was unavailable or invalid; deterministic destination guidance was used from the gathered place evidence.",
         }
-      : {
-          kind: process.env.USE_MOCK_TOOLS === "false" ? "estimated" : "mock",
-          label: "Maps evidence and AI guide",
-          freshness:
-            process.env.USE_MOCK_TOOLS === "false"
-              ? "Place details are provider estimates; weather, entry, health and safety claims require official verification."
-              : "Place details come from deterministic mock fixtures; not live verified.",
-        },
+      : weatherUnavailable
+        ? {
+            kind: "unavailable",
+            label: "Weather provider",
+            freshness: "The destination guide completed with monthly context because the requested weather data was unavailable.",
+          }
+        : {
+            kind: weatherResult?.provider === "Google Weather API"
+              ? "live"
+              : process.env.USE_MOCK_TOOLS === "false"
+                ? "estimated"
+                : "mock",
+            label: weatherResult?.provider ?? "Maps evidence and AI guide",
+            freshness: weatherResult
+              ? `${weatherResult.horizon === "forecast" ? "Forecast" : "Climate context"} observed at ${weatherResult.observedAt}; conditions and provider availability may change.`
+              : process.env.USE_MOCK_TOOLS === "false"
+                ? "Place details are provider estimates; weather, entry, health and safety claims require official verification."
+                : "Place details come from deterministic mock fixtures; not live verified.",
+          },
   };
 }
 

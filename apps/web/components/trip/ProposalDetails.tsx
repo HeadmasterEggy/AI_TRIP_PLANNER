@@ -1,5 +1,6 @@
 import type { ProposalItem, TripSection } from "@trip/shared";
 import { money } from "@/lib/workspace";
+import { SourceBadge } from "./SourceBadge";
 
 const titles: Record<string, string> = {
   hotel: "Accommodation",
@@ -19,7 +20,7 @@ function ItemCard({ item }: { item: ProposalItem }) {
     item.kind,
   );
   return (
-    <article className="proposal-item">
+    <article className={`proposal-item result-card${informational ? " result-card--context" : ""}`}>
       <div className="proposal-item__meta">
         <span className="proposal-item__kind">
           {titles[item.kind] ?? item.kind.replaceAll("-", " ")}
@@ -58,9 +59,12 @@ export function ProposalDetails({
           const selected = stay.candidates.find((candidate) => candidate.id === stay.selectedId);
           if (!selected) return <p key={stay.id}>This stay needs a new selection.</p>;
           return (
-            <article className="proposal-item" key={stay.id}>
-              <div className="proposal-item__meta">
-                <span>{stay.city}</span>
+            <article className="proposal-item result-card result-card--hotel" key={stay.id}>
+              <div className="result-card__head">
+                <div className="proposal-item__meta">
+                  <span>{stay.city}</span>
+                  <SourceBadge source={proposal.source} compact />
+                </div>
                 <strong>{money(selected.pricePerNight * stay.rooms * stay.nights)}</strong>
               </div>
               <h4>{selected.name}</h4>
@@ -89,8 +93,17 @@ export function ProposalDetails({
               </dl>
               <p>
                 {selected.freeCancellation ? "Free cancellation" : "No free cancellation"} ·
-                simulated availability
+                {proposal.source?.kind === "live"
+                  ? " availability can change before booking"
+                  : proposal.source?.kind === "estimated"
+                    ? " estimated price; verify before booking"
+                    : " availability is not live verified"}
               </p>
+              {selected.detailsUrl && (
+                <a href={selected.detailsUrl} target="_blank" rel="noreferrer">
+                  View property details
+                </a>
+              )}
               <button onClick={onReview}>Review hotel choices</button>
             </article>
           );

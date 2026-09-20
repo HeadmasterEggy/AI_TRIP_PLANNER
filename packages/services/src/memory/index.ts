@@ -1,27 +1,28 @@
 // Owner: E — PreferenceMemoryService
-// TODO(E): replace the in-memory Maps with a real store (SQLite via better-sqlite3,
-//          or Redis). Keep implementing MemoryStore from @trip/shared so nothing
-//          else has to change.
-
 import type { ChatTurn, UserPreference, MemoryStore } from "@trip/shared";
+import { jsonStore } from "../durable";
 
-const shortTerm = new Map<string, ChatTurn[]>(); // key: tripId  (session scratch)
-const longTerm = new Map<string, UserPreference[]>(); // key: userId (confirmed profile)
+const shortTermKey = (tripId: string) => `trip:memory:short:${tripId}`;
+const longTermKey = (userId: string) => `trip:memory:long:${userId}`;
 
 export const memory: MemoryStore = {
   async getShortTerm(tripId) {
-    return shortTerm.get(tripId) ?? [];
+    return (await jsonStore.get<ChatTurn[]>(shortTermKey(tripId))) ?? [];
   },
   async appendShortTerm(tripId, turn) {
-    shortTerm.set(tripId, [...(shortTerm.get(tripId) ?? []), turn]);
+    const current = (await jsonStore.get<ChatTurn[]>(shortTermKey(tripId))) ?? [];
+    await jsonStore.set(shortTermKey(tripId), [...current, turn]);
   },
   async getLongTerm(userId) {
-    return longTerm.get(userId) ?? [];
+    return (await jsonStore.get<UserPreference[]>(longTermKey(userId))) ?? [];
   },
   async setLongTerm(userId, pref) {
-    const existing = (longTerm.get(userId) ?? []).filter((p) => p.key !== pref.key);
-    longTerm.set(userId, [...existing, pref]);
+    const existing = ((await jsonStore.get<UserPreference[]>(longTermKey(userId))) ?? []).filter(
+      (p) => p.key !== pref.key,
+    );
+    await jsonStore.set(longTermKey(userId), [...existing, pref]);
   },
-  // TODO(E): promote a confirmed short-term item into long-term.
+  // Promotion remains intentionally explicit at the caller: a chat turn is free text and cannot
+  // be safely interpreted as a preference without the coordinator's structured confirmation.
   async promote(_tripId, _userId, _key) {},
 };

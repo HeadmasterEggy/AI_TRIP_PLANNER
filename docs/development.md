@@ -80,7 +80,7 @@ travel backend:
 | Time zones | [Google Time Zone API](https://developers.google.com/maps/documentation/timezone/overview) | Destination-local time calculations. |
 | Weather forecasts | Google Weather API or another dedicated weather provider | Not implemented in the current tool gateway. Generic SerpApi web results must not be treated as a weather API. |
 | Flight delays, gates and operational status | Aviationstack or another aviation-status provider | Optional future capability; not needed for hotel/flight price search. |
-| Chat, preferences and SerpApi usage counters | Durable database or Redis | Required for deployment. The current memory store and SerpApi quota/cache are process-local and can be cleared by a Vercel cold start. |
+| Chat, preferences, trip plans/HITL decisions and SerpApi usage/cache | Upstash-compatible Redis REST store | Configure `KV_REST_API_URL` + `KV_REST_API_TOKEN` in deployment; local/offline runs use an in-process fallback. |
 
 Travelpayouts and Aviationstack are therefore not required for the current MVP. Add them only if the
 product needs affiliate inventory/booking flows or operational flight-status data. SerpApi also does
@@ -97,6 +97,13 @@ SERPAPI_KEY=your-serpapi-key
 ```
 
 Keep real credentials out of Git and out of committed documentation.
+
+For deployed durability, configure the Vercel project with `KV_REST_API_URL` and
+`KV_REST_API_TOKEN` (the equivalent `UPSTASH_REDIS_REST_URL` and
+`UPSTASH_REDIS_REST_TOKEN` names are also accepted). The shared Redis REST store backs chat turns,
+preferences, generated trip plans/HITL decisions, and SerpApi usage/cache state. Without those
+variables, local tests and offline development use an in-process fallback and should not be treated
+as a production deployment check.
 
 ## Mock server
 

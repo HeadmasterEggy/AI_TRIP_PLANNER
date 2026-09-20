@@ -46,6 +46,7 @@ export function TripPanel({
   const pct =
     budget && estimated !== undefined ? Math.min(100, Math.round((estimated / budget) * 100)) : 0;
   const delta = budget && estimated !== undefined ? budget - estimated : undefined;
+  const budgetState = delta === undefined ? "unavailable" : delta < 0 ? "over" : "within";
   const tabs: [TripTab, string][] = [
     ["overview", "Overview"],
     ["timeline", "Timeline & routes"],
@@ -57,11 +58,27 @@ export function TripPanel({
         {plan.brief.groupSize === 1 ? "traveller" : "travellers"}
       </p>
       <section className="trip-panel__budget-summary" aria-label="Trip budget">
-        <div className="trip__budget">
-          <span>Estimated total</span>
-          <strong>{estimated === undefined ? "Estimate unavailable" : money(estimated)}</strong>
+        <div className="trip__budget-head">
+          <div className="trip__budget">
+            <span>Estimated total</span>
+            <strong>{estimated === undefined ? "Estimate unavailable" : money(estimated)}</strong>
+          </div>
+          <span className={`budget-status budget-status--${budgetState}`}>
+            {budgetState === "over"
+              ? "Over budget"
+              : budgetState === "within"
+                ? "Within budget"
+                : "Budget not set"}
+          </span>
         </div>
-        <div className={`bar${delta !== undefined && delta < 0 ? " bar--over" : ""}`}>
+        <div
+          className={`bar${delta !== undefined && delta < 0 ? " bar--over" : ""}`}
+          role="progressbar"
+          aria-label="Budget used"
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={pct}
+        >
           <span style={{ width: `${pct}%` }} />
         </div>
         <p

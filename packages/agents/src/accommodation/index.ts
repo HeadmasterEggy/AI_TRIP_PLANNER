@@ -6,6 +6,7 @@ import {
   type AgentContext,
   type RevisionRequest,
   type Specialist,
+  type ProviderProvenance,
   type StayOption,
 } from "@trip/shared";
 import { createAgent, tool } from "langchain";
@@ -105,14 +106,16 @@ function assembleStayProposal(
   const initialTotal =
     selections.reduce((sum, stay) => sum + Math.round(stay.initialCost * 100), 0) / 100;
   const savings = Math.round((initialTotal - total) * 100) / 100;
-  // Google Places (real mode) marks every option it returns as `grounded`;
-  // the mock fixtures never do. Reporting this honestly matters because the
-  // *property* being real doesn't make the *price* real in either mode.
+  // A real property does not imply a live price. Use the adapter's provenance
+  // metadata so SerpApi rates and Google Places estimates cannot share a label.
   const grounded = selections.every(({ options }) => options.every((option) => option.grounded));
+  const source = staySource(selections, sourceKind, grounded);
   const assumptions = [
-    grounded
-      ? "AUD per room per night; properties are real (Google Places), availability is not verified."
-      : "Booking mock convention: AUD per room per night; at most 2 guests per room; availability is simulated.",
+    source.kind === "live"
+      ? "AUD per room per night; rates came from a live search and can change before booking."
+      : source.kind === "estimated"
+        ? "AUD per room per night; property data is grounded but the nightly price is an estimate, not a live quote."
+        : "Booking mock convention: AUD per room per night; at most 2 guests per room; availability is simulated.",
     `${roomAllocation} allocation: ${rooms} room(s) for ${groupSize} guest(s); check-out day is not charged.`,
     "Only selected stays contribute to estCost. Taxes/fees are assumed included in mock rates.",
     "Initial selection prefers rating >=8/10 and free cancellation; confirmed preferences remain mandatory during revisions.",
@@ -161,25 +164,7 @@ function assembleStayProposal(
   }
   return {
     agent: "accommodation",
-    source:
-      sourceKind === "fallback"
-        ? {
-            kind: "fallback",
-            label: "Local fallback",
-            freshness: "The model choice was unavailable; a deterministic stay selection was used from the gathered candidates.",
-          }
-        : grounded
-      ? {
-          kind: sourceKind,
-          label: "Google Places (grounded)",
-          freshness:
-            "Property names, ratings and addresses are real; nightly price is a planning estimate from Google's price-level bucket, not a live quote.",
-        }
-      : {
-          kind: "mock",
-          label: "Simulated booking data",
-          freshness: "Fictional rates and availability; not a live quote.",
-        },
+    source,
     stays: selections.map(({ segment, options, chosen }) => ({
       id: `stay-${segment.day}`,
       ...segment,
@@ -199,6 +184,63 @@ function assembleStayProposal(
     })),
     assumptions,
     conflictsWith: [],
+  };
+}
+
+function staySource(
+  selections: Array<{ options: StayOption[] }>,
+  sourceKind: "estimated" | "mock" | "fallback",
+  grounded: boolean,
+): NonNullable<AgentProposal["source"]> {
+  if (sourceKind === "fallback") {
+    return {
+      kind: "fallback",
+      label: "Local fallback",
+      freshness:
+        "The model choice was unavailable; a deterministic stay selection was used from the gathered candidates.",
+    };
+  }
+  const provenance = selections
+    .flatMap(({ options }) => options.map((option) => option.provenance))
+    .filter((value): value is ProviderProvenance => value !== undefined);
+  if (!provenance.length) {
+    return grounded
+      ? {
+          kind: "estimated",
+          label: "Google Places estimate",
+          freshness:
+            "Property names, ratings and addresses are grounded; nightly price is a planning estimate, not a live quote.",
+        }
+      : {
+          kind: "mock",
+          label: "Mock booking fixture",
+          freshness: "Fictional rates and availability; not a live quote.",
+        };
+  }
+  const providers = [...new Set(provenance.map((value) => value.provider))];
+  const kinds = [...new Set(provenance.map((value) => value.kind))];
+  const kind: "live" | "estimated" | "mock" =
+    kinds.length === 1
+      ? kinds[0]!
+      : kinds.includes("estimated")
+        ? "estimated"
+        : kinds.includes("live")
+          ? "live"
+          : "mock";
+  const queriedAt = [...new Set(provenance.map((value) => value.queriedAt).filter(Boolean))];
+  const fallback = provenance.find((value) => value.fallbackFrom);
+  return {
+    kind,
+    label: providers.join(" + "),
+    freshness: [
+      `All amounts are AUD; ${kind === "live" ? "live rates" : kind === "estimated" ? "estimated prices" : "fixture prices"} can change or are not verified.`,
+      queriedAt.length ? `Queried at ${queriedAt.join(", ")}.` : "",
+      fallback
+        ? `${fallback.fallbackFrom} was unavailable (${fallback.fallbackReason}); Google Places estimate was used.`
+        : "",
+    ]
+      .filter(Boolean)
+      .join(" "),
   };
 }
 

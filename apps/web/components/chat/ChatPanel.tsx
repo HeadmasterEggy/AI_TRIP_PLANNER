@@ -29,6 +29,7 @@ const suggestions = [
 
 type ActivityStatus =
   "queued" | "running" | "revising" | "completed" | "failed" | "interrupted" | "unknown";
+const progressSteps = ["Submitting", "Thinking", "Calling tools", "Drafting answer", "Complete"];
 const statusLabels: Record<ActivityStatus, string> = {
   queued: "Queued",
   running: "Running",
@@ -55,6 +56,27 @@ function agentStatus(event: AgentProgressEvent | undefined, busy: boolean): Acti
   if (event.type === "agent_started") return event.round > 1 ? "revising" : "running";
   return "unknown";
 }
+
+function progressStep(activity: AgentProgressEvent[], busy: boolean, error?: string): number {
+  if (error && !busy) return -1;
+  if (!busy) return activity.length ? progressSteps.length - 1 : 0;
+  const started = activity.some((event) => event.type === "agent_started");
+  if (!started) return 0;
+  const completed = activity.filter((event) => event.type === "agent_completed").length;
+  return completed === 0 ? 1 : completed >= AGENT_NAMES.length ? 3 : 2;
+}
+
+function currentAgent(activity: AgentProgressEvent[]): string | undefined {
+  const lastStarted = [...activity].reverse().find((event) => event.type === "agent_started");
+  if (!lastStarted || lastStarted.type !== "agent_started") return undefined;
+  const completedAfter = activity.some(
+    (event) =>
+      event.type === "agent_completed" &&
+      event.agent === lastStarted.agent &&
+      event.round === lastStarted.round,
+  );
+  return completedAfter ? undefined : labels[lastStarted.agent];
+}
 export function ChatPanel({
   plan,
   messages,
@@ -66,6 +88,8 @@ export function ChatPanel({
   onDecision,
   onEdit,
   onStart,
+  onCancel,
+  error,
 }: {
   /** Undefined for a blank conversation that has not produced a plan. */
   plan?: TripPlan;
@@ -79,6 +103,10 @@ export function ChatPanel({
   onEdit: () => void;
   /** Opens Trip preferences from the blank-conversation prompt. */
   onStart?: () => void;
+  /** Cancels the active request without changing the current plan. */
+  onCancel?: () => void;
+  /** High-level request error shown in the workspace. */
+  error?: string;
 }) {
   const stream = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -148,6 +176,73 @@ export function ChatPanel({
         </div>
         {activity.length > 0 && (
           <section className="agent-activity" aria-label="Planning progress">
+            {(() => {
+              const activeStep = progressStep(activity, busy, error);
+              const activeAgent = currentAgent(activity);
+              return (
+                <div className="ai-progress" aria-live="polite">
+                  <div className="ai-progress__head">
+                    <div>
+                      <span className="ai-progress__eyebrow">Trip planner</span>
+                      <strong>
+                        {activeStep < 0
+                          ? "Planning needs attention"
+                          : progressSteps[activeStep] ?? "Planning"}
+                      </strong>
+                    </div>
+                    <span className="ai-progress__count">
+                      {activeStep < 0
+                        ? "Retry available"
+                        : `${Math.max(activeStep, 0) + 1}/${progressSteps.length}`}
+                    </span>
+                  </div>
+                  <div className="ai-progress__track" aria-hidden="true">
+                    <span
+                      className={`ai-progress__fill${activeStep < 0 ? " ai-progress__fill--error" : ""}`}
+                      style={{
+                        width: `${activeStep < 0 ? 100 : ((activeStep + 1) / progressSteps.length) * 100}%`,
+                      }}
+                    />
+                  </div>
+                  <div className="ai-progress__steps" role="list" aria-label="Planning stages">
+                    {progressSteps.map((step, index) => {
+                      const state =
+                        activeStep < 0
+                          ? index === 0
+                            ? "error"
+                            : "pending"
+                          : index < activeStep
+                            ? "complete"
+                            : index === activeStep
+                              ? "active"
+                              : "pending";
+                      return (
+                        <span
+                          className={`ai-progress__step ai-progress__step--${state}`}
+                          data-state={state}
+                          key={step}
+                          role="listitem"
+                        >
+                          <span aria-hidden="true">{state === "complete" ? "✓" : index + 1}</span>
+                          {step}
+                        </span>
+                      );
+                    })}
+                  </div>
+                  {activeAgent && (
+                    <p className="ai-progress__current">
+                      Working on <strong>{activeAgent}</strong> with structured trip evidence.
+                    </p>
+                  )}
+                  {busy && (
+                    <div className="ai-progress__answer" aria-label="Answer in progress">
+                      <span className="ai-progress__spark" aria-hidden="true" />
+                      <span>Building a grounded answer from the completed checks…</span>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
             <h3 className="agent-activity__title">Planning progress</h3>
             <div className="agent-activity__list" role="list">
               <div
@@ -265,9 +360,21 @@ export function ChatPanel({
           disabled={busy}
           onChange={(e) => onInput(e.target.value)}
         />
-        <button className="primary" disabled={busy || !input.trim()}>
-          {busy ? "Planning…" : "Send"}
-        </button>
+        {busy ? (
+          <button
+            type="button"
+            className="chat__stop"
+            aria-label="Stop planning"
+            disabled={!onCancel}
+            onClick={onCancel}
+          >
+            Stop
+          </button>
+        ) : (
+          <button className="primary" disabled={!input.trim()}>
+            Send
+          </button>
+        )}
       </form>
       <p className="disclaimer">Estimates require verification. Nothing here makes a booking.</p>
       {showCalendar && (

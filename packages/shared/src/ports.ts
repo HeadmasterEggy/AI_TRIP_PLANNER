@@ -29,6 +29,14 @@ export interface Place {
   name: string;
   category: string;
   rating?: number;
+  location?: { latitude: number; longitude: number };
+}
+export interface ProviderProvenance {
+  kind: "live" | "estimated" | "mock";
+  provider: string;
+  queriedAt?: string;
+  fallbackFrom?: string;
+  fallbackReason?: string;
 }
 export interface MapsPort {
   route(q: RouteQuery): Promise<RouteLeg[]>;
@@ -54,6 +62,8 @@ export interface StayOption {
   location?: { latitude: number; longitude: number };
   /** Link to the property's details page, when the provider reports one. */
   detailsUrl?: string;
+  /** Provider and pricing status for traveller-facing source labels. */
+  provenance?: ProviderProvenance;
 }
 export interface FlightQuery {
   from: string;
@@ -70,16 +80,36 @@ export interface FlightOption {
   stops?: number;
   /** Total scheduled flight time in minutes, when the provider reports it. */
   durationMin?: number;
+  /** Provider and pricing status for traveller-facing source labels. */
+  provenance?: ProviderProvenance;
 }
 export interface BookingPort {
   searchStays(q: StayQuery): Promise<StayOption[]>;
   searchFlights(q: FlightQuery): Promise<FlightOption[]>;
 }
 
+export type WeatherHorizon = "forecast" | "climate";
+export interface WeatherQuery {
+  location: { latitude: number; longitude: number };
+  targetDate: string;
+}
+export interface WeatherResult {
+  horizon: WeatherHorizon;
+  targetDate: string;
+  summary: string;
+  observedAt: string;
+  validUntil?: string;
+  provider: string;
+}
+export interface WeatherPort {
+  forecast(q: WeatherQuery): Promise<WeatherResult>;
+}
+
 // --- The gateway handed to agents (mock or real, decided once by A) ---------
 export interface ToolGateway {
   maps: MapsPort;
   booking: BookingPort;
+  weather?: WeatherPort;
 }
 
 // --- Memory port (implemented by @trip/services/memory) --------------------

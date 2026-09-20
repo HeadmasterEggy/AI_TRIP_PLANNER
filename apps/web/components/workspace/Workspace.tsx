@@ -794,6 +794,8 @@ function WorkspaceContent({ restored }: { restored: RestoredWorkspace }) {
               onInput={setInput}
               busy={busy || editPending}
               activity={activity}
+              error={error}
+              onCancel={() => active.current?.abort()}
               onSend={send}
               onDecision={onDecision}
               onEdit={edit}

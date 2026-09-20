@@ -6,6 +6,7 @@
 import type { ToolGateway } from "@trip/shared";
 import * as mapsAdapter from "./maps";
 import * as bookingAdapter from "./booking";
+import * as weatherAdapter from "./weather";
 
 export function createToolGateway(): ToolGateway {
   const useMock = process.env.USE_MOCK_TOOLS !== "false";
@@ -25,5 +26,5 @@ export function createToolGateway(): ToolGateway {
         : "fixture-backed (no SERPAPI_KEY or MAPS_API_KEY set)";
     console.warn(`[tools] Live ${selected} Maps adapter enabled; booking: ${booking}.`);
   }
-  return { maps: mapsAdapter, booking: bookingAdapter };
+  return { maps: mapsAdapter, booking: bookingAdapter, weather: weatherAdapter.weather };
 }

@@ -99,6 +99,7 @@ export async function searchStays(q: StayQuery): Promise<StayOption[]> {
         pricePerNight: economy,
         rating: 7.6,
         freeCancellation: true,
+        provenance: { kind: "mock", provider: "Mock booking fixture" },
       },
       {
         name: `Mock ${city} Standard`,
@@ -106,6 +107,7 @@ export async function searchStays(q: StayQuery): Promise<StayOption[]> {
         pricePerNight: standard,
         rating: 8.7,
         freeCancellation: true,
+        provenance: { kind: "mock", provider: "Mock booking fixture" },
       },
       {
         name: `Mock ${city} Comfort`,
@@ -113,6 +115,7 @@ export async function searchStays(q: StayQuery): Promise<StayOption[]> {
         pricePerNight: comfort,
         rating: 9.3,
         freeCancellation: true,
+        provenance: { kind: "mock", provider: "Mock booking fixture" },
       },
       {
         name: `Mock ${city} Saver`,
@@ -120,6 +123,7 @@ export async function searchStays(q: StayQuery): Promise<StayOption[]> {
         pricePerNight: economy - 20,
         rating: 7.2,
         freeCancellation: false,
+        provenance: { kind: "mock", provider: "Mock booking fixture" },
       },
     ];
   }
@@ -142,19 +146,27 @@ export async function searchStays(q: StayQuery): Promise<StayOption[]> {
           error instanceof Error ? error.message : "unknown error"
         }`,
       );
+      return searchStaysGooglePlacesEstimate(city, {
+        fallbackFrom: "SerpApi Google Hotels",
+        fallbackReason: reason,
+      });
     }
   }
 
   return searchStaysGooglePlacesEstimate(city);
 }
 
-async function searchStaysGooglePlacesEstimate(city: string): Promise<StayOption[]> {
+async function searchStaysGooglePlacesEstimate(
+  city: string,
+  fallback?: { fallbackFrom: string; fallbackReason: string },
+): Promise<StayOption[]> {
   if (provider() !== "google") throw new Error(`Unsupported booking provider: ${provider()}`);
   if (!process.env.MAPS_API_KEY) throw new Error("Google Places provider requires MAPS_API_KEY.");
   const results = await searchGooglePlacesText(
     `hotels in ${city}`,
     "places.displayName,places.rating,places.priceLevel,places.formattedAddress",
   );
+  const queriedAt = new Date().toISOString();
   const options: StayOption[] = results
     .map((place) => ({
       name: place.displayName?.text?.trim() ?? "",
@@ -167,6 +179,12 @@ async function searchStaysGooglePlacesEstimate(city: string): Promise<StayOption
       // for — see accommodation's eligibleOptions filter.
       freeCancellation: false,
       grounded: true,
+      provenance: {
+        kind: "estimated" as const,
+        provider: "Google Places estimate",
+        queriedAt,
+        ...fallback,
+      },
     }))
     .filter((option) => option.name.length > 0);
   if (options.length === 0) throw new Error(`Google Places returned no lodging in ${city}.`);
@@ -194,8 +212,18 @@ export async function searchFlights(q: FlightQuery): Promise<FlightOption[]> {
       `${from} ${legs === 2 ? "<->" : "->"} ${to}; ${q.passengers} passengers; ` +
       `${legs === 2 ? "round-trip" : "one-way"} group total in AUD; fictional mock fare`;
     return [
-      { carrier: "MockAir Economy", price: 310 * q.passengers * legs, note },
-      { carrier: "MockAir Flexible", price: 420 * q.passengers * legs, note },
+      {
+        carrier: "MockAir Economy",
+        price: 310 * q.passengers * legs,
+        note,
+        provenance: { kind: "mock", provider: "Mock booking fixture" },
+      },
+      {
+        carrier: "MockAir Flexible",
+        price: 420 * q.passengers * legs,
+        note,
+        provenance: { kind: "mock", provider: "Mock booking fixture" },
+      },
     ];
   }
 

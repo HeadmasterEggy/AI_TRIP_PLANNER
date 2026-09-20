@@ -17,7 +17,11 @@ const brief: TripBrief = {
   nationality: "Australian",
 };
 
-function context(preferences: UserPreference[] = [], withPlaces = true): AgentContext {
+function context(
+  preferences: UserPreference[] = [],
+  withPlaces = true,
+  withLocation = false,
+): AgentContext {
   return {
     tripId: brief.tripId,
     round: 1,
@@ -30,6 +34,7 @@ function context(preferences: UserPreference[] = [], withPlaces = true): AgentCo
                   name: category === "museum" ? "City Museum" : "Temple Walk",
                   category: category ?? "sight",
                   rating: 4.6,
+                  ...(withLocation ? { location: { latitude: 35.0116, longitude: 135.7681 } } : {}),
                 },
               ]
             : [],
@@ -37,6 +42,7 @@ function context(preferences: UserPreference[] = [], withPlaces = true): AgentCo
         route: vi.fn(async () => []),
       },
       booking: { searchStays: vi.fn(async () => []), searchFlights: vi.fn(async () => []) },
+      weather: undefined,
     },
     mem: {
       getLongTerm: vi.fn(async () => preferences),
@@ -104,6 +110,33 @@ describe("destination guide", () => {
     expect(generate).toHaveBeenCalledWith(
       expect.objectContaining({ travelMonth: "October", brief }),
     );
+  });
+
+  it("uses weather evidence when map candidates provide coordinates", async () => {
+    const ctx = context([], true, true);
+    const forecast = vi.fn(async () => ({
+      horizon: "forecast" as const,
+      targetDate: brief.dates[0],
+      summary: "Sunny, 24–14°C. Forecast conditions can change before departure.",
+      observedAt: "2026-09-21T00:00:00.000Z",
+      validUntil: "2026-10-02T00:00:00.000Z",
+      provider: "Google Weather API",
+    }));
+    ctx.tools.weather = { forecast };
+
+    const result = await createDestinationGuideAgent({
+      generator: { generate: vi.fn(async () => validDraft) },
+    }).invoke({ brief, context: ctx });
+
+    expect(forecast).toHaveBeenCalledWith({
+      location: { latitude: 35.0116, longitude: 135.7681 },
+      targetDate: "2026-10-01",
+    });
+    expect(result.items.find((item) => item.kind === "weather-packing")?.detail).toContain(
+      "Sunny, 24–14°C",
+    );
+    expect(result.assumptions.join(" ")).toContain("Google Weather API");
+    expect(result.source).toMatchObject({ kind: "live", label: "Google Weather API" });
   });
 
   it("canonicalizes grounded attraction names before returning them", async () => {

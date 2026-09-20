@@ -137,6 +137,31 @@ describe("ChatPanel", () => {
     fireEvent.click(details.querySelector("summary")!);
     expect(details.hasAttribute("open")).toBe(true);
   });
+
+  it("shows high-level planning stages, an answer placeholder, and a stop action while busy", () => {
+    const onCancel = vi.fn();
+    render(
+      <ChatPanel
+        messages={[{ role: "user", text: "Plan Sydney" }]}
+        input=""
+        onInput={vi.fn()}
+        busy
+        activity={[
+          { type: "coordinator", phase: "dispatch", round: 1, summary: "Preparing" },
+          { type: "agent_started", agent: "itinerary", round: 1 },
+        ]}
+        onCancel={onCancel}
+        onSend={vi.fn()}
+        onDecision={vi.fn()}
+        onEdit={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByText("Thinking", { selector: "strong" })).toBeTruthy();
+    expect(screen.getByLabelText("Answer in progress")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Stop planning" }));
+    expect(onCancel).toHaveBeenCalledTimes(1);
+  });
 });
 
 function renderPanel(messages: Message[], overrides: Partial<Parameters<typeof ChatPanel>[0]> = {}) {

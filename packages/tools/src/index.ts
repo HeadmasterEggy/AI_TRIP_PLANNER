@@ -4,3 +4,4 @@
 export * from "./gateway";
 export * as maps from "./maps";
 export * as booking from "./booking";
+export * as weather from "./weather";

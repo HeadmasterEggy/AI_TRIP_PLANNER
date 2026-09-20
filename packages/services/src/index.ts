@@ -2,5 +2,7 @@
 // Owner: E
 
 export { memory } from "./memory";
+export { durableStoreConfigured, jsonStore, createJsonStore } from "./durable";
+export { tripStore } from "./trips";
 export { notify } from "./notification";
 export { auth } from "./auth";
