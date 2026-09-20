@@ -39,9 +39,12 @@ export function TripPanel({
   onEdit: () => void;
   onSave: () => void;
 }) {
-  const estimated = Number.isFinite(plan.estTotal) && plan.estTotal >= 0 ? plan.estTotal : undefined;
-  const budget = Number.isFinite(plan.budgetTotal) && plan.budgetTotal > 0 ? plan.budgetTotal : undefined;
-  const pct = budget && estimated !== undefined ? Math.min(100, Math.round((estimated / budget) * 100)) : 0;
+  const estimated =
+    Number.isFinite(plan.estTotal) && plan.estTotal >= 0 ? plan.estTotal : undefined;
+  const budget =
+    Number.isFinite(plan.budgetTotal) && plan.budgetTotal > 0 ? plan.budgetTotal : undefined;
+  const pct =
+    budget && estimated !== undefined ? Math.min(100, Math.round((estimated / budget) * 100)) : 0;
   const delta = budget && estimated !== undefined ? budget - estimated : undefined;
   const tabs: [TripTab, string][] = [
     ["overview", "Overview"],
@@ -61,7 +64,9 @@ export function TripPanel({
         <div className={`bar${delta !== undefined && delta < 0 ? " bar--over" : ""}`}>
           <span style={{ width: `${pct}%` }} />
         </div>
-        <p className={`trip__budget-delta${delta !== undefined && delta < 0 ? " trip__budget-delta--over" : ""}`}>
+        <p
+          className={`trip__budget-delta${delta !== undefined && delta < 0 ? " trip__budget-delta--over" : ""}`}
+        >
           {delta === undefined
             ? "Budget not set"
             : `${money(Math.abs(delta))} ${delta < 0 ? "over" : "under"} the ${money(budget!)} budget`}

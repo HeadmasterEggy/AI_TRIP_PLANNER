@@ -30,9 +30,7 @@ describe("TripMap", () => {
         onSelect={() => {}}
       />,
     );
-    expect(
-      screen.getByRole("button", { name: "1. Museum", pressed: true }),
-    ).toBeTruthy();
+    expect(screen.getByRole("button", { name: "1. Museum", pressed: true })).toBeTruthy();
   });
 
   it("requests location only after the user clicks and reports success", async () => {
