@@ -40,6 +40,11 @@ destination-guide 和 dining）的模型/外部 provider 降级目前主要写�
 验收：关闭模型 key 或让 provider 失败后，页面仍能完成，但用户能在对应结果或规划状态中看到降级
 说明；恢复 provider 后，状态不会残留为 degraded。
 
+实现记录（`fix/degraded-visibility`，PR #31）：五个 specialist 的模型/外部 provider fallback 都在
+发生降级的 catch 分支生成统一的 `source.kind`，并由 TripSection、ChatPanel 和结果卡片显示 live、
+estimated、mock、fallback 或 unavailable 状态及高层原因；未暴露 prompt 或 chain-of-thought。PR 已
+直接提交到上游仓库，新的 GitHub CI 与 Vercel 检查均通过，保持 open、待按计划合并。
+
 ### 现有回填是同一个 bug，不要拿它交差
 
 `packages/orchestrator/src/workflow.ts:288-291` 在装配时会给缺 `source` 的 proposal 回填一个，
@@ -74,6 +79,11 @@ destination-guide 和 dining）的模型/外部 provider 降级目前主要写�
 
 持久化是部署前的 P0，因为当前 `packages/services/src/memory/index.ts` 使用进程内 `Map`；Vercel
 冷启动会丢失数据，也会清零 SerpApi 计数和缓存。
+
+实现记录（`feature/durable-storage`，PR #32）：新增 Upstash-compatible JSON store，并保留本地
+fallback；聊天、偏好、行程、HITL 决策、SerpApi 缓存和用量计数都通过持久化服务访问，CI/离线测试仍
+默认使用本地 mock。应用依赖和 lockfile 已同步，PR 以 `fix/degraded-visibility` 为 base 保持 open，
+待按计划合并。
 
 ## P1：天气能力
 
@@ -252,6 +262,10 @@ Mock fixture
 航班、活动和天气/地点内容使用同一组结构化 result/context card 样式。预算卡片增加 within/over/
 unavailable 状态和可访问的进度条，HITL 酒店选择显示来源和“不会在此预订”的边界提示。真实价格、
 估价、mock 和 provider 限制均不再依靠模糊的“simulated”文案。
+
+浏览器验收记录：重建 Next 开发缓存后，首页返回 200，偏好面板和日期日历可打开，375×812 移动
+布局可用，交互后无 console error；完整网页测试、lint、typecheck、production build 和 `git diff --check`
+均通过。旧开发进程曾因残留 `.next` chunk 返回 500，已通过结束旧进程并重新构建确认不是代码问题。
 
 ## 分支与 PR 拆分
 
