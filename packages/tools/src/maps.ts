@@ -5,6 +5,7 @@
 // for local tests.
 
 import type { RouteQuery, RouteLeg, PlaceQuery, Place } from "@trip/shared";
+import { searchGooglePlacesText } from "./google-places";
 
 export type { RouteQuery, RouteLeg, PlaceQuery, Place } from "@trip/shared";
 
@@ -144,14 +145,8 @@ function localInstant(date: string, time: string, zone: string): string {
 }
 
 async function googleOriginTimeZone(from: string, dateTimestamp: number): Promise<string> {
-  const places = await googleRequest<{
-    places?: Array<{ location?: { latitude?: number; longitude?: number } }>;
-  }>(
-    "https://places.googleapis.com/v1/places:searchText",
-    { textQuery: from, pageSize: 1 },
-    "places.location",
-  );
-  const location = places.places?.[0]?.location;
+  const places = await searchGooglePlacesText(from, "places.location", 1);
+  const location = places[0]?.location;
   if (
     !location ||
     !Number.isFinite(location.latitude) ||
@@ -271,20 +266,18 @@ export async function places(q: PlaceQuery): Promise<Place[]> {
   }
   if (provider() !== "google") throw new Error(`Unsupported maps provider: ${provider()}`);
   if (!process.env.MAPS_API_KEY) throw new Error("Google Maps provider requires MAPS_API_KEY.");
-  const data = await googleRequest<{
-    places?: Array<{ displayName?: { text?: string }; types?: string[]; rating?: number }>;
-  }>(
-    "https://places.googleapis.com/v1/places:searchText",
-    {
-      textQuery: `${q.category ?? "attraction"} in ${q.near}`,
-      pageSize: 5,
-    },
+  const results = await searchGooglePlacesText(
+    `${q.category ?? "attraction"} in ${q.near}`,
     "places.displayName,places.types,places.rating",
   );
-  return (data.places ?? [])
+  return results
     .map((place) => ({
       name: place.displayName?.text?.trim() ?? "",
       category: q.category ?? place.types?.[0] ?? "place",
+      // Google's own 1.0-5.0 place-rating scale, shown verbatim in agent text
+      // ("supplied rating 4.5") — unlike accommodation, nothing here compares
+      // it numerically against this project's 0-10 convention, so it is not
+      // converted.
       ...(place.rating === undefined ? {} : { rating: place.rating }),
     }))
     .filter((place) => place.name.length > 0);
