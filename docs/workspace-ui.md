@@ -10,7 +10,7 @@ now. Implementation history and browser acceptance for each phase are in the
 | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------- |
 | Sidebar                 | Logo, New chat, search, Chats and Trips history with counts, Saved trips, Language, Local account                              | `WorkspaceSidebar`, `BrandMark`, `icons.tsx` |
 | Top bar                 | Destination with days, travellers and budget (real plan values only); Preferences; Trip with pending-decision count, rightmost | `Workspace`                                  |
-| Chat                    | Conversation, planning progress, decision cards; a starter prompt in a blank chat                                              | `ChatPanel`                                  |
+| Chat                    | Conversation, planning progress, decision cards; starter suggestions in a blank chat                                           | `ChatPanel`                                  |
 | Map                     | Only the map, numbered markers, a place list, map status, View all places and Show my location                                 | `TripMapCanvas`, `TripMap`                   |
 | Your Trip drawer        | Budget; Overview (sections, stay choices, confirmations); Timeline & routes (editor); Review plan and Save trip                | `Drawer`, `TripPanel`, `TripEditor`          |
 | Trip Preferences drawer | Structured brief form: destination, dates, travellers, budget, nationality, accommodation                                      | `Drawer`, `FiltersPanel`                     |
@@ -68,6 +68,15 @@ now. Implementation history and browser acceptance for each phase are in the
   created and linked (`tripId`) only when a plan is produced; the chat title then becomes the
   destination and dates.
 - **Starting to plan.**
+  - A blank chat offers example trip suggestions. Selecting one replaces and focuses the message input;
+    it never sends a message or starts a request.
+  - Planning progress is a flat, text-and-symbol status list for the coordinator and specialists.
+    Per-agent and coordinator event details remain native, collapsed `<details>` controls; unknown
+    states remain neutral rather than complete.
+  - Messages retain their conversation order in a `role="log"`; each has one visible, spoken-once
+    speaker label (You or Travel planning assistant). Bubbles use alignment, surface, border and
+    corner shape as well as the label, and long URLs or mixed Chinese/English text wrap within the
+    chat column.
   - Submitting Preferences sends `mode: "plan"` with the brief.
   - A first chat message sends `mode: "start"`, and the server reports any missing destination,
     dates, travellers or budget instead of borrowing values.
@@ -123,7 +132,11 @@ now. Implementation history and browser acceptance for each phase are in the
   - No Google map is created before there is somewhere to show; a neutral placeholder is shown
     instead. Container resizes keep the centre.
 - **Selection.** Selecting a marker or list item selects the activity in the timeline and jumps to its
-  day, and the reverse also works.
+  day, and the reverse also works. Selected markers add a larger outlined shape, while selected place-list
+  buttons add a leading inset line and weight alongside `aria-pressed`; color is not the sole cue.
+- **Trip drawer.** The reading order is heading and summary, budget, sections, then expanded detail.
+  Missing or zero budgets state that no budget is set; invalid totals never render `NaN`, a negative bar,
+  or a bar wider than its container.
 - **Location.** Show my location runs only on request and handles denied, unavailable, timeout and
   unsupported cases. The position stays in component memory and is never saved or written into the
   plan. Route from my location requests a verified duration and distance for the selected place.
@@ -165,6 +178,25 @@ first render; without a browser key the map shows a fallback and the itinerary s
 
 Real booking and payments, multi-user collaboration and on-trip mode. Mock places and bookings must
 never be presented as real supplier data.
+
+## Visual verification matrix
+
+Use this checklist for each visual change. It supplements, and does not change, the layout and drawer behavior described above.
+
+| Dimension | Required checks |
+| --- | --- |
+| Viewports | 1600×900, near the 1000 px responsive boundary, and 375×812 |
+| Theme | Light and dark at each relevant viewport |
+| Motion | Default and `prefers-reduced-motion: reduce` |
+| Input | Mouse and full keyboard navigation, including visible focus |
+| Workspace | Sidebar resize/collapse, Chat/Map switch, and no horizontal overflow |
+| Drawers | Navigation, Preferences, and Trip drawers; close, Escape, and focus return |
+| Content | Empty chat/map, planning and failure states, long messages, and available map places |
+| Native controls | Date, select, checkbox, and scrollbar follow the active color scheme |
+
+Keep light and dark screenshots for desktop (1600×900) and narrow (375×812) acceptance. Verify body and supporting text contrast with a contrast tool; status must retain a textual or graphical cue when color is unavailable.
+
+The root layout loads the self-hosted Fraunces display font through `next/font`; it is limited to destination, Trip, and empty-state headings. Body copy and controls retain the system sans stack, with serif fallbacks for display headings. `color-scheme: light dark` keeps native controls aligned with the active theme.
 
 ## Verification
 

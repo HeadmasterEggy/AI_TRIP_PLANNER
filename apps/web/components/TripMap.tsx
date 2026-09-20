@@ -286,16 +286,6 @@ export function TripMap({
       content.setAttribute("aria-label", `${label}. ${placeName(place)}`);
       const markerColor = markerColors[(markerIndex - 1) % markerColors.length]!;
       content.style.setProperty("--marker-color", markerColor);
-      content.style.backgroundColor = markerColor;
-      content.style.border = place.id === selected ? "3px solid white" : "2px solid white";
-      content.style.borderRadius = "999px";
-      content.style.boxShadow = "0 1px 4px rgb(0 0 0 / 35%)";
-      content.style.color = "white";
-      content.style.display = "grid";
-      content.style.fontWeight = "700";
-      content.style.height = place.id === selected ? "2rem" : "1.75rem";
-      content.style.placeItems = "center";
-      content.style.width = place.id === selected ? "2rem" : "1.75rem";
       const marker = new maps.marker.AdvancedMarkerElement({
         map,
         position,
@@ -326,15 +316,7 @@ export function TripMap({
     content.className = "trip-map-user-marker";
     content.textContent = "●";
     content.setAttribute("aria-label", "Your current location");
-    content.style.backgroundColor = "white";
-    content.style.border = "3px solid #2563eb";
-    content.style.borderRadius = "999px";
-    content.style.boxShadow = "0 1px 5px rgb(0 0 0 / 40%)";
-    content.style.color = "#2563eb";
-    content.style.display = "grid";
-    content.style.height = "1.25rem";
-    content.style.placeItems = "center";
-    content.style.width = "1.25rem";
+
     const marker = new runtime.maps.marker.AdvancedMarkerElement({
       map: runtime.map,
       position: location.position,

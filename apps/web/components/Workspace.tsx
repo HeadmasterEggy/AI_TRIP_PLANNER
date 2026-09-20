@@ -548,11 +548,20 @@ function WorkspaceContent({ restored }: { restored: RestoredWorkspace }) {
     );
     setNavOpen(false);
   }
-  function newChat() {
+  /**
+   * `base` is the catalog this new chat is derived from. `deleteChat` passes the already-pruned
+   * catalog: React has not committed the removal yet, so reading the `catalog` closure here would
+   * reuse the id of the conversation being deleted and put it straight back.
+   *
+   * Kept separate from `newChat` because that one is handed to `onClick`-style props, which would
+   * otherwise pass a click event in as `base`.
+   */
+  function startBlankChat(base?: WorkspaceCatalog) {
     resetTransient();
     // Reuse an untouched conversation so repeated New chat presses cannot stack blank history
     // entries. Only a conversation holding nothing the user wrote is safe to reuse.
-    const id = reusableBlankConversation(catalog)?.id ?? `conversation:${crypto.randomUUID()}`;
+    const id =
+      reusableBlankConversation(base ?? catalog)?.id ?? `conversation:${crypto.randomUUID()}`;
     activeConversation.current = id;
     freshTripId.current = crypto.randomUUID();
     setPlan(undefined);
@@ -565,7 +574,12 @@ function WorkspaceContent({ restored }: { restored: RestoredWorkspace }) {
     setTripOpen(false);
     setNavOpen(false);
     setCatalog((current) =>
-      upsertConversationDraft(current, { id, messages: [], input: "", draft: blankDraft() }),
+      upsertConversationDraft(base ?? current, {
+        id,
+        messages: [],
+        input: "",
+        draft: blankDraft(),
+      }),
     );
     setMobileView("chat");
     requestAnimationFrame(() =>
@@ -573,6 +587,9 @@ function WorkspaceContent({ restored }: { restored: RestoredWorkspace }) {
         .querySelector<HTMLInputElement>('[aria-label="Message AI Trip Planner"]')
         ?.focus({ preventScroll: true }),
     );
+  }
+  function newChat() {
+    startBlankChat();
   }
   function renameChat(id: string) {
     const existing = catalog.conversations.find((item) => item.id === id);
@@ -588,21 +605,27 @@ function WorkspaceContent({ restored }: { restored: RestoredWorkspace }) {
       ),
     }));
   }
+  function withoutConversation(source: WorkspaceCatalog, id: string): WorkspaceCatalog {
+    return {
+      ...source,
+      activeConversationId:
+        source.activeConversationId === id ? undefined : source.activeConversationId,
+      conversations: source.conversations.filter((item) => item.id !== id),
+      trips: source.trips.map((item) => ({
+        ...item,
+        conversationIds: item.conversationIds.filter((conversationId) => conversationId !== id),
+      })),
+    };
+  }
   function deleteChat(id: string) {
     const existing = catalog.conversations.find((item) => item.id === id);
     if (!existing || !window.confirm(`Delete “${existing.title}”? The linked trip will be kept.`))
       return;
-    setCatalog((current) => ({
-      ...current,
-      activeConversationId:
-        current.activeConversationId === id ? undefined : current.activeConversationId,
-      conversations: current.conversations.filter((item) => item.id !== id),
-      trips: current.trips.map((item) => ({
-        ...item,
-        conversationIds: item.conversationIds.filter((conversationId) => conversationId !== id),
-      })),
-    }));
-    if (activeConversation.current === id) newChat();
+    // Deleting the open chat has to remove it and open a fresh one in a single update. Splitting
+    // it in two let `newChat` read the pre-delete catalog, reuse the deleted conversation's id and
+    // put it straight back, so the chat could never be deleted.
+    if (activeConversation.current === id) startBlankChat(withoutConversation(catalog, id));
+    else setCatalog((current) => withoutConversation(current, id));
   }
   const pending = pendingDecisions(plan);
   const dialogTitle =
@@ -698,7 +721,7 @@ function WorkspaceContent({ restored }: { restored: RestoredWorkspace }) {
               aria-label="Open trip preferences"
               aria-expanded={preferencesOpen}
               aria-haspopup="dialog"
-              onClick={openPreferences}
+              onClick={() => (preferencesOpen ? closePreferences() : openPreferences())}
             >
               <SlidersIcon />
               <span className="topbar-button__label">Preferences</span>
@@ -711,7 +734,7 @@ function WorkspaceContent({ restored }: { restored: RestoredWorkspace }) {
               aria-describedby={pending ? "trip-trigger-count" : undefined}
               aria-expanded={tripOpen}
               aria-haspopup="dialog"
-              onClick={openTrip}
+              onClick={() => (tripOpen ? closeTrip() : openTrip())}
             >
               <RouteIcon />
               <span className="topbar-button__label">Trip</span>

@@ -27,7 +27,7 @@ export function TripSection({
   const bodyId = `section-details-${section.id}`;
 
   return (
-    <div className={`section${open ? " section--open" : ""}`}>
+    <section className={`section${open ? " section--open" : ""}`}>
       <button
         className="section__row"
         onClick={() => setOpen((v) => !v)}
@@ -74,6 +74,6 @@ export function TripSection({
           )}
         </div>
       )}
-    </div>
+    </section>
   );
 }

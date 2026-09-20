@@ -1,9 +1,33 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, it, expect, vi } from "vitest";
 import { TripSection } from "./TripSection";
+import { TripPanel } from "./TripPanel";
 import { plan } from "@/lib/test-fixtures";
 
-describe("structured trip details", () => {
+describe("Trip drawer details", () => {
+  it.each([
+    [undefined, "Budget not set"],
+    [0, "Budget not set"],
+    [100, /over the USD\s*100.00 budget/],
+  ])("keeps a %s budget safe", (budgetTotal, expected) => {
+    const trip = { ...plan, budgetTotal: budgetTotal as number, estTotal: 200 };
+    const { container } = render(
+      <TripPanel
+        plan={trip}
+        busy={false}
+        tab="overview"
+        onTab={() => {}}
+        timeline={null}
+        onReview={() => {}}
+        onDecision={() => {}}
+        onEdit={() => {}}
+        onSave={() => {}}
+      />,
+    );
+    expect(screen.getByLabelText("Trip budget").textContent).toMatch(expected);
+    expect(container.querySelector(".bar > span")?.getAttribute("style")).not.toMatch(/NaN|-/);
+  });
+
   it("shows chronological day groups, missing prices and honest source fallback", () => {
     const section = structuredClone(plan.sections[0]!);
     section.proposal!.items = [
