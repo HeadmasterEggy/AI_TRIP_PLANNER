@@ -133,6 +133,21 @@ describe("Workspace interactions", () => {
     expect(document.activeElement).toBe(preferencesTrigger);
     expect(document.querySelector(".workspace-drawer-backdrop")).toBeNull();
   });
+  it("closes a drawer when its own topbar button is clicked again", () => {
+    render(<Workspace initialPlan={plan} />);
+    for (const [name, panel] of [
+      ["Open trip preferences", "preferences"],
+      ["Open your trip", "trip"],
+    ] as const) {
+      const trigger = screen.getByRole("button", { name });
+      fireEvent.click(trigger);
+      expect(drawer(panel).getAttribute("aria-hidden")).toBe("false");
+      expect(trigger.getAttribute("aria-expanded")).toBe("true");
+      fireEvent.click(trigger);
+      expect(drawer(panel).getAttribute("aria-hidden")).toBe("true");
+      expect(trigger.getAttribute("aria-expanded")).toBe("false");
+    }
+  });
   it("keeps the timeline and editors out of the map canvas", () => {
     render(<Workspace initialPlan={plan} />);
     const map = document.querySelector<HTMLElement>(".workspace-panel--map")!;
@@ -203,6 +218,28 @@ describe("Workspace interactions", () => {
       expect(empty).toHaveLength(1);
       // The reused conversation stays selected, so the next message belongs to it.
       expect(catalog.activeConversationId).toBe(empty[0]!.id);
+    });
+  });
+  it("does not bring a blank chat back when the open one is deleted", async () => {
+    vi.stubGlobal("fetch", withPlaceRequests());
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    render(<Workspace initialPlan={plan} />);
+    await waitFor(() =>
+      expect(parseCatalog(localStorage.getItem(CATALOG_KEY)).trips).toHaveLength(1),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "New chat" }));
+    await waitFor(() =>
+      expect(parseCatalog(localStorage.getItem(CATALOG_KEY)).conversations).toHaveLength(2),
+    );
+    const deleted = parseCatalog(localStorage.getItem(CATALOG_KEY)).activeConversationId;
+    fireEvent.click(screen.getByRole("button", { name: "Actions for New chat" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Delete" }));
+    // Deleting the open chat opens a fresh blank one. That replacement must not be the record
+    // just deleted: reusing its id used to put the deleted chat straight back on screen.
+    await waitFor(() => {
+      const catalog = parseCatalog(localStorage.getItem(CATALOG_KEY));
+      expect(catalog.conversations.map((item) => item.id)).not.toContain(deleted);
+      expect(catalog.conversations.filter((item) => item.title === "New chat")).toHaveLength(1);
     });
   });
   it("does not add a second empty conversation when New chat follows a reload", async () => {
@@ -542,7 +579,8 @@ describe("Workspace interactions", () => {
     fireEvent.click(screen.getByRole("button", { name: "Update trip" }));
     fireEvent.click(screen.getByRole("button", { name: /^Saved trips/ }));
     fireEvent.click(screen.getByRole("button", { name: "Restore trip" }));
-    openPreferences();
+    // Restoring leaves the preferences drawer open, and the topbar button is a toggle, so
+    // re-opening it here would close it.
     await act(async () => {
       finish(complete("Obsolete result"));
     });
