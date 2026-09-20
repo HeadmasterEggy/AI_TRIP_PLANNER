@@ -28,7 +28,7 @@ directories.
 
 ## Working tree
 
-- The current working tree is on `main` after the PR #37 fast-forward integration. Preserve unrelated
+- The current working tree is on `main` after the PR #37 mainline integration. Preserve unrelated
   `.gitignore` and `output/` changes.
 
 ## Next recommended actions
