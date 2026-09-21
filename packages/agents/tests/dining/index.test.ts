@@ -138,6 +138,26 @@ describe("dining planner", () => {
     expect(result.items.find((item) => item.kind === "meal")?.location).toBe("Market Kitchen");
   });
 
+  it("deduplicates repeated venue names after canonicalization", async () => {
+    const generator: DiningGenerator = {
+      generate: vi.fn(async () => ({
+        ...validDraft,
+        picks: [
+          { name: "Market Kitchen", detail: "Confirm the current menu." },
+          { name: "  market kitchen  ", detail: "Duplicate entry." },
+        ],
+      })),
+    };
+
+    const result = await createDiningAgent({ generator }).invoke({
+      brief,
+      context: context(),
+    });
+
+    expect(result.items.filter((item) => item.kind === "meal")).toHaveLength(1);
+    expect(result.items.find((item) => item.kind === "meal")?.location).toBe("Market Kitchen");
+  });
+
   it("falls back when model cost exceeds the budget guardrail", async () => {
     const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
     const generator: DiningGenerator = {

@@ -158,6 +158,26 @@ describe("destination guide", () => {
     });
   });
 
+  it("deduplicates repeated attraction names after canonicalization", async () => {
+    const generator: DestinationGuideGenerator = {
+      generate: vi.fn(async () => ({
+        ...validDraft,
+        attractions: [
+          { name: "Temple Walk", detail: "A candidate cultural stop." },
+          { name: "  temple walk  ", detail: "Duplicate entry." },
+        ],
+      })),
+    };
+
+    const result = await createDestinationGuideAgent({ generator }).invoke({
+      brief,
+      context: context(),
+    });
+
+    expect(result.items.filter((item) => item.kind === "attraction")).toHaveLength(1);
+    expect(result.items.find((item) => item.kind === "attraction")?.location).toBe("Temple Walk");
+  });
+
   it("deduplicates the same place returned by multiple map categories", async () => {
     const generate = vi.fn(async ({ places }: { places: Array<{ name: string }> }) => {
       expect(places.map((place) => place.name)).toEqual(["Temple Walk", "City Museum"]);
