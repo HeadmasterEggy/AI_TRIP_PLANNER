@@ -70,6 +70,16 @@ function canonicalPlaceName(name: string, places: Place[]): string {
   return match?.name ?? name.trim();
 }
 
+function dedupeEntries<T extends { name: string }>(items: T[]): T[] {
+  const seen = new Set<string>();
+  return items.filter((item) => {
+    const key = normalize(item.name);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 /** Validate dates and return the number of planning days. */
 function tripDays([start, end]: [string, string]): number {
   const parse = (value: string) => {
@@ -123,21 +133,22 @@ function validateDraft(
   maxDailyPerPerson: number,
 ): DiningDraft {
   const parsed = DiningDraft.parse(draft);
+  const picks = dedupeEntries(parsed.picks);
   if (parsed.dailyBudgetPerPerson > maxDailyPerPerson + Number.EPSILON) {
     throw new Error("Dining estimate exceeds its planning guardrail.");
   }
   const candidates = new Set(places.map((place) => normalize(place.name)));
-  if (candidates.size === 0 && parsed.picks.length > 0) {
+  if (candidates.size === 0 && picks.length > 0) {
     throw new Error("Dining cannot invent venues without place candidates.");
   }
-  for (const pick of parsed.picks) {
+  for (const pick of picks) {
     if (!candidates.has(normalize(pick.name))) {
       throw new Error(`Dining returned an ungrounded venue: ${pick.name}`);
     }
   }
   return {
     ...parsed,
-    picks: parsed.picks.map((pick) => ({
+    picks: picks.map((pick) => ({
       ...pick,
       name: canonicalPlaceName(pick.name, places),
     })),

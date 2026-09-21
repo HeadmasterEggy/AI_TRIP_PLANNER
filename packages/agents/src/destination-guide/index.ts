@@ -58,6 +58,16 @@ function canonicalPlaceName(name: string, places: Place[]): string {
   return match?.name ?? name.trim();
 }
 
+function dedupeEntries<T extends { name: string }>(items: T[]): T[] {
+  const seen = new Set<string>();
+  return items.filter((item) => {
+    const key = normalize(item.name);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 /** Turn the trip start date into month-only context (not a weather forecast). */
 function travelMonth(date: string): string {
   const timestamp = Date.parse(`${date}T00:00:00.000Z`);
@@ -74,18 +84,19 @@ function travelMonth(date: string): string {
 /** Reject attractions that are not present in the injected map candidates. */
 function validateDraft(draft: DestinationGuideDraft, places: Place[]): DestinationGuideDraft {
   const parsed = DestinationGuideDraft.parse(draft);
+  const attractions = dedupeEntries(parsed.attractions);
   const candidates = new Set(places.map((place) => normalize(place.name)));
-  if (candidates.size === 0 && parsed.attractions.length > 0) {
+  if (candidates.size === 0 && attractions.length > 0) {
     throw new Error("Destination guide cannot invent attractions without place candidates.");
   }
-  for (const attraction of parsed.attractions) {
+  for (const attraction of attractions) {
     if (!candidates.has(normalize(attraction.name))) {
       throw new Error(`Destination guide returned an ungrounded attraction: ${attraction.name}`);
     }
   }
   return {
     ...parsed,
-    attractions: parsed.attractions.map((attraction) => ({
+    attractions: attractions.map((attraction) => ({
       ...attraction,
       name: canonicalPlaceName(attraction.name, places),
     })),
