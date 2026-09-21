@@ -90,7 +90,6 @@ export function WorkspaceView({ model }: { model: WorkspaceController }) {
     run,
     submit,
     send,
-    onDecision,
     onCancel,
     newChat,
     selectConversation,
@@ -208,7 +207,7 @@ export function WorkspaceView({ model }: { model: WorkspaceController }) {
               {pending > 0 && (
                 <span className="trip-trigger__count" id="trip-trigger-count">
                   {pending}
-                  <span className="sr-only"> decisions pending</span>
+                  <span className="sr-only"> unresolved conflicts</span>
                 </span>
               )}
             </button>
@@ -265,9 +264,17 @@ export function WorkspaceView({ model }: { model: WorkspaceController }) {
               error={error}
               onCancel={onCancel}
               onSend={send}
-              onDecision={onDecision}
               onEdit={edit}
               onStart={edit}
+              /* The composer's attach control is real, but this app has no
+                 upload endpoint, so a picked file is acknowledged rather than
+                 silently dropped. Replace this with the upload call when one
+                 exists; the composer prop does not change. */
+              onAttachFiles={(files) =>
+                setNotice(
+                  `Attachments aren't supported yet — ${files.length} file${files.length === 1 ? "" : "s"} not uploaded.`,
+                )
+              }
             />
           </div>
           <div className="workspace-panel workspace-panel--map">
@@ -367,7 +374,6 @@ export function WorkspaceView({ model }: { model: WorkspaceController }) {
                 tab={tripTab}
                 onTab={setTripTab}
                 onReview={() => setDialog("review")}
-                onDecision={onDecision}
                 onEdit={edit}
                 onSave={save}
                 timeline={
@@ -390,7 +396,7 @@ export function WorkspaceView({ model }: { model: WorkspaceController }) {
               <div className="trip-drawer-empty">
                 <p>
                   No trip yet. Describe where you want to go in the chat, or add your trip details.
-                  Your itinerary, budget and decisions will appear here.
+                  Your itinerary and budget will appear here.
                 </p>
                 <button type="button" onClick={edit}>
                   Add trip details

@@ -27,5 +27,3 @@ export {
   type SupervisorDispatchOptions,
   type SupervisorRevisionOptions,
 } from "./supervisor";
-
-export { applyHitl, checkpointsFor } from "./hitl";

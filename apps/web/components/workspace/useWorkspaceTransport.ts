@@ -1,7 +1,6 @@
 "use client";
 import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import { TripPlan, type AgentProgressEvent } from "@trip/shared";
-import type { Decision } from "../trip/CheckpointCards";
 import type { RouteResult } from "@/lib/integrations/google";
 import {
   identifyActivities,
@@ -72,54 +71,33 @@ export function useWorkspaceTransport({
     setBusy(true);
     setError("");
     setRetry(undefined);
-    if (task.kind === "chat")
-      setActivity([
-        { type: "coordinator", phase: "dispatch", round: 1, summary: "Preparing your request." },
-      ]);
+    setActivity([
+      { type: "coordinator", phase: "dispatch", round: 1, summary: "Preparing your request." },
+    ]);
     try {
-      let next: TripPlan;
-      if (task.kind === "chat") {
-        const response = await fetch("/api/chat", {
-          method: "POST",
-          headers: { "content-type": "application/json", ...dataModeHeaders(dataMode) },
-          body: JSON.stringify(task.request),
-          signal: controller.signal,
-        });
-        const result = await readPlanStream(response, (event) => {
-          if (active.current === controller) setActivity((events) => [...events, event]);
-        });
-        next = result.plan;
-        // A New chat or history switch replaced this request; its answer belongs nowhere.
-        if (active.current !== controller) return;
-        setMessages((current) => [...current, { role: "agent", text: result.reply }]);
-        setInput("");
-      } else {
-        const response = await fetch("/api/hitl", {
-          method: "POST",
-          headers: { "content-type": "application/json", ...dataModeHeaders(dataMode) },
-          body: JSON.stringify({ plan: task.plan, ...task.decision }),
-          signal: controller.signal,
-        });
-        const body = await response.json();
-        if (!response.ok) throw new Error(body.error ?? "Unable to apply this decision.");
-        next = TripPlan.parse(body.plan);
-        if (active.current !== controller) return;
-      }
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "content-type": "application/json", ...dataModeHeaders(dataMode) },
+        body: JSON.stringify(task.request),
+        signal: controller.signal,
+      });
+      const result = await readPlanStream(response, (event) => {
+        if (active.current === controller) setActivity((events) => [...events, event]);
+      });
+      const next = result.plan;
+      // A New chat or history switch replaced this request; its answer belongs nowhere.
+      if (active.current !== controller) return;
+      setMessages((current) => [...current, { role: "agent", text: result.reply }]);
+      setInput("");
       const before = planRef.current;
-      if (task.kind === "chat" || next.estTotal !== before?.estTotal)
-        setPreviousTotal(before?.estTotal);
+      setPreviousTotal(before?.estTotal);
       setPlan(identifyActivities(next));
-      if (task.kind === "chat") {
-        setDraft(draftFor(next.brief));
-        setSelectedActivity(undefined);
-        setMapRoutes([]);
-      }
+      setDraft(draftFor(next.brief));
+      setSelectedActivity(undefined);
+      setMapRoutes([]);
       setErrors({});
-      if (task.kind === "decision" && task.decision.action === "reject") onReject();
     } catch (failure) {
       if (active.current !== controller || controller.signal.aborted) return;
-      // Not enough to plan yet: the assistant asks for the rest in the chat, and what it already
-      // understood goes into the preferences form and travels with the next message.
       // A fare question answered: the reply and its fares belong in the chat,
       // and the trip that was already open stays exactly as it was.
       if (failure instanceof FlightAnswerError) {
@@ -131,6 +109,9 @@ export function useWorkspaceTransport({
         setActivity([]);
         return;
       }
+      // Not enough to plan yet: the assistant asks for the rest in its own words
+      // in the chat, and what it already understood goes into the preferences
+      // form and travels with the next message.
       if (failure instanceof NeedsInfoError) {
         setMessages((current) => [...current, { role: "agent", text: failure.needsInfo.question }]);
         setDraft((current) => draftWithKnown(current, failure.needsInfo.known));
@@ -169,8 +150,9 @@ export function useWorkspaceTransport({
       request: { tripId: brief.tripId, mode: "plan", brief, message },
     });
   }
-  /** `override` lets a one-click example send its own text: React state has
-   *  not flushed yet when the button fires, so reading `input` would send the
+  /** One traveller message, recorded as an ordinary chat turn rather than a form
+   *  submission. `override` lets a one-click example send its own text: React state
+   *  has not flushed yet when the button fires, so reading `input` would send the
    *  previous value (usually empty, which the guard below then swallows). */
   function send(override?: string) {
     const message = (override ?? input).trim();
@@ -186,8 +168,5 @@ export function useWorkspaceTransport({
         : { tripId: freshTripId.current, message, known: knownFromDraft(draft) },
     });
   }
-  const onDecision = (decision: Decision) => {
-    if (plan) void run({ kind: "decision", plan, decision });
-  };
-  return { run, submit, send, onDecision };
+  return { run, submit, send };
 }
