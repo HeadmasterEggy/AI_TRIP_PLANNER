@@ -84,7 +84,11 @@ describe("itinerary planner", () => {
     expect(result.items.every((item) => item.startTime === "13:00")).toBe(true);
     expect(result.summary).not.toContain("STUB");
     expect(result.assumptions.join(" ")).toContain("Opening hours and live availability");
-    expect(ctx.tools.maps.places).toHaveBeenCalledTimes(2);
+    // Two categories per city, not per brief: "near Tokyo & Kyoto" returns a
+    // mix with nothing saying which place is in which city.
+    expect(ctx.tools.maps.places).toHaveBeenCalledTimes(4);
+    expect(ctx.tools.maps.places).toHaveBeenCalledWith({ near: "Tokyo", category: "sight" });
+    expect(ctx.tools.maps.places).toHaveBeenCalledWith({ near: "Kyoto", category: "sight" });
   });
 
   it("uses an injected structured generator and checks travel feasibility", async () => {
@@ -253,5 +257,104 @@ describe("B itinerary reliability", () => {
     await expect(
       createItineraryAgent({ generator }).invoke({ brief, context: ctx }),
     ).rejects.toThrow();
+  });
+});
+
+describe("city connections", () => {
+  /** Four grounded places over two days: enough for a morning and afternoon stop. */
+  function richContext(durationMin = 30): AgentContext {
+    const base = context(durationMin);
+    base.tools.maps.places = vi.fn(async ({ category }) =>
+      category === "sight"
+        ? [
+            { name: "Sydney Opera House", category: "sight" },
+            { name: "Sydney Tower Eye", category: "sight" },
+          ]
+        : [
+            { name: "Bondi Beach", category: "neighborhood" },
+            { name: "The Rocks", category: "neighborhood" },
+          ],
+    );
+    base.tools.maps.routeOptions = vi.fn(async () => [
+      { mode: "bus" as const, durationMin, price: 0, priceBasis: "unavailable" as const, note: "via bus 333" },
+      { mode: "drive" as const, durationMin: 20, price: 0, priceBasis: "partial" as const },
+    ]);
+    return base;
+  }
+
+  it("plans two stops a day when there are places for them, and says how to get between", async () => {
+    const result = await createItineraryAgent({ generator: false }).invoke({
+      brief,
+      context: richContext(),
+    });
+    expect(result.items.map((item) => item.day)).toEqual([1, 1, 2, 2]);
+    expect(result.items.map((item) => item.startTime)).toEqual([
+      "09:30",
+      "14:00",
+      "09:30",
+      "14:00",
+    ]);
+    // The connection is attached to the stop it arrives at, never the first of
+    // the day — there is nothing to travel from.
+    expect(result.items[0]!.arriveBy).toBeUndefined();
+    expect(result.items[1]!.arriveBy).toMatchObject({
+      mode: "bus",
+      // The designation only: the mode is named beside it, so storing
+      // "bus 333" renders as "Bus bus 333".
+      line: "333",
+      durationMin: 30,
+      from: "Sydney Opera House",
+    });
+  });
+
+  it("splits the day's allowance across its stops rather than spending it twice", async () => {
+    const result = await createItineraryAgent({ generator: false }).invoke({
+      brief,
+      context: richContext(),
+    });
+    const dayOne = result.items.filter((item) => item.day === 1);
+    const single = await createItineraryAgent({ generator: false }).invoke({
+      brief,
+      context: context(),
+    });
+    const spent = dayOne.reduce((sum, item) => sum + (item.estCost ?? 0), 0);
+    expect(spent).toBeLessThanOrEqual(single.items[0]!.estCost! + 0.01);
+  });
+
+  it("leaves the connection out when the route provider cannot answer", async () => {
+    const ctx = richContext();
+    ctx.tools.maps.route = vi.fn(async () => {
+      throw new Error("route provider down");
+    });
+    const result = await createItineraryAgent({ generator: false }).invoke({ brief, context: ctx });
+    expect(result.items.every((item) => item.arriveBy === undefined)).toBe(true);
+    expect(result.conflictsWith.join(" ")).toContain("connection unverified");
+  });
+});
+
+describe("multi-city days", () => {
+  it("keeps a day's stops in the city that day is spent in", async () => {
+    // A day that mixes cities is not a day: the five-day Sydney and Wollongong
+    // plan put a Wollongong lookout and the Sydney CBD in one afternoon, two
+    // hours apart, and the route check then reported it as a conflict.
+    const ctx = context();
+    ctx.tools.maps.places = vi.fn(async ({ near, category }) =>
+      category === "sight"
+        ? [
+            { name: `${near} Museum`, category: "sight" },
+            { name: `${near} Gallery`, category: "sight" },
+          ]
+        : [{ name: `${near} Old Town`, category: "neighborhood" }],
+    );
+    const result = await createItineraryAgent({ generator: false }).invoke({
+      brief: { ...brief, destination: "Tokyo & Kyoto", dates: ["2026-10-01", "2026-10-05"] },
+      context: ctx,
+    });
+    for (const item of result.items) {
+      // The journey moves to Kyoto partway through, and every stop belongs to
+      // whichever city its own day is spent in.
+      const city = item.day! <= 2 ? "Tokyo" : "Kyoto";
+      expect(item.location, `day ${item.day}`).toContain(city);
+    }
   });
 });
