@@ -1,9 +1,10 @@
 "use client";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { BrandMark } from "./BrandMark";
 import {
   BookmarkIcon,
   ChatIcon,
+  CloseIcon,
   GlobeIcon,
   MoreIcon,
   PlusIcon,
@@ -13,22 +14,20 @@ import {
   UserIcon,
 } from "../ui/icons";
 
+/** A history row. Chats show only their title; trips add their dates and total as `subtitle`. */
 export type HistoryItem = {
   id: string;
   title: string;
-  subtitle: string;
-  updatedAt: string;
+  subtitle?: string;
   status?: "Draft" | "Needs review";
   active?: boolean;
 };
 
 export type SidebarSection = "chats" | "trips";
-type Tone = "create" | "neutral" | "chats" | "trips" | "saved";
 
 function NavButton({
   icon,
   label,
-  tone,
   collapsed,
   count,
   current,
@@ -36,7 +35,6 @@ function NavButton({
 }: {
   icon: ReactNode;
   label: string;
-  tone: Tone;
   collapsed: boolean;
   count?: number;
   current?: boolean;
@@ -45,7 +43,7 @@ function NavButton({
   return (
     <button
       type="button"
-      className={`sidebar-nav__item sidebar-nav__item--${tone}${current ? " is-current" : ""}`}
+      className={`sidebar-nav__item${current ? " is-current" : ""}`}
       aria-label={collapsed ? (count === undefined ? label : `${label}, ${count}`) : undefined}
       aria-current={current ? "true" : undefined}
       data-tooltip={collapsed ? label : undefined}
@@ -188,6 +186,7 @@ export function WorkspaceSidebar({
 }) {
   const isCollapsed = collapsible && collapsed;
   const search = useRef<HTMLInputElement>(null);
+  const searchId = useId();
   const focusSearch = useRef(false);
 
   useEffect(() => {
@@ -225,19 +224,21 @@ export function WorkspaceSidebar({
         )}
       </div>
 
-      <nav className="sidebar-nav" aria-label="Workspace">
-        <NavButton
-          icon={<PlusIcon />}
-          label="New chat"
-          tone="create"
-          collapsed={isCollapsed}
+      <div className="sidebar-actions">
+        <button
+          type="button"
+          className="sidebar-new-chat"
+          aria-label={isCollapsed ? "New chat" : undefined}
+          data-tooltip={isCollapsed ? "New chat" : undefined}
           onClick={onNewChat}
-        />
+        >
+          <PlusIcon />
+          {!isCollapsed && <span>New chat</span>}
+        </button>
         {isCollapsed ? (
           <NavButton
             icon={<SearchIcon />}
             label="Search chats and trips"
-            tone="neutral"
             collapsed
             onClick={() => {
               focusSearch.current = true;
@@ -245,34 +246,50 @@ export function WorkspaceSidebar({
             }}
           />
         ) : (
-          <label className="sidebar-search">
-            <span className="sidebar-nav__icon sidebar-nav__icon--neutral">
-              <SearchIcon />
-            </span>
-            <span className="sr-only">Search chats and trips</span>
+          <div className="sidebar-search">
+            <SearchIcon />
+            <label className="sr-only" htmlFor={searchId}>
+              Search chats and trips
+            </label>
             <input
               ref={search}
-              className="field"
+              id={searchId}
+              className="field sidebar-search__input"
               type="search"
-              placeholder="Search chats and trips"
+              placeholder="Search"
+              autoComplete="off"
               value={query}
               onChange={(event) => onQuery(event.target.value)}
             />
-          </label>
+            {query && (
+              <button
+                type="button"
+                className="sidebar-search__clear"
+                aria-label="Clear search"
+                onClick={() => {
+                  onQuery("");
+                  search.current?.focus();
+                }}
+              >
+                <CloseIcon />
+              </button>
+            )}
+          </div>
         )}
+      </div>
+
+      <nav className="sidebar-nav" aria-label="Workspace">
         <NavButton
-          icon={<ChatIcon />}
+          icon={<ChatIcon filled={section === "chats"} />}
           label="Chats"
-          tone="chats"
           collapsed={isCollapsed}
           count={chats.length}
           current={section === "chats"}
           onClick={() => reveal("chats")}
         />
         <NavButton
-          icon={<SuitcaseIcon />}
+          icon={<SuitcaseIcon filled={section === "trips"} />}
           label="Trips"
-          tone="trips"
           collapsed={isCollapsed}
           count={trips.length}
           current={section === "trips"}
@@ -281,7 +298,6 @@ export function WorkspaceSidebar({
         <NavButton
           icon={<BookmarkIcon />}
           label="Saved trips"
-          tone="saved"
           collapsed={isCollapsed}
           count={savedCount}
           onClick={onSavedTrips}
@@ -300,16 +316,18 @@ export function WorkspaceSidebar({
                 key={item.id}
               >
                 <button
+                  type="button"
                   className="history-item__open"
                   aria-current={item.active ? "true" : undefined}
+                  title={item.title}
                   onClick={() => (section === "chats" ? onOpenChat : onOpenTrip)(item.id)}
                 >
-                  <strong>{item.title}</strong>
-                  <span>{item.subtitle}</span>
-                  <small>
-                    {item.status ? `${item.status} · ` : ""}
-                    {new Date(item.updatedAt).toLocaleString()}
-                  </small>
+                  <span className="history-item__title">{item.title}</span>
+                  {item.subtitle && (
+                    <span className="history-item__meta">
+                      {item.status ? `${item.status} · ${item.subtitle}` : item.subtitle}
+                    </span>
+                  )}
                 </button>
                 {section === "chats" && (
                   <HistoryMenu
