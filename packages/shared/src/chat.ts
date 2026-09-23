@@ -28,25 +28,122 @@ export const PartialTripBrief = z.object({
 });
 export type PartialTripBrief = z.infer<typeof PartialTripBrief>;
 
+/**
+ * What the traveller may attach to one chat message.
+ *
+ * The limits are deliberately small and are enforced here, at the schema boundary, so a malformed
+ * or oversized attachment is a 400 from the API rather than a provider error deeper in the turn.
+ */
+export const MAX_ATTACHMENTS_PER_MESSAGE = 4;
+/** Length of an image's base64 payload, i.e. roughly 1.1 MB of original file. */
+export const MAX_IMAGE_BASE64_LENGTH = 1_500_000;
+/** UTF-8 bytes of a text attachment's contents. */
+export const MAX_TEXT_ATTACHMENT_BYTES = 32_768;
+export const IMAGE_MEDIA_TYPES = ["image/png", "image/jpeg", "image/webp", "image/gif"] as const;
+export const TEXT_MEDIA_TYPES = [
+  "text/plain",
+  "text/markdown",
+  "text/csv",
+  "application/json",
+] as const;
+
+export const ImageMediaType = z.enum(IMAGE_MEDIA_TYPES);
+export type ImageMediaType = z.infer<typeof ImageMediaType>;
+export const TextMediaType = z.enum(TEXT_MEDIA_TYPES);
+export type TextMediaType = z.infer<typeof TextMediaType>;
+
+const BASE64 = /^[A-Za-z0-9+/]+={0,2}$/;
+const utf8Bytes = (value: string) => new TextEncoder().encode(value).length;
+
+/**
+ * One file the traveller attached. `data` carries the file's contents, and what is in it follows
+ * from `kind` and from nothing else:
+ *
+ * - `kind: "image"` — standard base64 of the raw bytes, with no `data:` prefix and no whitespace.
+ *   The orchestrator builds the data URL from `mediaType` and `data`, so a client that sent one
+ *   would have it doubled.
+ * - `kind: "text"` — the decoded UTF-8 text itself, not base64. The coordinator reads it inline, and
+ *   base64 here would reach the model as an unreadable blob.
+ *
+ * `mediaType` must belong to the allow-list for that kind: only formats the coordinator model can
+ * actually read reach a provider.
+ */
+export const Attachment = z
+  .object({
+    name: z.string().trim().min(1).max(200),
+    mediaType: z.string().trim().min(1),
+    kind: z.enum(["image", "text"]),
+    data: z.string().min(1),
+  })
+  .check((ctx) => {
+    const { kind, mediaType, data } = ctx.value;
+    const allowed = kind === "image" ? ImageMediaType : TextMediaType;
+    if (!allowed.safeParse(mediaType).success) {
+      ctx.issues.push({
+        code: "custom",
+        message: `${mediaType} is not an accepted ${kind} type`,
+        input: ctx.value,
+        path: ["mediaType"],
+      });
+    }
+    if (kind === "image") {
+      if (data.length > MAX_IMAGE_BASE64_LENGTH) {
+        ctx.issues.push({
+          code: "custom",
+          message: `An image may carry at most ${MAX_IMAGE_BASE64_LENGTH} base64 characters`,
+          input: ctx.value,
+          path: ["data"],
+        });
+      } else if (!BASE64.test(data) || data.length % 4 !== 0) {
+        ctx.issues.push({
+          code: "custom",
+          message: "An image's data must be base64 with no data: prefix",
+          input: ctx.value,
+          path: ["data"],
+        });
+      }
+    } else if (utf8Bytes(data) > MAX_TEXT_ATTACHMENT_BYTES) {
+      ctx.issues.push({
+        code: "custom",
+        message: `A text file may carry at most ${MAX_TEXT_ATTACHMENT_BYTES} bytes`,
+        input: ctx.value,
+        path: ["data"],
+      });
+    }
+  });
+export type Attachment = z.infer<typeof Attachment>;
+
 // Client -> server
-export const ChatRequest = z.object({
-  tripId: z.string(),
-  message: z.string().min(1),
-  // What earlier turns of a blank conversation already stated. The server merges
-  // this turn's message onto it, so the traveller answers a follow-up question
-  // instead of repeating everything.
-  known: PartialTripBrief.optional(),
-  // Optional for backward compatibility. The browser sends the latest brief so
-  // serverless requests can apply incremental edits without sticky process state.
-  brief: TripBrief.optional(),
-  // The plan those edits apply to. The server is stateless, so a message that
-  // only asks a question has no plan to return unless the client supplies the
-  // current one — and every completed response must carry a plan.
-  plan: TripPlan.optional(),
-  // "start" begins a blank conversation: the brief is extracted only from the
-  // message, and missing required fields are reported instead of defaulted.
-  mode: z.enum(["chat", "plan", "start"]).optional(),
-});
+export const ChatRequest = z
+  .object({
+    tripId: z.string(),
+    // Empty only when the turn carries attachments: a picture of a hotel
+    // confirmation is a message, and asking the traveller to caption it before
+    // it can be sent is a rule the app has no reason to have.
+    message: z.string(),
+    // What earlier turns of a blank conversation already stated. The server merges
+    // this turn's message onto it, so the traveller answers a follow-up question
+    // instead of repeating everything.
+    known: PartialTripBrief.optional(),
+    // Optional for backward compatibility. The browser sends the latest brief so
+    // serverless requests can apply incremental edits without sticky process state.
+    brief: TripBrief.optional(),
+    // The plan those edits apply to. The server is stateless, so a message that
+    // only asks a question has no plan to return unless the client supplies the
+    // current one — and every completed response must carry a plan.
+    plan: TripPlan.optional(),
+    // "start" begins a blank conversation: the brief is extracted only from the
+    // message, and missing required fields are reported instead of defaulted.
+    mode: z.enum(["chat", "plan", "start"]).optional(),
+    // Files the traveller attached to this message. Images reach the coordinator
+    // as image content blocks and text files are inlined into its message; only
+    // the coordinator sees them, and specialists keep their current inputs.
+    attachments: z.array(Attachment).max(MAX_ATTACHMENTS_PER_MESSAGE).optional(),
+  })
+  .refine((request) => request.message.trim() !== "" || (request.attachments?.length ?? 0) > 0, {
+    message: "Send a message or at least one attachment",
+    path: ["message"],
+  });
 export type ChatRequest = z.infer<typeof ChatRequest>;
 
 // Server -> client
@@ -59,9 +156,9 @@ export type ChatResponse = z.infer<typeof ChatResponse>;
 // Sent instead of a plan when a blank conversation is still missing required
 // fields: the assistant's own question, plus everything understood so far.
 //
-// There is no structured question here. The assistant asks in prose, in the
-// chat, and the traveller answers by typing; a suggestion list or answer form
-// would present a product capability that does not exist.
+// The question here is prose; the traveller answers by typing. A structured
+// question with choices, when the coordinator asked one, arrives as
+// ChatAskUser instead.
 export const ChatNeedsInfo = z.object({
   type: z.literal("needs_info"),
   question: z.string(),
@@ -69,11 +166,79 @@ export const ChatNeedsInfo = z.object({
 });
 export type ChatNeedsInfo = z.infer<typeof ChatNeedsInfo>;
 
+/** At most this many questions in one ask, and this many options per question. */
+export const ASK_USER_MAX_QUESTIONS = 4;
+export const ASK_USER_MAX_OPTIONS = 4;
+
+// One selectable answer to a structured question. A recommended option comes
+// first, with " (Recommended)" appended to its label.
+export const AskUserQuestionOption = z.object({
+  label: z.string().trim().min(1),
+  description: z.string().optional(),
+});
+export type AskUserQuestionOption = z.infer<typeof AskUserQuestionOption>;
+
+// One structured question the coordinator asked. With no options the traveller
+// answers in free text; with options, "Other" free text is still allowed.
+export const AskUserQuestionItem = z.object({
+  id: z.string().min(1),
+  question: z.string().trim().min(1),
+  header: z.string().optional(),
+  detail: z.string().optional(),
+  options: z.array(AskUserQuestionOption).max(ASK_USER_MAX_OPTIONS).optional(),
+  multiSelect: z.boolean().optional(),
+});
+export type AskUserQuestionItem = z.infer<typeof AskUserQuestionItem>;
+
+// Sent instead of a completed plan when the coordinator asked the traveller a
+// structured question. The answer is the traveller's next message, sent with
+// `known` like any follow-up. `plan` is the client's plan returned unchanged
+// when there was one, so a question about an open trip loses nothing; `reply`
+// is whatever prose the coordinator wrote alongside the question.
+export const ChatAskUser = z.object({
+  type: z.literal("ask_user"),
+  questions: z.array(AskUserQuestionItem).min(1).max(ASK_USER_MAX_QUESTIONS),
+  known: PartialTripBrief,
+  plan: TripPlan.optional(),
+  reply: z.string().optional(),
+});
+export type ChatAskUser = z.infer<typeof ChatAskUser>;
+
+// What a result row is, so a client can give it a category glyph without
+// parsing the label. "place" is the fallback for a place no keyword placed.
+export const TOOL_RESULT_KINDS = [
+  "attraction",
+  "restaurant",
+  "cafe",
+  "nightlife",
+  "shopping",
+  "nature",
+  "museum",
+  "stay",
+  "flight",
+  "route",
+  "drive",
+  "transit",
+  "walk",
+  "weather",
+  "place",
+] as const;
+export const ToolResultKind = z.enum(TOOL_RESULT_KINDS);
+export type ToolResultKind = z.infer<typeof ToolResultKind>;
+
 // One line of a tool call's structured result, e.g. a stay candidate or a place.
-// The label is the whole row, so a client never has to know the tool's domain.
+// The label is the whole row, so a client never has to know the tool's domain;
+// `kind` only chooses its icon and is optional for older emitters.
 export const ToolResultRow = z.object({
   label: z.string().min(1),
   detail: z.string().optional(),
+  kind: ToolResultKind.optional(),
+  // The web page this row is about, when the provider reported one — a hotel's
+  // own site, a place's website. It is never invented: a row whose provider
+  // returned no page has no `url`, and a client that shows a site icon for it
+  // falls back to the category glyph. Only the host is ever used for that icon,
+  // so a link with a query string cannot leak through it.
+  url: z.string().url().optional(),
 });
 export type ToolResultRow = z.infer<typeof ToolResultRow>;
 
@@ -126,8 +291,10 @@ export type FlightAnswer = z.infer<typeof FlightAnswer>;
 export const AgentProgressEvent = z.discriminatedUnion("type", [
   z.object({
     // A streamed slice of the supervisor's or coordinator's own thinking. Text
-    // is a delta, not the whole block; clients append by
-    // (agent, round, episode, index).
+    // is a delta, not the whole block; clients append deltas by
+    // (agent, round, episode, index). One model call chain is one block: the
+    // orchestrator paces flushes but gives every flush the same index, so the
+    // block grows in place instead of arriving as separate fragments.
     type: z.literal("agent_reasoning"),
     agent: z.enum(AGENT_NAMES),
     round: z.number().int().positive(),

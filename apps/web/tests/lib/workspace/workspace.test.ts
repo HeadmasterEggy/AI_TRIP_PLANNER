@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  AskUserError,
   blankDraft,
   budgetHint,
   draftFor,
@@ -11,6 +12,7 @@ import {
   parseSnapshot,
   parseSaved,
   readPlanStream,
+  withValidAttachments,
 } from "@/lib/workspace/workspace";
 import { plan, snapshot } from "@/tests/fixtures/workspace";
 
@@ -75,6 +77,19 @@ describe("workspace boundaries", () => {
     expect(parsed.plan).not.toHaveProperty("hitl");
     expect(parsed.plan.tripId).toBe(snapshot.plan.tripId);
   });
+  it("keeps a stored reply's valid transcript and drops a damaged one without losing the message", () => {
+    const good = [{ type: "agent_started", agent: "itinerary", round: 1 }];
+    const stored = {
+      ...snapshot,
+      messages: [
+        { role: "agent", text: "Kept", activity: good },
+        { role: "agent", text: "Damaged", activity: [{ type: "nonsense" }] },
+      ],
+    };
+    const parsed = parseSnapshot(JSON.parse(JSON.stringify(stored)));
+    expect(parsed.messages[0]).toMatchObject({ text: "Kept", activity: good });
+    expect(parsed.messages[1]).toEqual({ role: "agent", text: "Damaged" });
+  });
   it("parses split NDJSON and a trailing final frame, skipping malformed progress", async () => {
     const payload = JSON.stringify({ type: "complete", response: { plan, reply: "Updated" } });
     const stream = new ReadableStream({
@@ -113,6 +128,46 @@ describe("workspace boundaries", () => {
       known: { destination: "悉尼" },
     });
   });
+  it("raises a structured question with its choices and the plan it left untouched", async () => {
+    const asked = {
+      type: "ask_user",
+      questions: [
+        {
+          id: "pace",
+          header: "Pace",
+          question: "How full should each day be?",
+          options: [
+            { label: "Relaxed (Recommended)", description: "Two sights a day." },
+            { label: "Packed" },
+          ],
+        },
+      ],
+      known: { destination: "Tokyo" },
+      plan,
+      reply: "One quick choice first.",
+    };
+    const error = await readPlanStream(new Response(JSON.stringify(asked)), () => {}).catch(
+      (failure: unknown) => failure,
+    );
+    expect(error).toBeInstanceOf(AskUserError);
+    expect((error as AskUserError).askUser).toEqual(asked);
+  });
+  it("rejects a structured question with more choices than the contract allows", async () => {
+    const frame = JSON.stringify({
+      type: "ask_user",
+      questions: [
+        {
+          id: "q",
+          question: "Which?",
+          options: ["a", "b", "c", "d", "e"].map((label) => ({ label })),
+        },
+      ],
+      known: {},
+    });
+    await expect(readPlanStream(new Response(frame), () => {})).rejects.toThrow(
+      "The assistant's question was invalid",
+    );
+  });
   it("sends only filled, valid form fields as what the traveller has stated", () => {
     const blank = {
       ...snapshot.draft,
@@ -150,6 +205,47 @@ describe("workspace boundaries", () => {
     await expect(
       readPlanStream(new Response('{"type":"complete","response":{}}'), () => {}),
     ).rejects.toThrow("invalid");
+  });
+});
+
+describe("stored message attachments", () => {
+  const good = {
+    name: "shrine.jpg",
+    mediaType: "image/jpeg",
+    kind: "image" as const,
+    thumbnail: "data:image/jpeg;base64,AAAA",
+    bytes: 2048,
+  };
+
+  it("keeps a message whose attachments all match the stored shape", () => {
+    const messages = [{ role: "user" as const, text: "Look", attachments: [good] }];
+    expect(withValidAttachments(messages)).toEqual(messages);
+  });
+
+  it("drops a damaged entry and keeps the message it belonged to", () => {
+    const [message] = withValidAttachments([
+      {
+        role: "user",
+        text: "Look",
+        attachments: [good, { name: "", mediaType: "image/jpeg", kind: "image" }],
+      },
+    ]);
+    expect(message?.text).toBe("Look");
+    expect(message?.attachments).toEqual([good]);
+  });
+
+  it("drops the field entirely when nothing in it survives", () => {
+    const [message] = withValidAttachments([
+      // A thumbnail restored from storage is inert only while it is an inline
+      // image; a remote or script-bearing URL is neither.
+      { role: "user", text: "Look", attachments: [{ ...good, thumbnail: "javascript:alert(1)" }] },
+    ]);
+    expect(message).toEqual({ role: "user", text: "Look" });
+  });
+
+  it("leaves a message stored before attachments existed alone", () => {
+    const messages = [{ role: "agent" as const, text: "Here you go." }];
+    expect(withValidAttachments(messages)).toEqual(messages);
   });
 });
 

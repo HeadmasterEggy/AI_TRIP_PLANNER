@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import {
+  AskUserError,
   IncompleteBriefError,
   answerFlightQuery,
   parseFlightQuery,
@@ -11,6 +12,7 @@ import {
   ChatRequest,
   ChatResponse,
   type AgentProgressEvent,
+  type ChatAskUser,
   type ChatNeedsInfo,
   type FlightAnswer,
 } from "@trip/shared";
@@ -21,7 +23,21 @@ export async function POST(req: Request) {
   const dataMode = parseDataMode(req.headers.get("x-trip-data-mode"));
   const body = await req.json().catch(() => ({}));
   const parsed = ChatRequest.safeParse(body);
-  if (!parsed.success || (parsed.data.mode === "plan" && !parsed.data.brief)) {
+  if (!parsed.success) {
+    // An attachment is the one part of the request a person chose by hand, so its rejection is
+    // reported in the schema's own words ("image/tiff is not an accepted image type") instead of
+    // the generic message. Everything else stays a flat 400: the client builds those fields.
+    const attachmentIssue = parsed.error.issues.find((issue) => issue.path[0] === "attachments");
+    return NextResponse.json(
+      {
+        error: attachmentIssue
+          ? `Attachment rejected: ${attachmentIssue.message}`
+          : "invalid ChatRequest",
+      },
+      { status: 400 },
+    );
+  }
+  if (parsed.data.mode === "plan" && !parsed.data.brief) {
     return NextResponse.json({ error: "invalid ChatRequest" }, { status: 400 });
   }
 
@@ -36,6 +52,7 @@ export async function POST(req: Request) {
         event:
           | AgentProgressEvent
           | ChatNeedsInfo
+          | ChatAskUser
           | FlightAnswer
           | { type: "complete"; response: ChatResponse }
           | { type: "error"; error: string },
@@ -73,6 +90,11 @@ export async function POST(req: Request) {
         // the traveller answers by typing.
         if (error instanceof IncompleteBriefError) {
           send(error.needsInfo);
+        } else if (error instanceof AskUserError) {
+          // The coordinator asked a structured question. Like needs_info it is
+          // the turn's final frame, and the traveller's answer is the next
+          // message; any plan it carries is the client's own, unchanged.
+          send(error.askUser);
         } else {
           console.error("[chat] planning failed", error);
           send({

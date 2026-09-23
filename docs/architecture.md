@@ -116,6 +116,17 @@ was understood, and sends those fields back as `ChatRequest.known` with the next
 merged under that message's own extraction. So "悉尼三日游" is answered with a question about dates,
 travellers and budget, and the reply only has to supply those.
 
+A message can carry up to four attachments. Images reach the coordinator as content blocks and text
+files are inlined into its message; only the coordinator sees them, the specialists' inputs are
+unchanged, and the offline path ignores images while still reading the inlined text. Sizes and
+accepted media types are enforced in `packages/shared/src/chat.ts` and listed in [API](api.md).
+
+For a genuine ambiguity with concrete choices, the coordinator can instead call `ask_user_question`
+(`packages/orchestrator/src/chat.ts`), which throws `AskUserError` and streams a `ChatAskUser` frame
+(`type: "ask_user"`, 1–4 questions, `known`, and the client's `plan` unchanged); the client renders a
+question card in the composer's place and sends the traveller's answers as the next message. See
+[DSH thinking UI §3.2](design/dsh-thinking-ui.md#32-asking-the-traveller).
+
 When a key is missing, a model call fails or output is off-schema, the step falls back to validated
 deterministic output, so planning requests still complete. Schema, budget, schedule and route checks
 gate every proposal before aggregation.
@@ -126,7 +137,7 @@ Shared contracts live in `packages/shared/src/`:
 
 - `contracts.ts`: `TripBrief`, `AgentProposal`, `ProposalItem`, `RevisionRequest`.
 - `plan.ts`: `TripPlan`, `TripSection` and `TripProposal`.
-- `chat.ts`: `ChatRequest`, `ChatResponse` and progress events.
+- `chat.ts`: `ChatRequest`, `ChatResponse`, progress events, the `ChatAskUser` structured-question frame, and `Attachment` with its limits.
 - `ports.ts`: `ToolGateway`, `MapsPort`, `BookingPort`, `WeatherPort` and `MemoryStore`.
 
 Agents receive `ctx.tools` (`ToolGateway`) and `ctx.mem` (`MemoryStore`) through `AgentContext`. Do
