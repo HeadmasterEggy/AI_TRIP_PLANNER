@@ -96,6 +96,7 @@ export function WorkspaceView({ model }: { model: WorkspaceController }) {
     dismissAsk,
     onCancel,
     newChat,
+    newTrip,
     selectConversation,
     selectTrip,
     renameChat,
@@ -125,6 +126,7 @@ export function WorkspaceView({ model }: { model: WorkspaceController }) {
           trips={historyTrips}
           savedCount={saved.length}
           onNewChat={newChat}
+          onNewTrip={newTrip}
           onOpenChat={selectConversation}
           onOpenTrip={selectTrip}
           onRenameChat={renameChat}
@@ -306,7 +308,8 @@ export function WorkspaceView({ model }: { model: WorkspaceController }) {
             <Drawer
               side="left"
               open={navOpen}
-              title="Chats and trips"
+              title="Navigation"
+              hideTitle
               closeLabel="Close navigation"
               onClose={() => setNavOpen(false)}
               returnFocus={navToggle}
@@ -323,6 +326,7 @@ export function WorkspaceView({ model }: { model: WorkspaceController }) {
                 trips={historyTrips}
                 savedCount={saved.length}
                 onNewChat={newChat}
+                onNewTrip={newTrip}
                 onOpenChat={selectConversation}
                 onOpenTrip={selectTrip}
                 onRenameChat={renameChat}
